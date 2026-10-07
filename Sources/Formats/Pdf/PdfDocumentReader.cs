@@ -104,13 +104,21 @@ internal sealed class PdfDocumentReader
                 (width, height) = (height, width);
             }
 
+            var textLayer = ReadPageText(
+                dictionary,
+                current.Resources);
+
             pages.Add(new DocumentFixedPage
             {
                 PageNumber = pages.Count + 1,
                 WidthPoints = width,
                 HeightPoints = height,
                 RotationDegrees = rotation,
-                Text = ReadPageText(dictionary, current.Resources)
+                Text = textLayer.Text,
+                TextRuns = TransformTextRuns(
+                    textLayer.Runs,
+                    box,
+                    rotation)
             });
 
             return;
@@ -205,13 +213,70 @@ internal sealed class PdfDocumentReader
         return result;
     }
 
-    private string ReadPageText(
+    private static IReadOnlyList<DocumentFixedTextRun> TransformTextRuns(
+        IReadOnlyList<PdfTextRun> runs,
+        PageBox box,
+        int rotation)
+    {
+        if (runs.Count == 0)
+        {
+            return Array.Empty<DocumentFixedTextRun>();
+        }
+
+        var left = Math.Min(box.X1, box.X2);
+        var right = Math.Max(box.X1, box.X2);
+        var bottom = Math.Min(box.Y1, box.Y2);
+        var top = Math.Max(box.Y1, box.Y2);
+
+        var result = new List<DocumentFixedTextRun>(runs.Count);
+
+        foreach (var run in runs)
+        {
+            var (x, y) = rotation switch
+            {
+                0 => (
+                    run.X - left,
+                    top - run.Y),
+
+                90 => (
+                    run.Y - bottom,
+                    run.X - left),
+
+                180 => (
+                    right - run.X,
+                    run.Y - bottom),
+
+                270 => (
+                    top - run.Y,
+                    right - run.X),
+
+                _ => throw new InvalidDataException(
+                    $"PDF /Rotate имеет неподдерживаемое значение {rotation}.")
+            };
+
+            result.Add(new DocumentFixedTextRun
+            {
+                Text = run.Text,
+                XPoints = x,
+                YPoints = y,
+                FontSizePoints = run.FontSize
+            });
+        }
+
+        return result;
+    }
+
+    private PdfTextExtractionResult ReadPageText(
         PdfDictionary page,
         PdfDictionary? resources)
     {
         if (!page.Items.TryGetValue("Contents", out var contents))
         {
-            return string.Empty;
+            return new PdfTextExtractionResult
+            {
+                Text = string.Empty,
+                Runs = Array.Empty<PdfTextRun>()
+            };
         }
 
         var streams = new List<PdfStream>();
@@ -219,28 +284,39 @@ internal sealed class PdfDocumentReader
 
         if (streams.Count == 0)
         {
-            return string.Empty;
+            return new PdfTextExtractionResult
+            {
+                Text = string.Empty,
+                Runs = Array.Empty<PdfTextRun>()
+            };
         }
 
         var output = new StringBuilder();
+        var runs = new List<PdfTextRun>();
         var fontDecoders = BuildFontDecoders(resources);
 
         foreach (var stream in streams)
         {
             var decoded = DecodeStream(stream);
+            var extracted = PdfTextExtractor.Extract(
+                decoded,
+                fontDecoders);
 
-            if (output.Length > 0)
+            if (output.Length > 0 &&
+                !string.IsNullOrWhiteSpace(extracted.Text))
             {
                 output.AppendLine();
             }
 
-            output.Append(
-                PdfTextExtractor.Extract(
-                    decoded,
-                    fontDecoders));
+            output.Append(extracted.Text);
+            runs.AddRange(extracted.Runs);
         }
 
-        return output.ToString().Trim();
+        return new PdfTextExtractionResult
+        {
+            Text = output.ToString().Trim(),
+            Runs = runs
+        };
     }
 
     private void CollectStreams(PdfObject value, List<PdfStream> result)
@@ -1241,563 +1317,3 @@ internal sealed class PdfDocumentReader
 /// Поддерживает переключение font resource через Tf, ToUnicode CMap,
 /// literal/hex strings, Tj, TJ, quote operators и переносы строк.
 /// </summary>
-internal static class PdfTextExtractor
-{
-    /// <summary>
-    /// Извлекает последовательный текст из операторов PDF content stream.
-    /// </summary>
-    public static string Extract(
-        byte[] content,
-        IReadOnlyDictionary<string, PdfFontDecoder> fontDecoders)
-    {
-        var parser = new ContentParser(
-            content,
-            fontDecoders);
-
-        return parser.Extract();
-    }
-
-    private sealed class ContentParser
-    {
-        private readonly byte[] data_;
-        private readonly IReadOnlyDictionary<string, PdfFontDecoder> fontDecoders_;
-        private int position_;
-        private readonly List<Operand> operands_ = new();
-        private readonly StringBuilder output_ = new();
-        private PdfFontDecoder? currentFontDecoder_;
-
-        public ContentParser(
-            byte[] data,
-            IReadOnlyDictionary<string, PdfFontDecoder> fontDecoders)
-        {
-            data_ = data;
-            fontDecoders_ = fontDecoders;
-        }
-
-        public string Extract()
-        {
-            while (true)
-            {
-                SkipWhiteSpaceAndComments();
-
-                if (position_ >= data_.Length)
-                {
-                    break;
-                }
-
-                var value = data_[position_];
-
-                if (value == (byte)'(')
-                {
-                    operands_.Add(new StringOperand(ReadLiteralString()));
-                    continue;
-                }
-
-                if (value == (byte)'<')
-                {
-                    if (position_ + 1 < data_.Length &&
-                        data_[position_ + 1] == (byte)'<')
-                    {
-                        SkipDictionary();
-                    }
-                    else
-                    {
-                        operands_.Add(new StringOperand(ReadHexString()));
-                    }
-                    continue;
-                }
-
-                if (value == (byte)'[')
-                {
-                    operands_.Add(new ArrayOperand(ReadArray()));
-                    continue;
-                }
-
-                if (IsNumberStart(value))
-                {
-                    operands_.Add(new NumberOperand(ReadNumber()));
-                    continue;
-                }
-
-                if (value == (byte)'/')
-                {
-                    operands_.Add(
-                        new NameOperand(ReadName()));
-                    continue;
-                }
-
-                var token = ReadToken();
-                ApplyOperator(token);
-            }
-
-            return NormalizeOutput(output_.ToString());
-        }
-
-        private void ApplyOperator(string token)
-        {
-            switch (token)
-            {
-                case "Tf":
-                    SelectFont();
-                    break;
-
-                case "Tj":
-                    AppendLastString();
-                    break;
-
-                case "TJ":
-                    AppendLastArray();
-                    break;
-
-                case "'":
-                    AppendLineBreak();
-                    AppendLastString();
-                    break;
-
-                case "\\\"":
-                    AppendLineBreak();
-                    AppendLastString();
-                    break;
-
-                case "T*":
-                case "Td":
-                case "TD":
-                    AppendLineBreak();
-                    break;
-
-                case "BT":
-                    if (output_.Length > 0 &&
-                        output_[^1] != '\n')
-                    {
-                        AppendLineBreak();
-                    }
-                    break;
-            }
-
-            operands_.Clear();
-        }
-
-        private void AppendLastString()
-        {
-            var value = operands_.LastOrDefault() as StringOperand;
-            if (value != null)
-            {
-                output_.Append(DecodePdfString(value.Data));
-            }
-        }
-
-        private void AppendLastArray()
-        {
-            var value = operands_.LastOrDefault() as ArrayOperand;
-            if (value == null)
-            {
-                return;
-            }
-
-            foreach (var item in value.Items)
-            {
-                if (item is StringOperand text)
-                {
-                    output_.Append(DecodePdfString(text.Data));
-                }
-                else if (item is NumberOperand number && number.Value < -180)
-                {
-                    output_.Append(' ');
-                }
-            }
-        }
-
-        private void AppendLineBreak()
-        {
-            if (output_.Length == 0 || output_[^1] == '\n')
-            {
-                return;
-            }
-
-            output_.AppendLine();
-        }
-
-        private List<Operand> ReadArray()
-        {
-            position_++;
-            var result = new List<Operand>();
-
-            while (true)
-            {
-                SkipWhiteSpaceAndComments();
-
-                if (position_ >= data_.Length)
-                {
-                    throw new InvalidDataException("Незакрытый массив в PDF content stream.");
-                }
-
-                var value = data_[position_];
-
-                if (value == (byte)']')
-                {
-                    position_++;
-                    return result;
-                }
-
-                if (value == (byte)'(')
-                {
-                    result.Add(new StringOperand(ReadLiteralString()));
-                    continue;
-                }
-
-                if (value == (byte)'<')
-                {
-                    result.Add(new StringOperand(ReadHexString()));
-                    continue;
-                }
-
-                if (IsNumberStart(value))
-                {
-                    result.Add(new NumberOperand(ReadNumber()));
-                    continue;
-                }
-
-                ReadToken();
-                result.Add(new OtherOperand());
-            }
-        }
-
-        private byte[] ReadLiteralString()
-        {
-            position_++;
-            var result = new List<byte>();
-            var depth = 1;
-
-            while (position_ < data_.Length)
-            {
-                var value = data_[position_++];
-
-                if (value == (byte)'\\')
-                {
-                    if (position_ >= data_.Length)
-                    {
-                        break;
-                    }
-
-                    var escaped = data_[position_++];
-
-                    switch (escaped)
-                    {
-                        case (byte)'n': result.Add((byte)'\n'); break;
-                        case (byte)'r': result.Add((byte)'\r'); break;
-                        case (byte)'t': result.Add((byte)'\t'); break;
-                        case (byte)'b': result.Add((byte)'\b'); break;
-                        case (byte)'f': result.Add((byte)'\f'); break;
-                        case (byte)'(':
-                        case (byte)')':
-                        case (byte)'\\':
-                            result.Add(escaped);
-                            break;
-                        case (byte)'\r':
-                            if (position_ < data_.Length &&
-                                data_[position_] == (byte)'\n')
-                            {
-                                position_++;
-                            }
-                            break;
-                        case (byte)'\n':
-                            break;
-                        default:
-                            if (escaped is >= (byte)'0' and <= (byte)'7')
-                            {
-                                var octal = escaped - (byte)'0';
-                                var count = 1;
-
-                                while (count < 3 &&
-                                       position_ < data_.Length &&
-                                       data_[position_] is >= (byte)'0' and <= (byte)'7')
-                                {
-                                    octal = octal * 8 + data_[position_] - (byte)'0';
-                                    position_++;
-                                    count++;
-                                }
-
-                                result.Add((byte)octal);
-                            }
-                            else
-                            {
-                                result.Add(escaped);
-                            }
-                            break;
-                    }
-
-                    continue;
-                }
-
-                if (value == (byte)'(')
-                {
-                    depth++;
-                    result.Add(value);
-                    continue;
-                }
-
-                if (value == (byte)')')
-                {
-                    depth--;
-                    if (depth == 0)
-                    {
-                        return result.ToArray();
-                    }
-
-                    result.Add(value);
-                    continue;
-                }
-
-                result.Add(value);
-            }
-
-            throw new InvalidDataException("Незакрытая PDF string в content stream.");
-        }
-
-        private byte[] ReadHexString()
-        {
-            position_++;
-            var nibbles = new List<int>();
-
-            while (position_ < data_.Length)
-            {
-                var value = data_[position_++];
-
-                if (value == (byte)'>')
-                {
-                    if ((nibbles.Count & 1) != 0)
-                    {
-                        nibbles.Add(0);
-                    }
-
-                    var result = new byte[nibbles.Count / 2];
-
-                    for (var index = 0; index < result.Length; index++)
-                    {
-                        result[index] = (byte)((nibbles[index * 2] << 4) |
-                                               nibbles[index * 2 + 1]);
-                    }
-
-                    return result;
-                }
-
-                if (IsWhiteSpace(value))
-                {
-                    continue;
-                }
-
-                nibbles.Add(ReadHexNibble(value));
-            }
-
-            throw new InvalidDataException("Незакрытая PDF hex string в content stream.");
-        }
-
-        private double ReadNumber()
-        {
-            var start = position_;
-
-            if (data_[position_] is (byte)'+' or (byte)'-')
-            {
-                position_++;
-            }
-
-            while (position_ < data_.Length &&
-                   (data_[position_] is >= (byte)'0' and <= (byte)'9' ||
-                    data_[position_] == (byte)'.'))
-            {
-                position_++;
-            }
-
-            var token = Encoding.ASCII.GetString(
-                data_,
-                start,
-                position_ - start);
-
-            return double.Parse(
-                token,
-                NumberStyles.Float,
-                CultureInfo.InvariantCulture);
-        }
-
-        private string ReadName()
-        {
-            position_++;
-            var start = position_;
-
-            while (position_ < data_.Length &&
-                   !IsWhiteSpace(data_[position_]) &&
-                   !IsDelimiter(data_[position_]))
-            {
-                position_++;
-            }
-
-            return Encoding.ASCII.GetString(
-                data_,
-                start,
-                position_ - start);
-        }
-
-        private string ReadToken()
-        {
-            SkipWhiteSpaceAndComments();
-            var start = position_;
-
-            if (data_[position_] is (byte)'\'' or (byte)'"')
-            {
-                position_++;
-                return ((char)data_[start]).ToString();
-            }
-
-            while (position_ < data_.Length &&
-                   !IsWhiteSpace(data_[position_]) &&
-                   !IsDelimiter(data_[position_]))
-            {
-                position_++;
-            }
-
-            if (position_ == start)
-            {
-                position_++;
-                return ((char)data_[start]).ToString();
-            }
-
-            return Encoding.ASCII.GetString(
-                data_,
-                start,
-                position_ - start);
-        }
-
-        private void SkipDictionary()
-        {
-            position_ += 2;
-            var depth = 1;
-
-            while (position_ < data_.Length && depth > 0)
-            {
-                if (position_ + 1 < data_.Length &&
-                    data_[position_] == (byte)'<' &&
-                    data_[position_ + 1] == (byte)'<')
-                {
-                    depth++;
-                    position_ += 2;
-                    continue;
-                }
-
-                if (position_ + 1 < data_.Length &&
-                    data_[position_] == (byte)'>' &&
-                    data_[position_ + 1] == (byte)'>')
-                {
-                    depth--;
-                    position_ += 2;
-                    continue;
-                }
-
-                position_++;
-            }
-        }
-
-        private void SkipWhiteSpaceAndComments()
-        {
-            while (position_ < data_.Length)
-            {
-                if (IsWhiteSpace(data_[position_]))
-                {
-                    position_++;
-                    continue;
-                }
-
-                if (data_[position_] == (byte)'%')
-                {
-                    while (position_ < data_.Length &&
-                           data_[position_] is not (byte)'\r' and not (byte)'\n')
-                    {
-                        position_++;
-                    }
-
-                    continue;
-                }
-
-                break;
-            }
-        }
-
-        private void SelectFont()
-        {
-            var font = operands_
-                .OfType<NameOperand>()
-                .LastOrDefault();
-
-            currentFontDecoder_ =
-                font != null &&
-                fontDecoders_.TryGetValue(font.Name, out var decoder)
-                    ? decoder
-                    : null;
-        }
-
-        private string DecodePdfString(byte[] data)
-        {
-            return currentFontDecoder_?.Decode(data)
-                   ?? PdfFontDecoder.DecodeFallback(data);
-        }
-
-        private static string NormalizeOutput(string value)
-        {
-            var lines = value
-                .Replace("\r\n", "\n")
-                .Replace('\r', '\n')
-                .Split('\n')
-                .Select(line => line.Trim())
-                .Where(line => line.Length > 0)
-                .ToArray();
-
-            return string.Join(Environment.NewLine, lines);
-        }
-
-        private static bool IsNumberStart(byte value)
-        {
-            return value is >= (byte)'0' and <= (byte)'9' or
-                   (byte)'+' or (byte)'-' or (byte)'.';
-        }
-
-        private static bool IsWhiteSpace(byte value)
-        {
-            return value is 0x00 or 0x09 or 0x0A or 0x0C or 0x0D or 0x20;
-        }
-
-        private static bool IsDelimiter(byte value)
-        {
-            return value is (byte)'(' or (byte)')' or
-                   (byte)'<' or (byte)'>' or
-                   (byte)'[' or (byte)']' or
-                   (byte)'{' or (byte)'}' or
-                   (byte)'/' or (byte)'%';
-        }
-
-        private static int ReadHexNibble(byte value)
-        {
-            if (value is >= (byte)'0' and <= (byte)'9')
-            {
-                return value - (byte)'0';
-            }
-
-            if (value is >= (byte)'A' and <= (byte)'F')
-            {
-                return value - (byte)'A' + 10;
-            }
-
-            if (value is >= (byte)'a' and <= (byte)'f')
-            {
-                return value - (byte)'a' + 10;
-            }
-
-            throw new InvalidDataException("Некорректная hex-цифра в PDF.");
-        }
-
-        private abstract record Operand;
-        private sealed record StringOperand(byte[] Data) : Operand;
-        private sealed record ArrayOperand(IReadOnlyList<Operand> Items) : Operand;
-        private sealed record NumberOperand(double Value) : Operand;
-        private sealed record NameOperand(string Name) : Operand;
-        private sealed record OtherOperand : Operand;
-    }
-}

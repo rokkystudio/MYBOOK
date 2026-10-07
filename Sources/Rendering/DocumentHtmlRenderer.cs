@@ -113,19 +113,30 @@ a { color: var(--primary); }
     box-shadow: 0 8px 24px rgba(0,0,0,0.12);
     overflow: hidden;
 }
-.fixed-page-inner {
+.fixed-page-number {
+    padding: 8px 12px;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 0.74rem;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+}
+.fixed-page-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: white;
+}
+.fixed-page-svg text {
+    fill: #111;
+    font-family: "Times New Roman", serif;
+}
+.fixed-page-fallback {
     width: 100%;
     aspect-ratio: var(--page-ratio);
     padding: 5.5%;
     overflow: auto;
     background: white;
     color: #111;
-}
-.fixed-page-number {
-    margin: 0 0 12px;
-    font-family: "Segoe UI", Arial, sans-serif;
-    font-size: 0.74rem;
-    color: #666;
 }
 .fixed-page-text {
     margin: 0;
@@ -227,21 +238,51 @@ a { color: var(--primary); }
     {
         var width = Math.Max(page.WidthPoints, 1.0);
         var height = Math.Max(page.HeightPoints, 1.0);
-        var ratio = (width / height).ToString(
-            "0.######",
-            CultureInfo.InvariantCulture);
 
-        html.Append("""<section class="fixed-page"><div class="fixed-page-inner" style="--page-ratio:""")
-            .Append(ratio)
-            .AppendLine("\">");
-
+        html.AppendLine("""<section class="fixed-page">""");
         html.Append("""<div class="fixed-page-number">Page """)
             .Append(page.PageNumber)
             .AppendLine("</div>");
 
-        html.Append("""<pre class="fixed-page-text">""")
-            .Append(WebUtility.HtmlEncode(page.Text))
-            .AppendLine("</pre></div></section>");
+        if (page.TextRuns.Count > 0)
+        {
+            html.Append("""<svg class="fixed-page-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 """)
+                .Append(FormatNumber(width))
+                .Append(' ')
+                .Append(FormatNumber(height))
+                .AppendLine("\" preserveAspectRatio=\"xMidYMin meet\">");
+
+            foreach (var run in page.TextRuns)
+            {
+                html.Append("<text xml:space=\"preserve\" x=\"")
+                    .Append(FormatNumber(run.XPoints))
+                    .Append("\" y=\"")
+                    .Append(FormatNumber(run.YPoints))
+                    .Append("\" font-size=\"")
+                    .Append(FormatNumber(run.FontSizePoints))
+                    .Append("\">")
+                    .Append(WebUtility.HtmlEncode(run.Text))
+                    .AppendLine("</text>");
+            }
+
+            html.AppendLine("</svg>");
+        }
+        else
+        {
+            var ratio = (width / height).ToString(
+                "0.######",
+                CultureInfo.InvariantCulture);
+
+            html.Append("""<div class="fixed-page-fallback" style="--page-ratio:""")
+                .Append(ratio)
+                .AppendLine("\">");
+
+            html.Append("""<pre class="fixed-page-text">""")
+                .Append(WebUtility.HtmlEncode(page.Text))
+                .AppendLine("</pre></div>");
+        }
+
+        html.AppendLine("</section>");
     }
 
     private static void AppendInlines(StringBuilder html, IReadOnlyList<DocumentInline> inlines)
@@ -300,6 +341,13 @@ a { color: var(--primary); }
                 html.Append("</strong>");
             }
         }
+    }
+
+    private static string FormatNumber(double value)
+    {
+        return value.ToString(
+            "0.###",
+            CultureInfo.InvariantCulture);
     }
 
     private static void AppendCssVariable(StringBuilder html, string name, string value)

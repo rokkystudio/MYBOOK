@@ -49,6 +49,20 @@ internal sealed class DocumentFixedPage : DocumentBlock
     public required double HeightPoints { get; init; }
     public int RotationDegrees { get; init; }
     public string Text { get; init; } = string.Empty;
+    public IReadOnlyList<DocumentFixedTextRun> TextRuns { get; init; } =
+        Array.Empty<DocumentFixedTextRun>();
+}
+
+/// <summary>
+/// Представляет позиционированный текстовый фрагмент фиксированной страницы.
+/// Координаты задаются в typographic points от верхнего левого угла страницы.
+/// </summary>
+internal sealed class DocumentFixedTextRun
+{
+    public required string Text { get; init; }
+    public required double XPoints { get; init; }
+    public required double YPoints { get; init; }
+    public required double FontSizePoints { get; init; }
 }
 
 /// <summary>

@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.12
+Текущая версия: 1.0.13
 
 ## Архитектура
 
@@ -105,12 +105,13 @@
 - [x] MediaBox/CropBox/Rotate.
 - [x] Content stream tokenization.
 - [ ] Graphics state.
-- [ ] Text operators и позиционирование. Базовые `Tj`, `TJ`, quote operators, `T*`, `Td`, `TD` уже читаются; геометрическое позиционирование ещё не реализовано.
+- [x] Text operators и позиционирование: `Tm`, `Td`, `TD`, `T*`, `Tf`, `Tc`, `Tw`, `Tz`, `Ts`, `Tj`, `TJ` и quote operators формируют позиционированные text runs.
 - [x] Font resources и ToUnicode CMap для текстового слоя.
+- [ ] Точные glyph widths/advance из `/Widths`, `/FirstChar` и CID width tables вместо оценочного advance между text runs.
 - [ ] Встроенные изображения.
 - [ ] Paths/fills/strokes.
 - [x] Постраничная модель MYBOOK.
-- [ ] HTML/SVG/canvas renderer фиксированной страницы. Базовый HTML-лист уже есть; точный геометрический renderer ещё не реализован.
+- [x] SVG renderer фиксированной страницы для геометрического текстового слоя через исходные PDF points и `viewBox`.
 - [ ] Ссылки и outlines.
 - [ ] Шифрование PDF — отдельный этап.
 

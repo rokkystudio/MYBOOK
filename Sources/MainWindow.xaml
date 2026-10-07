@@ -27,7 +27,7 @@
                              Grid.Row="0"
                              TitleText="MYBOOK"
                              SubtitleText="Document Reader"
-                             VersionText="1.0.12"
+                             VersionText="1.0.13"
                              ShowIcon="True"
                              ShowLanguageButton="False"
                              ShowThemeButton="False"
