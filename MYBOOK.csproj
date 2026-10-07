@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net10.0-windows</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UseWPF>true</UseWPF>
+        <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+        <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+        <Version>1.0.12</Version>
+        <AssemblyVersion>1.0.12.0</AssemblyVersion>
+        <FileVersion>1.0.12.0</FileVersion>
+        <InformationalVersion>1.0.12</InformationalVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="..\SHARED\FlagsPack\CountryFlags.cs"
+                 Link="Shared\FlagsPack\CountryFlags.cs" />
+        <Compile Include="..\SHARED\NeoUI\NeoThemePalette.cs"
+                 Link="Shared\NeoUI\NeoThemePalette.cs" />
+        <Compile Include="..\SHARED\NeoUI\NeoAssetPaths.cs"
+                 Link="Shared\NeoUI\NeoAssetPaths.cs" />
+        <Compile Include="..\SHARED\NeoUI\NeoAssetService.cs"
+                 Link="Shared\NeoUI\NeoAssetService.cs" />
+        <Compile Include="..\SHARED\NeoUI\NeoContextMenu.cs"
+                 Link="Shared\NeoUI\NeoContextMenu.cs" />
+        <Compile Include="..\SHARED\NeoUI\NeoLanguageMenuBuilder.cs"
+                 Link="Shared\NeoUI\NeoLanguageMenuBuilder.cs" />
+        <Compile Include="..\SHARED\NeoUI\NeoTitleBar.xaml.cs"
+                 Link="Shared\NeoUI\NeoTitleBar.xaml.cs">
+            <DependentUpon>NeoTitleBar.xaml</DependentUpon>
+        </Compile>
+
+        <Page Include="..\SHARED\NeoUI\NeoTitleBar.xaml"
+              Link="Shared\NeoUI\NeoTitleBar.xaml" />
+        <Page Include="..\SHARED\NeoUI\NeoMenuStyles.xaml"
+              Link="Shared\NeoUI\NeoMenuStyles.xaml" />
+        <Page Include="..\SHARED\NeoUI\NeoToolBarStyles.xaml"
+              Link="Shared\NeoUI\NeoToolBarStyles.xaml" />
+        <Page Include="..\SHARED\NeoUI\NeoWindowStyles.xaml"
+              Link="Shared\NeoUI\NeoWindowStyles.xaml" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ApplicationDefinition Include="Sources\App.xaml" />
+
+        <Resource Include="Resources\app.ico" />
+
+        <Resource Include="..\SHARED\FlagsPack\Assets\**\*.png">
+            <Link>Shared\FlagsPack\Assets\%(Filename)%(Extension)</Link>
+        </Resource>
+        <Resource Include="..\SHARED\NeoUI\Assets\**\*.png">
+            <Link>Shared\NeoUI\Assets\%(Filename)%(Extension)</Link>
+        </Resource>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Markdig"
+                          Version="1.4.0" />
+        <PackageReference Include="Microsoft.Web.WebView2"
+                          Version="1.0.4258.31" />
+    </ItemGroup>
+
+</Project>

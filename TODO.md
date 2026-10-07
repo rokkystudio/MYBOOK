@@ -1,0 +1,172 @@
+# MYBOOK TODO
+
+Текущая версия: 1.0.12
+
+## Архитектура
+
+- [x] Единая нейтральная модель документа `DocumentModel`.
+- [x] Единый HTML/WebView2 renderer для потоковых документов.
+- [x] Разнести readers по `Sources/Formats/<Format>`.
+- [x] Расширить `DocumentModel` моделью фиксированной страницы для PDF/DjVu.
+- [ ] Добавить единый реестр поддерживаемых форматов вместо дублирования списков в MainWindow, Settings и FileAssociationService.
+- [ ] Добавить набор regression-тестов для readers без запуска GUI.
+- [ ] Добавить диагностический режим parser trace для сложных повреждённых документов.
+
+## FB2
+
+- [x] Метаданные, основной текст, emphasis, superscript.
+- [x] Binary-обложка.
+- [ ] Ссылки и внутренние якоря.
+- [ ] Сноски и notes body.
+- [ ] Встроенные изображения внутри текста.
+- [ ] Таблицы и прочие редко используемые FB2-элементы.
+- [ ] Корректная поддержка нескольких body.
+
+## EPUB
+
+- [x] ZIP-контейнер, container.xml, OPF manifest/spine.
+- [x] Метаданные, XHTML-главы, базовая обложка.
+- [ ] Корректная обработка относительных ссылок между главами.
+- [ ] CSS из EPUB вместо потери авторских стилей.
+- [ ] Шрифты EPUB.
+- [ ] Все изображения и SVG-ресурсы.
+- [ ] EPUB navigation document / NCX.
+- [ ] Сноски, landmarks и page-list.
+- [ ] EPUB 2/3 compatibility tests.
+
+## DOCX
+
+- [x] Собственный ZIP/XML reader без DocumentFormat.OpenXml.
+- [x] Абзацы и базовые run-стили.
+- [ ] styles.xml и наследование стилей.
+- [ ] numbering.xml и списки.
+- [ ] relationships.
+- [ ] Изображения.
+- [ ] Таблицы.
+- [ ] Hyperlinks.
+- [ ] Headers/footers.
+- [ ] Footnotes/endnotes.
+- [ ] Sections и page breaks.
+- [ ] Embedded objects.
+
+## DOC
+
+- [x] Собственный CFB/OLE reader.
+- [x] FAT, MiniFAT, directory streams.
+- [x] FIB и CLX piece table.
+- [x] Основной текст и абзацы.
+- [x] RTF-документы с расширением `.doc` определяются по сигнатуре и открываются RTF reader.
+- [ ] CHP/PAP formatting runs.
+- [ ] Stylesheet.
+- [ ] Таблицы.
+- [ ] Изображения и OfficeArt.
+- [ ] Hyperlinks.
+- [ ] Headers/footers.
+- [ ] Footnotes/endnotes.
+- [ ] Sections.
+- [ ] Поля Word.
+- [ ] Дополнительные кодировки и charset/font mapping.
+- [ ] Старые версии Word Binary Format.
+
+## RTF
+
+- [x] Автономное чтение без внешнего офисного ПО.
+- [ ] Заменить WPF RTF parser собственным tokenizer/parser.
+- [ ] Таблицы.
+- [ ] Изображения.
+- [ ] Цвета и размеры шрифтов.
+- [ ] Стили абзацев.
+- [ ] Hyperlinks.
+- [ ] Unicode/codepage edge cases.
+
+## Markdown / TXT / HTML
+
+- [x] TXT.
+- [x] Markdown.
+- [x] HTML/HTM.
+- [ ] Локальные ресурсы HTML с безопасным разрешением относительных путей.
+- [ ] Настройки типографики для TXT/Markdown.
+- [ ] Решить, оставляем ли Markdig или заменяем собственным Markdown parser.
+
+## PDF
+
+- [x] Заголовок PDF и версия.
+- [x] Поиск `startxref`.
+- [x] Classic xref table.
+- [x] Trailer dictionary.
+- [x] Indirect objects.
+- [x] Dictionary/array/name/string/number parser.
+- [x] Stream objects.
+- [x] FlateDecode.
+- [x] XRef streams.
+- [x] Object streams.
+- [x] Incremental updates через `/Prev` и hybrid `/XRefStm`.
+- [x] Page tree.
+- [x] MediaBox/CropBox/Rotate.
+- [x] Content stream tokenization.
+- [ ] Graphics state.
+- [ ] Text operators и позиционирование. Базовые `Tj`, `TJ`, quote operators, `T*`, `Td`, `TD` уже читаются; геометрическое позиционирование ещё не реализовано.
+- [x] Font resources и ToUnicode CMap для текстового слоя.
+- [ ] Встроенные изображения.
+- [ ] Paths/fills/strokes.
+- [x] Постраничная модель MYBOOK.
+- [ ] HTML/SVG/canvas renderer фиксированной страницы. Базовый HTML-лист уже есть; точный геометрический renderer ещё не реализован.
+- [ ] Ссылки и outlines.
+- [ ] Шифрование PDF — отдельный этап.
+
+## DjVu
+
+- [ ] IFF/DjVu container.
+- [ ] FORM:DJVU / FORM:DJVM.
+- [ ] Directory/navigation.
+- [ ] Text layer.
+- [ ] INFO chunks.
+- [ ] JB2 decoder.
+- [ ] IW44 decoder.
+- [ ] Background/foreground composition.
+- [ ] Постраничный renderer.
+- [ ] Links/annotations.
+
+## Интерфейс
+
+- [x] NeoUI title bar с оконными кнопками.
+- [x] Отдельная toolbar-полоса.
+- [x] Открытие файла, язык, тема, Settings.
+- [x] Иконка приложения из `Resources/app.ico`.
+- [x] Запоминание последней папки открытия.
+- [ ] Оглавление/навигационная боковая панель.
+- [ ] Переход к странице/главе.
+- [ ] Поиск по документу.
+- [ ] Масштаб +/−/100%.
+- [ ] Настройка шрифта, размера, ширины текста и межстрочного интервала.
+- [ ] Полноэкранный режим чтения.
+- [ ] Последняя позиция чтения для каждого документа.
+- [ ] Недавние документы.
+- [ ] Закладки.
+- [ ] Режим одной/двух страниц для фиксированной верстки.
+- [ ] Горячие клавиши чтения и навигации.
+
+## Settings
+
+- [x] Вкладка файловых ассоциаций.
+- [x] FB2/EPUB/HTML/HTM/TXT/MD/RTF/DOC/DOCX/PDF.
+- [x] PDF после появления рабочего reader.
+- [ ] DjVu после появления рабочего reader.
+- [ ] Вкладка чтения/типографики.
+- [ ] Вкладка поведения приложения.
+- [ ] Настройки WebView2/безопасности локального HTML.
+
+## Тестовые книги
+
+- Корпус ручных regression-тестов: `C:\\FILES\\PROJECTS\\MYBOOK\\Books`.
+
+## Сборка и качество
+
+- [x] `Build/bin` и `Build/obj`.
+- [x] `Resources/app.ico` как единый источник иконки.
+- [ ] Release publish.
+- [ ] Single-file/self-contained стратегия.
+- [ ] Проверка наличия WebView2 Runtime и понятное сообщение.
+- [ ] Автоматические parser tests на открытых corpus-файлах.
+- [ ] Fuzz tests для бинарных readers DOC/PDF/DjVu.
+- [ ] Ограничения памяти/размера для недоверенных документов.

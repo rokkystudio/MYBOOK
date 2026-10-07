@@ -1,0 +1,127 @@
+<Window x:Class="MYBOOK.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:neo="clr-namespace:NeoUI"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="MYBOOK"
+        Style="{StaticResource NeoResizableWindowStyle}"
+        Width="900"
+        Height="720"
+        MinWidth="620"
+        MinHeight="420"
+        WindowStartupLocation="CenterScreen"
+        Background="Transparent"
+        Foreground="{DynamicResource TextBrush}"
+        Loaded="MainWindow_OnLoaded">
+    <Border BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+            Background="{DynamicResource BackgroundBrush}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <neo:NeoTitleBar x:Name="TitleBar"
+                             Grid.Row="0"
+                             TitleText="MYBOOK"
+                             SubtitleText="Document Reader"
+                             VersionText="1.0.12"
+                             ShowIcon="True"
+                             ShowLanguageButton="False"
+                             ShowThemeButton="False"
+                             ShowSettingsButton="False"
+                             ShowMinimizeButton="True"
+                             ShowMaximizeButton="True"
+                             ShowCloseButton="True"
+                             EnableDoubleClickMaximize="True"
+                             CloseClick="CloseButton_OnClick" />
+
+            <Border Grid.Row="1"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="8,5">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Left"
+                                Orientation="Horizontal">
+                        <Button x:Name="OpenButton"
+                                Style="{StaticResource NeoToolBarButtonStyle}"
+                                Click="OpenButton_OnClick">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="📂"
+                                           Margin="0,0,7,0"
+                                           VerticalAlignment="Center" />
+                                <TextBlock x:Name="OpenButtonText"
+                                           Text="Открыть"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <StackPanel DockPanel.Dock="Right"
+                                Orientation="Horizontal">
+                        <Button x:Name="SettingsButton"
+                                Style="{StaticResource NeoToolBarIconButtonStyle}"
+                                Click="SettingsButton_OnClick">
+                            <Image x:Name="SettingsIcon"
+                                   Width="20"
+                                   Height="20"
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="Fant" />
+                        </Button>
+
+                        <Separator Style="{StaticResource NeoToolBarSeparatorStyle}" />
+
+                        <Button x:Name="LanguageToolButton"
+                                Style="{StaticResource NeoToolBarIconButtonStyle}"
+                                Click="LanguageButton_OnClick">
+                            <Image x:Name="LanguageIcon"
+                                   Width="24"
+                                   Height="18"
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="Fant" />
+                        </Button>
+
+                        <Button x:Name="ThemeToolButton"
+                                Style="{StaticResource NeoToolBarIconButtonStyle}"
+                                Click="ThemeButton_OnClick">
+                            <Image x:Name="ThemeIcon"
+                                   Width="20"
+                                   Height="20"
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="Fant" />
+                        </Button>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <Grid Grid.Row="2">
+                <TextBlock x:Name="EmptyStateTextBlock"
+                           Margin="28"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontSize="18"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           Text="Open a supported document to start reading."
+                           TextAlignment="Center"
+                           TextWrapping="Wrap" />
+
+                <wv2:WebView2 x:Name="Reader"
+                              Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+    </Border>
+
+    <Window.InputBindings>
+        <KeyBinding Key="O"
+                    Modifiers="Control"
+                    Command="{x:Static ApplicationCommands.Open}" />
+    </Window.InputBindings>
+
+    <Window.CommandBindings>
+        <CommandBinding Command="{x:Static ApplicationCommands.Open}"
+                        Executed="OpenCommand_OnExecuted" />
+    </Window.CommandBindings>
+</Window>
