@@ -815,11 +815,142 @@ internal sealed class PdfDocumentReader
                 XPoints = x,
                 YPoints = y,
                 FontSizePoints = run.FontSize,
-                Opacity = run.Opacity
+                Opacity = run.Opacity,
+                ClipPaths = TransformClipPaths(
+                    run.Clips,
+                    box,
+                    rotation)
             });
         }
 
         return result;
+    }
+
+    private static IReadOnlyList<DocumentFixedClipPath> TransformClipPaths(
+        IReadOnlyList<PdfClipPlacement> clips,
+        PageBox box,
+        int rotation)
+    {
+        if (clips.Count == 0)
+        {
+            return Array.Empty<DocumentFixedClipPath>();
+        }
+
+        var result = new List<DocumentFixedClipPath>(clips.Count);
+
+        foreach (var clip in clips)
+        {
+            var data = BuildSvgPathData(
+                clip.Commands,
+                box,
+                rotation);
+
+            if (data.Length == 0)
+            {
+                continue;
+            }
+
+            result.Add(new DocumentFixedClipPath
+            {
+                PathData = data,
+                EvenOdd = clip.EvenOdd
+            });
+        }
+
+        return result;
+    }
+
+    private static string BuildSvgPathData(
+        IReadOnlyList<PdfPathCommand> commands,
+        PageBox box,
+        int rotation)
+    {
+        var data = new StringBuilder();
+
+        foreach (var command in commands)
+        {
+            switch (command.Kind)
+            {
+                case PdfPathCommandKind.Move:
+                {
+                    var point = TransformPagePoint(
+                        command.X1,
+                        command.Y1,
+                        box,
+                        rotation);
+
+                    AppendPathPoint(
+                        data,
+                        'M',
+                        point);
+                    break;
+                }
+
+                case PdfPathCommandKind.Line:
+                {
+                    var point = TransformPagePoint(
+                        command.X1,
+                        command.Y1,
+                        box,
+                        rotation);
+
+                    AppendPathPoint(
+                        data,
+                        'L',
+                        point);
+                    break;
+                }
+
+                case PdfPathCommandKind.Cubic:
+                {
+                    var p1 = TransformPagePoint(
+                        command.X1,
+                        command.Y1,
+                        box,
+                        rotation);
+
+                    var p2 = TransformPagePoint(
+                        command.X2,
+                        command.Y2,
+                        box,
+                        rotation);
+
+                    var p3 = TransformPagePoint(
+                        command.X3,
+                        command.Y3,
+                        box,
+                        rotation);
+
+                    if (data.Length > 0)
+                    {
+                        data.Append(' ');
+                    }
+
+                    data.Append("C ")
+                        .Append(FormatPdfNumber(p1.X))
+                        .Append(' ')
+                        .Append(FormatPdfNumber(p1.Y))
+                        .Append(' ')
+                        .Append(FormatPdfNumber(p2.X))
+                        .Append(' ')
+                        .Append(FormatPdfNumber(p2.Y))
+                        .Append(' ')
+                        .Append(FormatPdfNumber(p3.X))
+                        .Append(' ')
+                        .Append(FormatPdfNumber(p3.Y));
+                    break;
+                }
+
+                case PdfPathCommandKind.Close:
+                    if (data.Length > 0)
+                    {
+                        data.Append(" Z");
+                    }
+                    break;
+            }
+        }
+
+        return data.ToString();
     }
 
     private static IReadOnlyList<DocumentFixedPathRun> TransformPathRuns(
@@ -958,6 +1089,10 @@ internal sealed class PdfDocumentReader
                 StrokeDashOffset = path.DashPhase,
                 FillOpacity = path.FillAlpha,
                 StrokeOpacity = path.StrokeAlpha,
+                ClipPaths = TransformClipPaths(
+                    path.Clips,
+                    box,
+                    rotation),
                 EvenOddFill = path.EvenOddFill
             });
         }
@@ -1047,7 +1182,11 @@ internal sealed class PdfDocumentReader
                 TransformD = bottomLeft.Y - topLeft.Y,
                 TransformE = topLeft.X,
                 TransformF = topLeft.Y,
-                Opacity = image.Opacity
+                Opacity = image.Opacity,
+                ClipPaths = TransformClipPaths(
+                    image.Clips,
+                    box,
+                    rotation)
             });
         }
 

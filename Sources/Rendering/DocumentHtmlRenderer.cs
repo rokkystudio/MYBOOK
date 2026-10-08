@@ -252,8 +252,17 @@ a { color: var(--primary); }
                 .Append(FormatNumber(height))
                 .AppendLine("\" preserveAspectRatio=\"xMidYMin meet\">");
 
+            var clipCounter = 0;
+
             foreach (var pathRun in page.PathRuns)
             {
+                var clipIds = AppendClipDefinitions(
+                    html,
+                    page.PageNumber,
+                    ref clipCounter,
+                    pathRun.ClipPaths);
+
+                AppendClipGroupsStart(html, clipIds);
                 html.Append("<path d=\"")
                     .Append(WebUtility.HtmlEncode(pathRun.PathData))
                     .Append("\" fill=\"")
@@ -301,10 +310,18 @@ a { color: var(--primary); }
                 }
 
                 html.AppendLine(" />");
+                AppendClipGroupsEnd(html, clipIds.Count);
             }
 
             foreach (var image in page.ImageRuns)
             {
+                var clipIds = AppendClipDefinitions(
+                    html,
+                    page.PageNumber,
+                    ref clipCounter,
+                    image.ClipPaths);
+
+                AppendClipGroupsStart(html, clipIds);
                 html.Append("<image x=\"0\" y=\"0\" width=\"1\" height=\"1\" preserveAspectRatio=\"none\" href=\"data:")
                     .Append(WebUtility.HtmlEncode(image.ContentType))
                     .Append(";base64,")
@@ -324,10 +341,19 @@ a { color: var(--primary); }
                     .Append(")\" opacity=\"")
                     .Append(FormatNumber(image.Opacity))
                     .AppendLine("\" />");
+
+                AppendClipGroupsEnd(html, clipIds.Count);
             }
 
             foreach (var run in page.TextRuns)
             {
+                var clipIds = AppendClipDefinitions(
+                    html,
+                    page.PageNumber,
+                    ref clipCounter,
+                    run.ClipPaths);
+
+                AppendClipGroupsStart(html, clipIds);
                 html.Append("<text xml:space=\"preserve\" x=\"")
                     .Append(FormatNumber(run.XPoints))
                     .Append("\" y=\"")
@@ -339,6 +365,8 @@ a { color: var(--primary); }
                     .Append("\">")
                     .Append(WebUtility.HtmlEncode(run.Text))
                     .AppendLine("</text>");
+
+                AppendClipGroupsEnd(html, clipIds.Count);
             }
 
             html.AppendLine("</svg>");
@@ -359,6 +387,64 @@ a { color: var(--primary); }
         }
 
         html.AppendLine("</section>");
+    }
+
+    private static IReadOnlyList<string> AppendClipDefinitions(
+        StringBuilder html,
+        int pageNumber,
+        ref int clipCounter,
+        IReadOnlyList<DocumentFixedClipPath> clips)
+    {
+        if (clips.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var ids = new string[clips.Count];
+
+        for (var index = 0; index < clips.Count; index++)
+        {
+            var clip = clips[index];
+            var id = $"clip-{pageNumber}-{clipCounter++}";
+            ids[index] = id;
+
+            html.Append("<defs><clipPath id=\"")
+                .Append(id)
+                .Append("\"><path d=\"")
+                .Append(WebUtility.HtmlEncode(clip.PathData))
+                .Append("\"");
+
+            if (clip.EvenOdd)
+            {
+                html.Append(" clip-rule=\"evenodd\"");
+            }
+
+            html.AppendLine(" /></clipPath></defs>");
+        }
+
+        return ids;
+    }
+
+    private static void AppendClipGroupsStart(
+        StringBuilder html,
+        IReadOnlyList<string> clipIds)
+    {
+        foreach (var id in clipIds)
+        {
+            html.Append("<g clip-path=\"url(#")
+                .Append(id)
+                .AppendLine(")\">");
+        }
+    }
+
+    private static void AppendClipGroupsEnd(
+        StringBuilder html,
+        int count)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            html.AppendLine("</g>");
+        }
     }
 
     private static void AppendInlines(StringBuilder html, IReadOnlyList<DocumentInline> inlines)

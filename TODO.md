@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.19
+Текущая версия: 1.0.20
 
 ## Архитектура
 
@@ -114,7 +114,8 @@
 - [ ] Встроенные изображения. Поддержаны Image XObject с `DCTDecode` (JPEG) и 8-bit `FlateDecode` для `DeviceGray`/`DeviceRGB`; остаются predictor, alpha/SMask, Indexed/CMYK и filter chains.
 - [x] Базовые paths/fills/strokes: `m/l/c/v/y/h/re`, `S/s/f/F/f*/B/B*/b/b*/n`, `w`, Gray/RGB/CMYK colors.
 - [x] Line cap/join, miter limit и dash pattern: `J`, `j`, `M`, `d` + SVG stroke styles.
-- [ ] Clipping paths и точный mixed paint order.
+- [x] Clipping paths: `W`, `W*`, последовательное пересечение clipping областей и восстановление через `q/Q`.
+- [ ] Точный mixed paint order между paths/images/text.
 - [x] Постраничная модель MYBOOK.
 - [x] SVG renderer фиксированной страницы для геометрического текстового слоя через исходные PDF points и `viewBox`.
 - [ ] Ссылки и outlines.

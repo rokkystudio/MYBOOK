@@ -22,6 +22,7 @@ internal sealed class PdfTextExtractionResult
 internal sealed class PdfPathPlacement
 {
     public required IReadOnlyList<PdfPathCommand> Commands { get; init; }
+    public required IReadOnlyList<PdfClipPlacement> Clips { get; init; }
     public required bool Fill { get; init; }
     public required bool Stroke { get; init; }
     public required bool EvenOddFill { get; init; }
@@ -35,6 +36,12 @@ internal sealed class PdfPathPlacement
     public required double DashPhase { get; init; }
     public required double FillAlpha { get; init; }
     public required double StrokeAlpha { get; init; }
+}
+
+internal sealed class PdfClipPlacement
+{
+    public required IReadOnlyList<PdfPathCommand> Commands { get; init; }
+    public required bool EvenOdd { get; init; }
 }
 
 internal enum PdfPathCommandKind
@@ -62,6 +69,7 @@ internal sealed class PdfPathCommand
 internal sealed class PdfImagePlacement
 {
     public required PdfImageResource Resource { get; init; }
+    public required IReadOnlyList<PdfClipPlacement> Clips { get; init; }
     public required double A { get; init; }
     public required double B { get; init; }
     public required double C { get; init; }
@@ -77,6 +85,7 @@ internal sealed class PdfImagePlacement
 internal sealed class PdfTextRun
 {
     public required string Text { get; init; }
+    public required IReadOnlyList<PdfClipPlacement> Clips { get; init; }
     public required double X { get; init; }
     public required double Y { get; init; }
     public required double FontSize { get; init; }
@@ -85,7 +94,7 @@ internal sealed class PdfTextRun
 
 /// <summary>
 /// Интерпретирует PDF content stream для текста, Image XObject и vector paths.
-/// Поддерживает graphics state `q/Q/cm/gs`, `Do`, path construction/painting,
+/// Поддерживает graphics state `q/Q/cm/gs`, clipping `W/W*`, `Do`, path construction/painting,
 /// colors, line width/cap/join/miter/dash, постоянную alpha-прозрачность,
 /// text/line matrices, font state и позиционированные Tj/TJ-фрагменты.
 /// </summary>
@@ -119,6 +128,7 @@ internal static class PdfTextExtractor
         private readonly List<PdfImagePlacement> images_ = new();
         private readonly List<PdfPathPlacement> paths_ = new();
         private readonly List<PdfPathCommand> currentPath_ = new();
+        private readonly List<PdfClipPlacement> activeClips_ = new();
         private readonly Stack<GraphicsState> graphicsStateStack_ = new();
 
         private int position_;
@@ -144,6 +154,8 @@ internal static class PdfTextExtractor
         private string fillColor_ = "#000000";
         private TextPoint? currentPathPoint_;
         private TextPoint? subpathStart_;
+        private bool pendingClip_;
+        private bool pendingClipEvenOdd_;
 
         public ContentParser(
             byte[] data,
@@ -317,6 +329,16 @@ internal static class PdfTextExtractor
                     RectanglePath();
                     break;
 
+                case "W":
+                    pendingClip_ = true;
+                    pendingClipEvenOdd_ = false;
+                    break;
+
+                case "W*":
+                    pendingClip_ = true;
+                    pendingClipEvenOdd_ = true;
+                    break;
+
                 case "S":
                     PaintPath(fill: false, stroke: true, evenOdd: false, close: false);
                     break;
@@ -351,6 +373,7 @@ internal static class PdfTextExtractor
                     break;
 
                 case "n":
+                    ApplyPendingClip();
                     ClearPath();
                     break;
 
@@ -754,6 +777,7 @@ internal static class PdfTextExtractor
                 paths_.Add(new PdfPathPlacement
                 {
                     Commands = currentPath_.ToArray(),
+                    Clips = activeClips_.ToArray(),
                     Fill = fill,
                     Stroke = stroke,
                     EvenOddFill = evenOdd,
@@ -779,7 +803,31 @@ internal static class PdfTextExtractor
                 });
             }
 
+            ApplyPendingClip();
             ClearPath();
+        }
+
+        private void ApplyPendingClip()
+        {
+            if (!pendingClip_)
+            {
+                return;
+            }
+
+            if (currentPath_.Count == 0)
+            {
+                throw new InvalidDataException(
+                    "PDF W/W* используется без текущего path.");
+            }
+
+            activeClips_.Add(new PdfClipPlacement
+            {
+                Commands = currentPath_.ToArray(),
+                EvenOdd = pendingClipEvenOdd_
+            });
+
+            pendingClip_ = false;
+            pendingClipEvenOdd_ = false;
         }
 
         private void ClearPath()
@@ -873,7 +921,8 @@ internal static class PdfTextExtractor
                 strokeAlpha_,
                 fillAlpha_,
                 strokeColor_,
-                fillColor_));
+                fillColor_,
+                activeClips_.ToArray()));
         }
 
         private void RestoreGraphicsState()
@@ -904,6 +953,8 @@ internal static class PdfTextExtractor
             fillAlpha_ = state.FillAlpha;
             strokeColor_ = state.StrokeColor;
             fillColor_ = state.FillColor;
+            activeClips_.Clear();
+            activeClips_.AddRange(state.Clips);
         }
 
         private void ConcatenateTransformation()
@@ -945,6 +996,7 @@ internal static class PdfTextExtractor
             images_.Add(new PdfImagePlacement
             {
                 Resource = image,
+                Clips = activeClips_.ToArray(),
                 A = currentTransformation_.A,
                 B = currentTransformation_.B,
                 C = currentTransformation_.C,
@@ -1116,6 +1168,7 @@ internal static class PdfTextExtractor
             runs_.Add(new PdfTextRun
             {
                 Text = text,
+                Clips = activeClips_.ToArray(),
                 X = origin.X,
                 Y = origin.Y,
                 FontSize = Math.Max(0.1, fontSize_ * matrixScale),
@@ -1593,7 +1646,8 @@ internal static class PdfTextExtractor
         double StrokeAlpha,
         double FillAlpha,
         string StrokeColor,
-        string FillColor);
+        string FillColor,
+        IReadOnlyList<PdfClipPlacement> Clips);
 
     private readonly record struct AffineMatrix(
         double A,

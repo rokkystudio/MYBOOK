@@ -57,12 +57,25 @@ internal sealed class DocumentFixedPage : DocumentBlock
         Array.Empty<DocumentFixedPathRun>();
 }
 
+
+/// <summary>
+/// Представляет один clipping path фиксированной страницы.
+/// Несколько элементов в списке применяются последовательно и образуют пересечение.
+/// </summary>
+internal sealed class DocumentFixedClipPath
+{
+    public required string PathData { get; init; }
+    public bool EvenOdd { get; init; }
+}
+
 /// <summary>
 /// Представляет SVG path фиксированной страницы с PDF fill/stroke стилями.
 /// </summary>
 internal sealed class DocumentFixedPathRun
 {
     public required string PathData { get; init; }
+    public IReadOnlyList<DocumentFixedClipPath> ClipPaths { get; init; } =
+        Array.Empty<DocumentFixedClipPath>();
     public string? Fill { get; init; }
     public string? Stroke { get; init; }
     public double StrokeWidthPoints { get; init; }
@@ -84,6 +97,8 @@ internal sealed class DocumentFixedPathRun
 internal sealed class DocumentFixedImageRun
 {
     public required byte[] Data { get; init; }
+    public IReadOnlyList<DocumentFixedClipPath> ClipPaths { get; init; } =
+        Array.Empty<DocumentFixedClipPath>();
     public required string ContentType { get; init; }
     public required double TransformA { get; init; }
     public required double TransformB { get; init; }
@@ -101,6 +116,8 @@ internal sealed class DocumentFixedImageRun
 internal sealed class DocumentFixedTextRun
 {
     public required string Text { get; init; }
+    public IReadOnlyList<DocumentFixedClipPath> ClipPaths { get; init; } =
+        Array.Empty<DocumentFixedClipPath>();
     public required double XPoints { get; init; }
     public required double YPoints { get; init; }
     public required double FontSizePoints { get; init; }
