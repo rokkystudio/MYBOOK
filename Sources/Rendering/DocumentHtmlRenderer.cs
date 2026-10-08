@@ -266,6 +266,32 @@ a { color: var(--primary); }
                 {
                     html.Append(" stroke-width=\"")
                         .Append(FormatNumber(pathRun.StrokeWidthPoints))
+                        .Append("\" stroke-linecap=\"")
+                        .Append(pathRun.StrokeLineCap)
+                        .Append("\" stroke-linejoin=\"")
+                        .Append(pathRun.StrokeLineJoin)
+                        .Append("\" stroke-miterlimit=\"")
+                        .Append(FormatNumber(pathRun.StrokeMiterLimit))
+                        .Append("\" stroke-opacity=\"")
+                        .Append(FormatNumber(pathRun.StrokeOpacity))
+                        .Append("\"");
+
+                    if (pathRun.StrokeDashArray.Count > 0)
+                    {
+                        html.Append(" stroke-dasharray=\"")
+                            .Append(string.Join(
+                                " ",
+                                pathRun.StrokeDashArray.Select(FormatNumber)))
+                            .Append("\" stroke-dashoffset=\"")
+                            .Append(FormatNumber(pathRun.StrokeDashOffset))
+                            .Append("\"");
+                    }
+                }
+
+                if (pathRun.Fill != null)
+                {
+                    html.Append(" fill-opacity=\"")
+                        .Append(FormatNumber(pathRun.FillOpacity))
                         .Append("\"");
                 }
 
@@ -295,7 +321,9 @@ a { color: var(--primary); }
                     .Append(FormatNumber(image.TransformE))
                     .Append(' ')
                     .Append(FormatNumber(image.TransformF))
-                    .AppendLine(")\" />");
+                    .Append(")\" opacity=\"")
+                    .Append(FormatNumber(image.Opacity))
+                    .AppendLine("\" />");
             }
 
             foreach (var run in page.TextRuns)
@@ -306,6 +334,8 @@ a { color: var(--primary); }
                     .Append(FormatNumber(run.YPoints))
                     .Append("\" font-size=\"")
                     .Append(FormatNumber(run.FontSizePoints))
+                    .Append("\" opacity=\"")
+                    .Append(FormatNumber(run.Opacity))
                     .Append("\">")
                     .Append(WebUtility.HtmlEncode(run.Text))
                     .AppendLine("</text>");

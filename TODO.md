@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.18
+Текущая версия: 1.0.19
 
 ## Архитектура
 
@@ -105,7 +105,7 @@
 - [x] MediaBox/CropBox/Rotate.
 - [x] Content stream tokenization.
 - [x] Базовый graphics state: `q`, `Q`, `cm`, стек CTM и text-state параметров.
-- [ ] ExtGState (`gs`), clipping state и остальные параметры graphics state.
+- [ ] ExtGState (`gs`) и graphics state. Поддержаны `/LW`, `/LC`, `/LJ`, `/ML`, `/D`, `/CA`, `/ca`; остаются blend mode, soft mask, overprint и clipping state.
 - [x] Text operators и позиционирование: `Tm`, `Td`, `TD`, `T*`, `Tf`, `Tc`, `Tw`, `Tz`, `Ts`, `Tj`, `TJ` и quote operators формируют позиционированные text runs.
 - [x] Font resources и ToUnicode CMap для текстового слоя.
 - [x] Точные glyph widths/advance для simple fonts через `/FirstChar` + `/Widths` и Type0 `Identity-H/Identity-V` через `/DW` + `/W`.
@@ -113,7 +113,8 @@
 - [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
 - [ ] Встроенные изображения. Поддержаны Image XObject с `DCTDecode` (JPEG) и 8-bit `FlateDecode` для `DeviceGray`/`DeviceRGB`; остаются predictor, alpha/SMask, Indexed/CMYK и filter chains.
 - [x] Базовые paths/fills/strokes: `m/l/c/v/y/h/re`, `S/s/f/F/f*/B/B*/b/b*/n`, `w`, Gray/RGB/CMYK colors.
-- [ ] Line cap/join, miter limit, dash pattern, clipping paths и точный mixed paint order.
+- [x] Line cap/join, miter limit и dash pattern: `J`, `j`, `M`, `d` + SVG stroke styles.
+- [ ] Clipping paths и точный mixed paint order.
 - [x] Постраничная модель MYBOOK.
 - [x] SVG renderer фиксированной страницы для геометрического текстового слоя через исходные PDF points и `viewBox`.
 - [ ] Ссылки и outlines.

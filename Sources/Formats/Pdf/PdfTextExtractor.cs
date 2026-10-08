@@ -28,6 +28,13 @@ internal sealed class PdfPathPlacement
     public required string FillColor { get; init; }
     public required string StrokeColor { get; init; }
     public required double StrokeWidth { get; init; }
+    public required int LineCap { get; init; }
+    public required int LineJoin { get; init; }
+    public required double MiterLimit { get; init; }
+    public required IReadOnlyList<double> DashArray { get; init; }
+    public required double DashPhase { get; init; }
+    public required double FillAlpha { get; init; }
+    public required double StrokeAlpha { get; init; }
 }
 
 internal enum PdfPathCommandKind
@@ -61,6 +68,7 @@ internal sealed class PdfImagePlacement
     public required double D { get; init; }
     public required double E { get; init; }
     public required double F { get; init; }
+    public required double Opacity { get; init; }
 }
 
 /// <summary>
@@ -72,12 +80,14 @@ internal sealed class PdfTextRun
     public required double X { get; init; }
     public required double Y { get; init; }
     public required double FontSize { get; init; }
+    public required double Opacity { get; init; }
 }
 
 /// <summary>
 /// Интерпретирует PDF content stream для текста, Image XObject и vector paths.
-/// Поддерживает graphics state `q/Q/cm`, `Do`, path construction/painting,
-/// text/line matrices, colors, line width, font state и позиционированные Tj/TJ-фрагменты.
+/// Поддерживает graphics state `q/Q/cm/gs`, `Do`, path construction/painting,
+/// colors, line width/cap/join/miter/dash, постоянную alpha-прозрачность,
+/// text/line matrices, font state и позиционированные Tj/TJ-фрагменты.
 /// </summary>
 internal static class PdfTextExtractor
 {
@@ -87,12 +97,14 @@ internal static class PdfTextExtractor
     public static PdfTextExtractionResult Extract(
         byte[] content,
         IReadOnlyDictionary<string, PdfFontResource> fontResources,
-        IReadOnlyDictionary<string, PdfImageResource> imageResources)
+        IReadOnlyDictionary<string, PdfImageResource> imageResources,
+        IReadOnlyDictionary<string, PdfExtGraphicsState> extGraphicsStates)
     {
         return new ContentParser(
             content,
             fontResources,
-            imageResources).Extract();
+            imageResources,
+            extGraphicsStates).Extract();
     }
 
     private sealed class ContentParser
@@ -100,6 +112,7 @@ internal static class PdfTextExtractor
         private readonly byte[] data_;
         private readonly IReadOnlyDictionary<string, PdfFontResource> fontResources_;
         private readonly IReadOnlyDictionary<string, PdfImageResource> imageResources_;
+        private readonly IReadOnlyDictionary<string, PdfExtGraphicsState> extGraphicsStates_;
         private readonly List<Operand> operands_ = new();
         private readonly StringBuilder output_ = new();
         private readonly List<PdfTextRun> runs_ = new();
@@ -120,6 +133,13 @@ internal static class PdfTextExtractor
         private double horizontalScale_ = 1;
         private double textRise_;
         private double lineWidth_ = 1;
+        private int lineCap_;
+        private int lineJoin_;
+        private double miterLimit_ = 10;
+        private IReadOnlyList<double> dashArray_ = Array.Empty<double>();
+        private double dashPhase_;
+        private double strokeAlpha_ = 1;
+        private double fillAlpha_ = 1;
         private string strokeColor_ = "#000000";
         private string fillColor_ = "#000000";
         private TextPoint? currentPathPoint_;
@@ -128,11 +148,13 @@ internal static class PdfTextExtractor
         public ContentParser(
             byte[] data,
             IReadOnlyDictionary<string, PdfFontResource> fontResources,
-            IReadOnlyDictionary<string, PdfImageResource> imageResources)
+            IReadOnlyDictionary<string, PdfImageResource> imageResources,
+            IReadOnlyDictionary<string, PdfExtGraphicsState> extGraphicsStates)
         {
             data_ = data;
             fontResources_ = fontResources;
             imageResources_ = imageResources;
+            extGraphicsStates_ = extGraphicsStates;
         }
 
         public PdfTextExtractionResult Extract()
@@ -221,6 +243,26 @@ internal static class PdfTextExtractor
 
                 case "w":
                     lineWidth_ = Math.Abs(GetLastNumber());
+                    break;
+
+                case "J":
+                    lineCap_ = ReadLineStyleInteger("J");
+                    break;
+
+                case "j":
+                    lineJoin_ = ReadLineStyleInteger("j");
+                    break;
+
+                case "M":
+                    miterLimit_ = Math.Max(1, GetLastNumber());
+                    break;
+
+                case "d":
+                    SetDashPattern();
+                    break;
+
+                case "gs":
+                    ApplyExtGraphicsState();
                     break;
 
                 case "G":
@@ -363,6 +405,104 @@ internal static class PdfTextExtractor
             }
 
             operands_.Clear();
+        }
+
+        private int ReadLineStyleInteger(string operatorName)
+        {
+            var value = GetLastNumber();
+
+            if (value != Math.Truncate(value) ||
+                value < 0 ||
+                value > 2)
+            {
+                throw new InvalidDataException(
+                    $"PDF operator {operatorName} ожидает целое значение 0..2.");
+            }
+
+            return (int)value;
+        }
+
+        private void SetDashPattern()
+        {
+            var array = operands_
+                .OfType<ArrayOperand>()
+                .LastOrDefault();
+
+            var phase = operands_
+                .OfType<NumberOperand>()
+                .LastOrDefault();
+
+            if (array == null || phase == null)
+            {
+                throw new InvalidDataException(
+                    "PDF d ожидает массив dash pattern и phase.");
+            }
+
+            var values = array.Items
+                .OfType<NumberOperand>()
+                .Select(item => item.Value)
+                .ToArray();
+
+            if (values.Length != array.Items.Count ||
+                values.Any(value => value < 0))
+            {
+                throw new InvalidDataException(
+                    "PDF dash pattern должен содержать только неотрицательные числа.");
+            }
+
+            dashArray_ = values;
+            dashPhase_ = phase.Value;
+        }
+
+        private void ApplyExtGraphicsState()
+        {
+            var name = operands_
+                .OfType<NameOperand>()
+                .LastOrDefault();
+
+            if (name == null ||
+                !extGraphicsStates_.TryGetValue(
+                    name.Name,
+                    out var state))
+            {
+                return;
+            }
+
+            if (state.LineWidth is { } lineWidth)
+            {
+                lineWidth_ = Math.Abs(lineWidth);
+            }
+
+            if (state.LineCap is { } lineCap)
+            {
+                lineCap_ = lineCap;
+            }
+
+            if (state.LineJoin is { } lineJoin)
+            {
+                lineJoin_ = lineJoin;
+            }
+
+            if (state.MiterLimit is { } miterLimit)
+            {
+                miterLimit_ = Math.Max(1, miterLimit);
+            }
+
+            if (state.DashArray != null)
+            {
+                dashArray_ = state.DashArray.ToArray();
+                dashPhase_ = state.DashPhase ?? 0;
+            }
+
+            if (state.StrokeAlpha is { } strokeAlpha)
+            {
+                strokeAlpha_ = Math.Clamp(strokeAlpha, 0, 1);
+            }
+
+            if (state.FillAlpha is { } fillAlpha)
+            {
+                fillAlpha_ = Math.Clamp(fillAlpha, 0, 1);
+            }
         }
 
         private void MovePath()
@@ -622,7 +762,20 @@ internal static class PdfTextExtractor
                     StrokeWidth = Math.Max(
                         0,
                         lineWidth_ *
-                        currentTransformation_.ApproximateScale())
+                        currentTransformation_.ApproximateScale()),
+                    LineCap = lineCap_,
+                    LineJoin = lineJoin_,
+                    MiterLimit = miterLimit_,
+                    DashArray = dashArray_
+                        .Select(value =>
+                            value *
+                            currentTransformation_.ApproximateScale())
+                        .ToArray(),
+                    DashPhase =
+                        dashPhase_ *
+                        currentTransformation_.ApproximateScale(),
+                    FillAlpha = fillAlpha_,
+                    StrokeAlpha = strokeAlpha_
                 });
             }
 
@@ -712,6 +865,13 @@ internal static class PdfTextExtractor
                 horizontalScale_,
                 textRise_,
                 lineWidth_,
+                lineCap_,
+                lineJoin_,
+                miterLimit_,
+                dashArray_.ToArray(),
+                dashPhase_,
+                strokeAlpha_,
+                fillAlpha_,
                 strokeColor_,
                 fillColor_));
         }
@@ -735,6 +895,13 @@ internal static class PdfTextExtractor
             horizontalScale_ = state.HorizontalScale;
             textRise_ = state.TextRise;
             lineWidth_ = state.LineWidth;
+            lineCap_ = state.LineCap;
+            lineJoin_ = state.LineJoin;
+            miterLimit_ = state.MiterLimit;
+            dashArray_ = state.DashArray.ToArray();
+            dashPhase_ = state.DashPhase;
+            strokeAlpha_ = state.StrokeAlpha;
+            fillAlpha_ = state.FillAlpha;
             strokeColor_ = state.StrokeColor;
             fillColor_ = state.FillColor;
         }
@@ -783,7 +950,8 @@ internal static class PdfTextExtractor
                 C = currentTransformation_.C,
                 D = currentTransformation_.D,
                 E = currentTransformation_.E,
-                F = currentTransformation_.F
+                F = currentTransformation_.F,
+                Opacity = fillAlpha_
             });
         }
 
@@ -950,7 +1118,8 @@ internal static class PdfTextExtractor
                 Text = text,
                 X = origin.X,
                 Y = origin.Y,
-                FontSize = Math.Max(0.1, fontSize_ * matrixScale)
+                FontSize = Math.Max(0.1, fontSize_ * matrixScale),
+                Opacity = fillAlpha_
             });
 
             output_.Append(text);
@@ -1416,6 +1585,13 @@ internal static class PdfTextExtractor
         double HorizontalScale,
         double TextRise,
         double LineWidth,
+        int LineCap,
+        int LineJoin,
+        double MiterLimit,
+        IReadOnlyList<double> DashArray,
+        double DashPhase,
+        double StrokeAlpha,
+        double FillAlpha,
         string StrokeColor,
         string FillColor);
 

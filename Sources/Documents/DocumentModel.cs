@@ -66,6 +66,14 @@ internal sealed class DocumentFixedPathRun
     public string? Fill { get; init; }
     public string? Stroke { get; init; }
     public double StrokeWidthPoints { get; init; }
+    public string StrokeLineCap { get; init; } = "butt";
+    public string StrokeLineJoin { get; init; } = "miter";
+    public double StrokeMiterLimit { get; init; } = 10;
+    public IReadOnlyList<double> StrokeDashArray { get; init; } =
+        Array.Empty<double>();
+    public double StrokeDashOffset { get; init; }
+    public double FillOpacity { get; init; } = 1;
+    public double StrokeOpacity { get; init; } = 1;
     public bool EvenOddFill { get; init; }
 }
 
@@ -83,6 +91,7 @@ internal sealed class DocumentFixedImageRun
     public required double TransformD { get; init; }
     public required double TransformE { get; init; }
     public required double TransformF { get; init; }
+    public double Opacity { get; init; } = 1;
 }
 
 /// <summary>
@@ -95,6 +104,7 @@ internal sealed class DocumentFixedTextRun
     public required double XPoints { get; init; }
     public required double YPoints { get; init; }
     public required double FontSizePoints { get; init; }
+    public double Opacity { get; init; } = 1;
 }
 
 /// <summary>

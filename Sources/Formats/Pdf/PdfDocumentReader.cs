@@ -323,6 +323,111 @@ internal sealed class PdfDocumentReader
             "PDF Image XObject с цепочкой filters пока не поддерживается.");
     }
 
+    private IReadOnlyDictionary<string, PdfExtGraphicsState> BuildExtGraphicsStates(
+        PdfDictionary? resources)
+    {
+        var result = new Dictionary<string, PdfExtGraphicsState>(
+            StringComparer.Ordinal);
+
+        if (resources == null ||
+            !resources.Items.TryGetValue(
+                "ExtGState",
+                out var stateObject))
+        {
+            return result;
+        }
+
+        var states = ResolveIfReference(stateObject) as PdfDictionary
+                     ?? throw new InvalidDataException(
+                         "PDF /Resources /ExtGState не является dictionary.");
+
+        foreach (var pair in states.Items)
+        {
+            var dictionary = ResolveIfReference(pair.Value) as PdfDictionary
+                             ?? throw new InvalidDataException(
+                                 $"PDF ExtGState /{pair.Key} не является dictionary.");
+
+            IReadOnlyList<double>? dashArray = null;
+            double? dashPhase = null;
+
+            if (dictionary.Items.TryGetValue(
+                    "D",
+                    out var dashObject))
+            {
+                var dashDefinition = ResolveIfReference(dashObject) as PdfArray
+                                     ?? throw new InvalidDataException(
+                                         $"PDF ExtGState /{pair.Key} /D не является массивом.");
+
+                if (dashDefinition.Items.Count != 2)
+                {
+                    throw new InvalidDataException(
+                        $"PDF ExtGState /{pair.Key} /D должен содержать pattern и phase.");
+                }
+
+                var pattern = ResolveIfReference(
+                    dashDefinition.Items[0]) as PdfArray
+                              ?? throw new InvalidDataException(
+                                  $"PDF ExtGState /{pair.Key} dash pattern не является массивом.");
+
+                dashArray = pattern.Items
+                    .Select(item => GetNumberValue(
+                        item,
+                        $"PDF ExtGState /{pair.Key} dash pattern"))
+                    .ToArray();
+
+                if (dashArray.Any(value => value < 0))
+                {
+                    throw new InvalidDataException(
+                        $"PDF ExtGState /{pair.Key} dash pattern содержит отрицательное значение.");
+                }
+
+                dashPhase = GetNumberValue(
+                    dashDefinition.Items[1],
+                    $"PDF ExtGState /{pair.Key} dash phase");
+            }
+
+            result[pair.Key] = new PdfExtGraphicsState
+            {
+                LineWidth = TryGetNumber(dictionary, "LW", out var lw)
+                    ? lw
+                    : null,
+                LineCap = TryGetInteger(dictionary, "LC", out var lc)
+                    ? ValidateLineStyle(lc, pair.Key, "LC")
+                    : null,
+                LineJoin = TryGetInteger(dictionary, "LJ", out var lj)
+                    ? ValidateLineStyle(lj, pair.Key, "LJ")
+                    : null,
+                MiterLimit = TryGetNumber(dictionary, "ML", out var ml)
+                    ? ml
+                    : null,
+                DashArray = dashArray,
+                DashPhase = dashPhase,
+                StrokeAlpha = TryGetNumber(dictionary, "CA", out var strokeAlpha)
+                    ? Math.Clamp(strokeAlpha, 0, 1)
+                    : null,
+                FillAlpha = TryGetNumber(dictionary, "ca", out var fillAlpha)
+                    ? Math.Clamp(fillAlpha, 0, 1)
+                    : null
+            };
+        }
+
+        return result;
+    }
+
+    private static int ValidateLineStyle(
+        int value,
+        string resourceName,
+        string key)
+    {
+        if (value is < 0 or > 2)
+        {
+            throw new InvalidDataException(
+                $"PDF ExtGState /{resourceName} /{key} должен быть 0..2.");
+        }
+
+        return value;
+    }
+
     private IReadOnlyDictionary<string, PdfFontResource> BuildFontResources(
         PdfDictionary? resources)
     {
@@ -709,7 +814,8 @@ internal sealed class PdfDocumentReader
                 Text = run.Text,
                 XPoints = x,
                 YPoints = y,
-                FontSizePoints = run.FontSize
+                FontSizePoints = run.FontSize,
+                Opacity = run.Opacity
             });
         }
 
@@ -833,6 +939,25 @@ internal sealed class PdfDocumentReader
                 StrokeWidthPoints = path.Stroke
                     ? path.StrokeWidth
                     : 0,
+                StrokeLineCap = path.LineCap switch
+                {
+                    0 => "butt",
+                    1 => "round",
+                    2 => "square",
+                    _ => "butt"
+                },
+                StrokeLineJoin = path.LineJoin switch
+                {
+                    0 => "miter",
+                    1 => "round",
+                    2 => "bevel",
+                    _ => "miter"
+                },
+                StrokeMiterLimit = path.MiterLimit,
+                StrokeDashArray = path.DashArray,
+                StrokeDashOffset = path.DashPhase,
+                FillOpacity = path.FillAlpha,
+                StrokeOpacity = path.StrokeAlpha,
                 EvenOddFill = path.EvenOddFill
             });
         }
@@ -921,7 +1046,8 @@ internal sealed class PdfDocumentReader
                 TransformC = bottomLeft.X - topLeft.X,
                 TransformD = bottomLeft.Y - topLeft.Y,
                 TransformE = topLeft.X,
-                TransformF = topLeft.Y
+                TransformF = topLeft.Y,
+                Opacity = image.Opacity
             });
         }
 
@@ -1007,6 +1133,7 @@ internal sealed class PdfDocumentReader
         var paths = new List<PdfPathPlacement>();
         var fontResources = BuildFontResources(resources);
         var imageResources = BuildImageResources(resources);
+        var extGraphicsStates = BuildExtGraphicsStates(resources);
 
         foreach (var stream in streams)
         {
@@ -1014,7 +1141,8 @@ internal sealed class PdfDocumentReader
             var extracted = PdfTextExtractor.Extract(
                 decoded,
                 fontResources,
-                imageResources);
+                imageResources,
+                extGraphicsStates);
 
             if (output.Length > 0 &&
                 !string.IsNullOrWhiteSpace(extracted.Text))
