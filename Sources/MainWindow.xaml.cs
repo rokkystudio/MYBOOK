@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using Rectangle = System.Windows.Shapes.Rectangle;
 using FlagsPack;
 using Microsoft.Win32;
 using MYBOOK.Documents;
@@ -26,7 +28,7 @@ namespace MYBOOK;
 /// <summary>
 /// Отображает главное окно MYBOOK, открывает поддерживаемые документы,
 /// преобразует их в нейтральную модель, рендерит через единый HTML/WebView2 слой
-/// и предоставляет боковую навигацию по `DocumentModel.Outlines`.
+/// и предоставляет боковую навигацию по оглавлению и фиксированным страницам.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -35,7 +37,8 @@ public partial class MainWindow : Window
     private readonly string? startupDocumentPath_;
     private bool readerInitialized_;
     private bool generatedDocumentOpen_;
-    private bool outlinePanelOpen_;
+    private bool navigationPanelOpen_;
+    private NavigationMode navigationMode_ = NavigationMode.Contents;
 
     /// <summary>
     /// Инициализирует окно, загружает общую иконку приложения,
@@ -114,9 +117,10 @@ public partial class MainWindow : Window
 
         OpenButtonText.Text = LocalizationService.Text("open");
         OpenButton.ToolTip = LocalizationService.Text("open");
-        OutlineButtonText.Text = LocalizationService.Text("contents");
-        OutlineHeaderText.Text = LocalizationService.Text("contents");
-        OutlineButton.ToolTip = LocalizationService.Text("tooltip_contents");
+        NavigationButtonText.Text = LocalizationService.Text("navigation");
+        NavigationButton.ToolTip = LocalizationService.Text("tooltip_navigation");
+        ContentsModeButtonText.Text = LocalizationService.Text("contents");
+        PagesModeButtonText.Text = LocalizationService.Text("pages");
         SettingsButton.ToolTip = LocalizationService.Text("settings");
         LanguageToolButton.ToolTip = LocalizationService.Text("tooltip_language");
         ThemeToolButton.ToolTip = LocalizationService.Text("tooltip_theme");
@@ -213,13 +217,13 @@ public partial class MainWindow : Window
             {
                 Reader.Source = new Uri(fullPath, UriKind.Absolute);
                 generatedDocumentOpen_ = false;
-                UpdateOutlinePanel(null);
+                UpdateNavigationPanel(null);
                 Title = Path.GetFileNameWithoutExtension(fullPath) + " — MYBOOK";
             }
             else
             {
                 var document = ReadDocument(fullPath, extension);
-                UpdateOutlinePanel(document);
+                UpdateNavigationPanel(document);
 
                 var html = DocumentHtmlRenderer.Render(document, settings_.Theme);
                 var htmlPath = GetReaderHtmlPath();
@@ -372,12 +376,13 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Перестраивает боковое оглавление для текущего документа
-    /// и синхронизирует доступность кнопки панели инструментов.
+    /// Перестраивает боковую панель навигации для текущего документа:
+    /// оглавление и виртуализированную плёнку фиксированных страниц.
     /// </summary>
-    private void UpdateOutlinePanel(DocumentModel? document)
+    private void UpdateNavigationPanel(DocumentModel? document)
     {
         OutlineTree.Items.Clear();
+        PagePreviewList.ItemsSource = null;
 
         if (document?.Outlines.Count > 0)
         {
@@ -387,12 +392,51 @@ public partial class MainWindow : Window
                 depth: 0);
         }
 
-        OutlineButton.IsEnabled =
-            OutlineTree.Items.Count > 0;
+        var fixedPages = document?.Blocks
+            .OfType<DocumentFixedPage>()
+            .Select(page => new PagePreviewItem(page))
+            .ToArray()
+            ?? Array.Empty<PagePreviewItem>();
 
-        SetOutlinePanelVisibility(
-            outlinePanelOpen_ &&
-            OutlineButton.IsEnabled);
+        if (fixedPages.Length > 0)
+        {
+            PagePreviewList.ItemsSource = fixedPages;
+        }
+
+        var hasContents = OutlineTree.Items.Count > 0;
+        var hasPages = fixedPages.Length > 0;
+
+        ContentsModeButton.Visibility = hasContents
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        PagesModeButton.Visibility = hasPages
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        NavigationButton.IsEnabled =
+            hasContents || hasPages;
+
+        if (!NavigationButton.IsEnabled)
+        {
+            SetNavigationPanelVisibility(false);
+            return;
+        }
+
+        if (navigationMode_ == NavigationMode.Contents &&
+            !hasContents)
+        {
+            navigationMode_ = NavigationMode.Pages;
+        }
+        else if (navigationMode_ == NavigationMode.Pages &&
+                 !hasPages)
+        {
+            navigationMode_ = NavigationMode.Contents;
+        }
+
+        SetNavigationMode(navigationMode_);
+        SetNavigationPanelVisibility(
+            navigationPanelOpen_);
     }
 
     /// <summary>
@@ -425,31 +469,245 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Показывает или скрывает боковую панель оглавления.
+    /// Показывает или скрывает общую боковую панель навигации.
     /// </summary>
-    private void SetOutlinePanelVisibility(bool visible)
+    private void SetNavigationPanelVisibility(bool visible)
     {
-        outlinePanelOpen_ =
+        navigationPanelOpen_ =
             visible &&
-            OutlineButton.IsEnabled;
+            NavigationButton.IsEnabled;
 
-        var visibility = outlinePanelOpen_
+        var visibility = navigationPanelOpen_
             ? Visibility.Visible
             : Visibility.Collapsed;
 
-        OutlinePanel.Visibility = visibility;
-        OutlineSplitter.Visibility = visibility;
+        NavigationPanel.Visibility = visibility;
+        NavigationSplitter.Visibility = visibility;
     }
 
     /// <summary>
-    /// Переключает видимость боковой панели оглавления.
+    /// Переключает видимость общей боковой панели навигации.
     /// </summary>
-    private void OutlineButton_OnClick(
+    private void NavigationButton_OnClick(
         object sender,
         RoutedEventArgs e)
     {
-        SetOutlinePanelVisibility(
-            !outlinePanelOpen_);
+        SetNavigationPanelVisibility(
+            !navigationPanelOpen_);
+    }
+
+    /// <summary>
+    /// Переключает содержимое боковой панели между оглавлением
+    /// и виртуализированной плёнкой фиксированных страниц.
+    /// </summary>
+    private void SetNavigationMode(NavigationMode mode)
+    {
+        navigationMode_ = mode;
+
+        OutlineTree.Visibility =
+            mode == NavigationMode.Contents
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+        PagePreviewList.Visibility =
+            mode == NavigationMode.Pages
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+        ContentsModeButtonText.FontWeight =
+            mode == NavigationMode.Contents
+                ? FontWeights.SemiBold
+                : FontWeights.Normal;
+
+        PagesModeButtonText.FontWeight =
+            mode == NavigationMode.Pages
+                ? FontWeights.SemiBold
+                : FontWeights.Normal;
+    }
+
+    /// <summary>
+    /// Показывает режим оглавления боковой панели.
+    /// </summary>
+    private void ContentsModeButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SetNavigationMode(
+            NavigationMode.Contents);
+    }
+
+    /// <summary>
+    /// Показывает режим виртуализированных превью страниц.
+    /// </summary>
+    private void PagesModeButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SetNavigationMode(
+            NavigationMode.Pages);
+    }
+
+    /// <summary>
+    /// Переходит к фиксированной странице, выбранной в плёнке превью.
+    /// </summary>
+    private async void PagePreviewList_OnSelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (PagePreviewList.SelectedItem is not PagePreviewItem item)
+        {
+            return;
+        }
+
+        try
+        {
+            await ScrollToPageAsync(
+                item.PageNumber);
+        }
+        catch (Exception error)
+        {
+            ShowOpenError(error);
+        }
+    }
+
+    /// <summary>
+    /// Строит облегчённый vector thumbnail только для реально созданного
+    /// виртуализированного элемента списка страниц.
+    /// </summary>
+    private void PagePreviewCanvas_OnLoaded(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not Canvas canvas ||
+            canvas.DataContext is not PagePreviewItem item ||
+            canvas.Children.Count > 0)
+        {
+            return;
+        }
+
+        PopulatePagePreview(
+            canvas,
+            item.Page);
+    }
+
+    /// <summary>
+    /// Освобождает визуалы thumbnail, когда виртуализированный элемент
+    /// покидает viewport и может быть переиспользован.
+    /// </summary>
+    private void PagePreviewCanvas_OnUnloaded(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is Canvas canvas)
+        {
+            canvas.Children.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Создаёт лёгкое структурное превью фиксированной страницы:
+    /// ограниченное число текстовых штрихов и блоков изображений
+    /// в исходной геометрии страницы.
+    /// </summary>
+    private static void PopulatePagePreview(
+        Canvas canvas,
+        DocumentFixedPage page)
+    {
+        foreach (var image in page.ImageRuns.Take(8))
+        {
+            var points = new[]
+            {
+                TransformPreviewPoint(image, 0, 0),
+                TransformPreviewPoint(image, 1, 0),
+                TransformPreviewPoint(image, 0, 1),
+                TransformPreviewPoint(image, 1, 1)
+            };
+
+            var left = points.Min(point => point.X);
+            var top = points.Min(point => point.Y);
+            var right = points.Max(point => point.X);
+            var bottom = points.Max(point => point.Y);
+
+            var rectangle = new Rectangle
+            {
+                Width = Math.Max(1, right - left),
+                Height = Math.Max(1, bottom - top),
+                Fill = Brushes.Gainsboro,
+                Stroke = Brushes.DarkGray,
+                StrokeThickness = 0.8,
+                Opacity = 0.8
+            };
+
+            Canvas.SetLeft(
+                rectangle,
+                left);
+
+            Canvas.SetTop(
+                rectangle,
+                top);
+
+            canvas.Children.Add(rectangle);
+        }
+
+        foreach (var run in page.TextRuns.Take(96))
+        {
+            if (string.IsNullOrWhiteSpace(run.Text))
+            {
+                continue;
+            }
+
+            var availableWidth = Math.Max(
+                1,
+                page.WidthPoints - run.XPoints);
+
+            var width = Math.Min(
+                availableWidth,
+                Math.Max(
+                    3,
+                    run.Text.Length *
+                    run.FontSizePoints *
+                    0.30));
+
+            var height = Math.Clamp(
+                run.FontSizePoints * 0.16,
+                0.8,
+                4);
+
+            var line = new Rectangle
+            {
+                Width = width,
+                Height = height,
+                Fill = Brushes.DimGray,
+                Opacity = 0.48
+            };
+
+            Canvas.SetLeft(
+                line,
+                Math.Max(0, run.XPoints));
+
+            Canvas.SetTop(
+                line,
+                Math.Max(
+                    0,
+                    run.YPoints -
+                    run.FontSizePoints * 0.72));
+
+            canvas.Children.Add(line);
+        }
+    }
+
+    private static Point TransformPreviewPoint(
+        DocumentFixedImageRun image,
+        double x,
+        double y)
+    {
+        return new Point(
+            image.TransformA * x +
+            image.TransformC * y +
+            image.TransformE,
+            image.TransformB * x +
+            image.TransformD * y +
+            image.TransformF);
     }
 
     /// <summary>
@@ -545,6 +803,42 @@ public partial class MainWindow : Window
         System.Windows.Input.ExecutedRoutedEventArgs e)
     {
         await ShowOpenDocumentDialogAsync();
+    }
+
+    /// <summary>
+    /// Режим содержимого боковой панели навигации.
+    /// </summary>
+    private enum NavigationMode
+    {
+        Contents,
+        Pages
+    }
+
+    /// <summary>
+    /// Лёгкая запись страницы для виртуализированной плёнки.
+    /// Хранит ссылку на уже разобранную фиксированную страницу,
+    /// а thumbnail строится только при появлении элемента в viewport.
+    /// </summary>
+    private sealed class PagePreviewItem
+    {
+        public PagePreviewItem(DocumentFixedPage page)
+        {
+            Page = page;
+        }
+
+        public DocumentFixedPage Page { get; }
+
+        public int PageNumber => Page.PageNumber;
+
+        public double PreviewWidth =>
+            Math.Max(
+                1,
+                Page.WidthPoints);
+
+        public double PreviewHeight =>
+            Math.Max(
+                1,
+                Page.HeightPoints);
     }
 
     /// <summary>
