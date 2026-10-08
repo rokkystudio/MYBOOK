@@ -281,15 +281,53 @@ internal sealed class PdfDocumentReader
                 $"PDF Image XObject /{resourceName} использует неподдерживаемый ColorSpace /{colorSpace.Value}.")
         };
 
-        if (stream.Dictionary.Items.ContainsKey("DecodeParms"))
-        {
-            throw new InvalidDataException(
-                $"PDF Image XObject /{resourceName} содержит /DecodeParms; predictor пока не поддерживается.");
-        }
-
         var pixels = filter == null
             ? stream.Data
             : DecodeStream(stream);
+
+        if (filter != null)
+        {
+            var decodeParameters = ReadSingleDecodeParameters(
+                stream.Dictionary);
+
+            if (decodeParameters != null)
+            {
+                var predictor = TryGetInteger(
+                    decodeParameters,
+                    "Predictor",
+                    out var predictorValue)
+                    ? predictorValue
+                    : 1;
+
+                var predictorColors = TryGetInteger(
+                    decodeParameters,
+                    "Colors",
+                    out var colorsValue)
+                    ? colorsValue
+                    : 1;
+
+                var predictorBits = TryGetInteger(
+                    decodeParameters,
+                    "BitsPerComponent",
+                    out var bitsValue)
+                    ? bitsValue
+                    : 8;
+
+                var predictorColumns = TryGetInteger(
+                    decodeParameters,
+                    "Columns",
+                    out var columnsValue)
+                    ? columnsValue
+                    : 1;
+
+                pixels = PdfPredictorDecoder.Decode(
+                    pixels,
+                    predictor,
+                    predictorColors,
+                    predictorBits,
+                    predictorColumns);
+            }
+        }
 
         return new PdfImageResource
         {
@@ -300,6 +338,21 @@ internal sealed class PdfDocumentReader
                 channels),
             ContentType = "image/png"
         };
+    }
+
+    private PdfDictionary? ReadSingleDecodeParameters(
+        PdfDictionary dictionary)
+    {
+        if (!dictionary.Items.TryGetValue(
+                "DecodeParms",
+                out var parametersValue))
+        {
+            return null;
+        }
+
+        return ResolveIfReference(parametersValue) as PdfDictionary
+               ?? throw new InvalidDataException(
+                   "PDF Image XObject /DecodeParms не является dictionary.");
     }
 
     private string? ReadSingleFilterName(
