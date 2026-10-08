@@ -22,7 +22,7 @@
                              Grid.Row="0"
                              TitleText="Settings"
                              SubtitleText="MYBOOK"
-                             VersionText="1.0.30"
+                             VersionText="1.0.31"
                              ShowIcon="True"
                              ShowLanguageButton="False"
                              ShowThemeButton="False"
@@ -59,87 +59,7 @@
                             <ScrollViewer Grid.Row="1"
                                           VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel>
-                                    <CheckBox x:Name="Fb2AssociationCheckBox"
-                                              Tag=".fb2"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".fb2 — FictionBook 2" />
-
-                                    <CheckBox x:Name="EpubAssociationCheckBox"
-                                              Tag=".epub"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".epub — EPUB" />
-
-                                    <CheckBox x:Name="HtmlAssociationCheckBox"
-                                              Tag=".html"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".html — HTML" />
-
-                                    <CheckBox x:Name="HtmAssociationCheckBox"
-                                              Tag=".htm"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".htm — HTML" />
-
-                                    <CheckBox x:Name="TxtAssociationCheckBox"
-                                              Tag=".txt"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".txt — Text" />
-
-                                    <CheckBox x:Name="MarkdownAssociationCheckBox"
-                                              Tag=".md"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".md — Markdown" />
-
-                                    <CheckBox x:Name="RtfAssociationCheckBox"
-                                              Tag=".rtf"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".rtf — Rich Text Format" />
-
-                                    <CheckBox x:Name="DocAssociationCheckBox"
-                                              Tag=".doc"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".doc — Microsoft Word Binary" />
-
-                                    <CheckBox x:Name="PdfAssociationCheckBox"
-                                              Tag=".pdf"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".pdf — PDF" />
-
-                                    <CheckBox x:Name="DocxAssociationCheckBox"
-                                              Tag=".docx"
-                                              Margin="0,0,0,12"
-                                              FontSize="14"
-                                              Checked="AssociationCheckBox_OnChanged"
-                                              Unchecked="AssociationCheckBox_OnChanged"
-                                              Content=".docx — Word OpenXML" />
-                                </StackPanel>
+                                <StackPanel x:Name="FileFormatsPanel" />
                             </ScrollViewer>
 
                             <StackPanel Grid.Row="2"

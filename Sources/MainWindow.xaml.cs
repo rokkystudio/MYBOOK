@@ -10,14 +10,6 @@ using Rectangle = System.Windows.Shapes.Rectangle;
 using FlagsPack;
 using Microsoft.Win32;
 using MYBOOK.Documents;
-using MYBOOK.Formats.Doc;
-using MYBOOK.Formats.Docx;
-using MYBOOK.Formats.Epub;
-using MYBOOK.Formats.Fb2;
-using MYBOOK.Formats.Markdown;
-using MYBOOK.Formats.Pdf;
-using MYBOOK.Formats.Rtf;
-using MYBOOK.Formats.Text;
 using MYBOOK.Rendering;
 using MYBOOK.Services;
 using MYBOOK.UI;
@@ -177,7 +169,8 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Filter = LocalizationService.Text("supported_filter"),
+            Filter = SupportedFormatRegistry.BuildOpenFileDialogFilter(
+                LocalizationService.Text("supported_documents")),
             CheckFileExists = true,
             Multiselect = false
         };
@@ -211,9 +204,10 @@ public partial class MainWindow : Window
                 throw new FileNotFoundException("Файл документа не найден.", fullPath);
             }
 
-            var extension = Path.GetExtension(fullPath).ToLowerInvariant();
+            var format = SupportedFormatRegistry.GetByPath(
+                fullPath);
 
-            if (extension is ".html" or ".htm")
+            if (format.OpenDirectlyInWebView)
             {
                 Reader.Source = new Uri(fullPath, UriKind.Absolute);
                 generatedDocumentOpen_ = false;
@@ -222,7 +216,9 @@ public partial class MainWindow : Window
             }
             else
             {
-                var document = ReadDocument(fullPath, extension);
+                var document = SupportedFormatRegistry.ReadDocument(
+                    fullPath);
+
                 UpdateNavigationPanel(document);
 
                 var html = DocumentHtmlRenderer.Render(document, settings_.Theme);
@@ -257,56 +253,12 @@ public partial class MainWindow : Window
     /// <summary>
     /// Выбирает собственный reader формата и возвращает нейтральную модель документа.
     /// </summary>
-    private static DocumentModel ReadDocument(string path, string extension)
-    {
-        return extension switch
-        {
-            ".fb2" => Fb2DocumentReader.Read(path),
-            ".epub" => EpubDocumentReader.Read(path),
-            ".txt" => TextDocumentReader.Read(path),
-            ".md" => MarkdownDocumentReader.Read(path),
-            ".pdf" => PdfDocumentReader.Read(path),
-            ".rtf" => RtfDocumentReader.Read(path),
-            ".doc" => ReadDocCompatibleDocument(path),
-            ".docx" => DocxDocumentReader.Read(path),
-            _ => throw new InvalidDataException(
-                "MYBOOK поддерживает .fb2, .epub, .html, .htm, .txt, .md, .rtf, .doc, .docx и .pdf.")
-        };
-    }
 
     /// <summary>
     /// Открывает файл с расширением .doc по фактической сигнатуре содержимого.
     /// Word Binary/CFB передаётся собственному DOC reader, а RTF с расширением .doc —
     /// автономному RTF reader.
     /// </summary>
-    private static DocumentModel ReadDocCompatibleDocument(string path)
-    {
-        Span<byte> header = stackalloc byte[8];
-
-        using (var stream = File.OpenRead(path))
-        {
-            var read = stream.Read(header);
-
-            if (read >= 8 &&
-                header[..8].SequenceEqual(new byte[]
-                {
-                    0xD0, 0xCF, 0x11, 0xE0,
-                    0xA1, 0xB1, 0x1A, 0xE1
-                }))
-            {
-                return DocDocumentReader.Read(path);
-            }
-
-            if (read >= 5 &&
-                header[..5].SequenceEqual("{\\rtf"u8))
-            {
-                return RtfDocumentReader.Read(path);
-            }
-        }
-
-        throw new InvalidDataException(
-            "Файл .doc не является Word Binary/CFB или RTF-документом.");
-    }
 
     /// <summary>
     /// Возвращает путь локальной HTML-страницы,

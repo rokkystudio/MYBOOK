@@ -37,7 +37,7 @@ internal static class LocalizationService
         { "tooltip_maximize", "Maximize / restore" },
         { "open_error", "Unable to open document" },
         { "association_error", "Unable to change file association" },
-        { "supported_filter", "Supported documents (*.fb2;*.epub;*.html;*.htm;*.txt;*.md;*.rtf;*.doc;*.docx;*.pdf)|*.fb2;*.epub;*.html;*.htm;*.txt;*.md;*.rtf;*.doc;*.docx;*.pdf|Books (*.fb2;*.epub)|*.fb2;*.epub|HTML documents (*.html;*.htm)|*.html;*.htm|Text documents (*.txt)|*.txt|Markdown (*.md)|*.md|Rich Text Format (*.rtf)|*.rtf|Microsoft Word Binary (*.doc)|*.doc|Word OpenXML (*.docx)|*.docx|PDF documents (*.pdf)|*.pdf" }
+        { "supported_documents", "Supported documents" }
     };
 
     private static readonly Dictionary<string, string> RussianTexts = new()
@@ -63,7 +63,7 @@ internal static class LocalizationService
         { "tooltip_maximize", "Развернуть / восстановить" },
         { "open_error", "Не удалось открыть документ" },
         { "association_error", "Не удалось изменить привязку формата" },
-        { "supported_filter", "Поддерживаемые документы (*.fb2;*.epub;*.html;*.htm;*.txt;*.md;*.rtf;*.doc;*.docx;*.pdf)|*.fb2;*.epub;*.html;*.htm;*.txt;*.md;*.rtf;*.doc;*.docx;*.pdf|Книги (*.fb2;*.epub)|*.fb2;*.epub|HTML-документы (*.html;*.htm)|*.html;*.htm|Текстовые документы (*.txt)|*.txt|Markdown (*.md)|*.md|Rich Text Format (*.rtf)|*.rtf|Microsoft Word Binary (*.doc)|*.doc|Word OpenXML (*.docx)|*.docx|PDF documents (*.pdf)|*.pdf" }
+        { "supported_documents", "Поддерживаемые документы" }
     };
 
     private static string selectedLanguage_ = AutomaticLanguage;

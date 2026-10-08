@@ -28,6 +28,7 @@ public partial class SettingsWindow : Window
         LocalizationService.LanguageChanged += LocalizationService_LanguageChanged;
 
         ApplyLocalization();
+        BuildFileFormatControls();
         LoadAssociations();
     }
 
@@ -56,25 +57,55 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Считывает из реестра текущие ассоциации MYBOOK
-    /// и отражает их в переключателях форматов.
+    /// Создаёт переключатели файловых ассоциаций из общего реестра форматов.
+    /// </summary>
+    private void BuildFileFormatControls()
+    {
+        FileFormatsPanel.Children.Clear();
+
+        foreach (var format in SupportedFormatRegistry.All)
+        {
+            var checkBox = new CheckBox
+            {
+                Tag = format.Extension,
+                Margin = new Thickness(0, 0, 0, 12),
+                FontSize = 14,
+                Content = $"{format.Extension} — {format.DisplayName}"
+            };
+
+            checkBox.Checked += AssociationCheckBox_OnChanged;
+            checkBox.Unchecked += AssociationCheckBox_OnChanged;
+
+            FileFormatsPanel.Children.Add(checkBox);
+        }
+    }
+
+    /// <summary>
+    /// Считывает из реестра Windows текущие ассоциации MYBOOK
+    /// и отражает их в динамически созданных переключателях форматов.
     /// </summary>
     private void LoadAssociations()
     {
         loading_ = true;
+
         try
         {
-            Fb2AssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".fb2");
-            EpubAssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".epub");
-            HtmlAssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".html");
-            HtmAssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".htm");
-            TxtAssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".txt");
-            MarkdownAssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".md");
-            RtfAssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".rtf");
-            DocAssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".doc");
-            DocxAssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".docx");
-            PdfAssociationCheckBox.IsChecked = FileAssociationService.IsAssociated(".pdf");
-            AssociationStatusText.Text = LocalizationService.Text("file_formats_status");
+            foreach (var child in FileFormatsPanel.Children)
+            {
+                if (child is not CheckBox checkBox ||
+                    checkBox.Tag is not string extension)
+                {
+                    continue;
+                }
+
+                checkBox.IsChecked =
+                    FileAssociationService.IsAssociated(
+                        extension);
+            }
+
+            AssociationStatusText.Text =
+                LocalizationService.Text(
+                    "file_formats_status");
         }
         finally
         {

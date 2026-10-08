@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.30
+Текущая версия: 1.0.31
 
 ## Архитектура
 
@@ -8,7 +8,7 @@
 - [x] Единый HTML/WebView2 renderer для потоковых документов.
 - [x] Разнести readers по `Sources/Formats/<Format>`.
 - [x] Расширить `DocumentModel` моделью фиксированной страницы для PDF/DjVu.
-- [ ] Добавить единый реестр поддерживаемых форматов вместо дублирования списков в MainWindow, Settings и FileAssociationService.
+- [x] Единый реестр поддерживаемых форматов для reader routing, OpenFileDialog, Settings и FileAssociationService.
 - [ ] Добавить набор regression-тестов для readers без запуска GUI.
 - [ ] Добавить диагностический режим parser trace для сложных повреждённых документов.
 
