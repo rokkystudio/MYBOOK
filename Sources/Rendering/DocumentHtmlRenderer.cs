@@ -244,13 +244,38 @@ a { color: var(--primary); }
             .Append(page.PageNumber)
             .AppendLine("</div>");
 
-        if (page.TextRuns.Count > 0 || page.ImageRuns.Count > 0)
+        if (page.TextRuns.Count > 0 || page.ImageRuns.Count > 0 || page.PathRuns.Count > 0)
         {
             html.Append("""<svg class="fixed-page-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 """)
                 .Append(FormatNumber(width))
                 .Append(' ')
                 .Append(FormatNumber(height))
                 .AppendLine("\" preserveAspectRatio=\"xMidYMin meet\">");
+
+            foreach (var pathRun in page.PathRuns)
+            {
+                html.Append("<path d=\"")
+                    .Append(WebUtility.HtmlEncode(pathRun.PathData))
+                    .Append("\" fill=\"")
+                    .Append(pathRun.Fill ?? "none")
+                    .Append("\" stroke=\"")
+                    .Append(pathRun.Stroke ?? "none")
+                    .Append("\"");
+
+                if (pathRun.Stroke != null)
+                {
+                    html.Append(" stroke-width=\"")
+                        .Append(FormatNumber(pathRun.StrokeWidthPoints))
+                        .Append("\"");
+                }
+
+                if (pathRun.EvenOddFill)
+                {
+                    html.Append(" fill-rule=\"evenodd\"");
+                }
+
+                html.AppendLine(" />");
+            }
 
             foreach (var image in page.ImageRuns)
             {

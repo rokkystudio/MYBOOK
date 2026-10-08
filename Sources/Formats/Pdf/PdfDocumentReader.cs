@@ -122,6 +122,10 @@ internal sealed class PdfDocumentReader
                 ImageRuns = TransformImageRuns(
                     textLayer.Images,
                     box,
+                    rotation),
+                PathRuns = TransformPathRuns(
+                    textLayer.Paths,
+                    box,
                     rotation)
             });
 
@@ -712,6 +716,154 @@ internal sealed class PdfDocumentReader
         return result;
     }
 
+    private static IReadOnlyList<DocumentFixedPathRun> TransformPathRuns(
+        IReadOnlyList<PdfPathPlacement> paths,
+        PageBox box,
+        int rotation)
+    {
+        if (paths.Count == 0)
+        {
+            return Array.Empty<DocumentFixedPathRun>();
+        }
+
+        var result = new List<DocumentFixedPathRun>(
+            paths.Count);
+
+        foreach (var path in paths)
+        {
+            var data = new StringBuilder();
+
+            foreach (var command in path.Commands)
+            {
+                switch (command.Kind)
+                {
+                    case PdfPathCommandKind.Move:
+                    {
+                        var point = TransformPagePoint(
+                            command.X1,
+                            command.Y1,
+                            box,
+                            rotation);
+
+                        AppendPathPoint(
+                            data,
+                            'M',
+                            point);
+                        break;
+                    }
+
+                    case PdfPathCommandKind.Line:
+                    {
+                        var point = TransformPagePoint(
+                            command.X1,
+                            command.Y1,
+                            box,
+                            rotation);
+
+                        AppendPathPoint(
+                            data,
+                            'L',
+                            point);
+                        break;
+                    }
+
+                    case PdfPathCommandKind.Cubic:
+                    {
+                        var p1 = TransformPagePoint(
+                            command.X1,
+                            command.Y1,
+                            box,
+                            rotation);
+
+                        var p2 = TransformPagePoint(
+                            command.X2,
+                            command.Y2,
+                            box,
+                            rotation);
+
+                        var p3 = TransformPagePoint(
+                            command.X3,
+                            command.Y3,
+                            box,
+                            rotation);
+
+                        if (data.Length > 0)
+                        {
+                            data.Append(' ');
+                        }
+
+                        data.Append("C ")
+                            .Append(FormatPdfNumber(p1.X))
+                            .Append(' ')
+                            .Append(FormatPdfNumber(p1.Y))
+                            .Append(' ')
+                            .Append(FormatPdfNumber(p2.X))
+                            .Append(' ')
+                            .Append(FormatPdfNumber(p2.Y))
+                            .Append(' ')
+                            .Append(FormatPdfNumber(p3.X))
+                            .Append(' ')
+                            .Append(FormatPdfNumber(p3.Y));
+                        break;
+                    }
+
+                    case PdfPathCommandKind.Close:
+                        if (data.Length > 0)
+                        {
+                            data.Append(" Z");
+                        }
+                        break;
+                }
+            }
+
+            if (data.Length == 0)
+            {
+                continue;
+            }
+
+            result.Add(new DocumentFixedPathRun
+            {
+                PathData = data.ToString(),
+                Fill = path.Fill
+                    ? path.FillColor
+                    : null,
+                Stroke = path.Stroke
+                    ? path.StrokeColor
+                    : null,
+                StrokeWidthPoints = path.Stroke
+                    ? path.StrokeWidth
+                    : 0,
+                EvenOddFill = path.EvenOddFill
+            });
+        }
+
+        return result;
+    }
+
+    private static void AppendPathPoint(
+        StringBuilder data,
+        char command,
+        PagePoint point)
+    {
+        if (data.Length > 0)
+        {
+            data.Append(' ');
+        }
+
+        data.Append(command)
+            .Append(' ')
+            .Append(FormatPdfNumber(point.X))
+            .Append(' ')
+            .Append(FormatPdfNumber(point.Y));
+    }
+
+    private static string FormatPdfNumber(double value)
+    {
+        return value.ToString(
+            "0.###",
+            CultureInfo.InvariantCulture);
+    }
+
     private static IReadOnlyList<DocumentFixedImageRun> TransformImageRuns(
         IReadOnlyList<PdfImagePlacement> images,
         PageBox box,
@@ -830,7 +982,8 @@ internal sealed class PdfDocumentReader
             {
                 Text = string.Empty,
                 Runs = Array.Empty<PdfTextRun>(),
-                Images = Array.Empty<PdfImagePlacement>()
+                Images = Array.Empty<PdfImagePlacement>(),
+                Paths = Array.Empty<PdfPathPlacement>()
             };
         }
 
@@ -843,13 +996,15 @@ internal sealed class PdfDocumentReader
             {
                 Text = string.Empty,
                 Runs = Array.Empty<PdfTextRun>(),
-                Images = Array.Empty<PdfImagePlacement>()
+                Images = Array.Empty<PdfImagePlacement>(),
+                Paths = Array.Empty<PdfPathPlacement>()
             };
         }
 
         var output = new StringBuilder();
         var runs = new List<PdfTextRun>();
         var images = new List<PdfImagePlacement>();
+        var paths = new List<PdfPathPlacement>();
         var fontResources = BuildFontResources(resources);
         var imageResources = BuildImageResources(resources);
 
@@ -870,13 +1025,15 @@ internal sealed class PdfDocumentReader
             output.Append(extracted.Text);
             runs.AddRange(extracted.Runs);
             images.AddRange(extracted.Images);
+            paths.AddRange(extracted.Paths);
         }
 
         return new PdfTextExtractionResult
         {
             Text = output.ToString().Trim(),
             Runs = runs,
-            Images = images
+            Images = images,
+            Paths = paths
         };
     }
 

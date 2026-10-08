@@ -53,6 +53,20 @@ internal sealed class DocumentFixedPage : DocumentBlock
         Array.Empty<DocumentFixedTextRun>();
     public IReadOnlyList<DocumentFixedImageRun> ImageRuns { get; init; } =
         Array.Empty<DocumentFixedImageRun>();
+    public IReadOnlyList<DocumentFixedPathRun> PathRuns { get; init; } =
+        Array.Empty<DocumentFixedPathRun>();
+}
+
+/// <summary>
+/// Представляет SVG path фиксированной страницы с PDF fill/stroke стилями.
+/// </summary>
+internal sealed class DocumentFixedPathRun
+{
+    public required string PathData { get; init; }
+    public string? Fill { get; init; }
+    public string? Stroke { get; init; }
+    public double StrokeWidthPoints { get; init; }
+    public bool EvenOddFill { get; init; }
 }
 
 /// <summary>

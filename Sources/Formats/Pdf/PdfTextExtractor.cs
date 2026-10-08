@@ -13,6 +13,40 @@ internal sealed class PdfTextExtractionResult
     public required string Text { get; init; }
     public required IReadOnlyList<PdfTextRun> Runs { get; init; }
     public required IReadOnlyList<PdfImagePlacement> Images { get; init; }
+    public required IReadOnlyList<PdfPathPlacement> Paths { get; init; }
+}
+
+/// <summary>
+/// Представляет завершённый PDF path с fill/stroke параметрами.
+/// </summary>
+internal sealed class PdfPathPlacement
+{
+    public required IReadOnlyList<PdfPathCommand> Commands { get; init; }
+    public required bool Fill { get; init; }
+    public required bool Stroke { get; init; }
+    public required bool EvenOddFill { get; init; }
+    public required string FillColor { get; init; }
+    public required string StrokeColor { get; init; }
+    public required double StrokeWidth { get; init; }
+}
+
+internal enum PdfPathCommandKind
+{
+    Move,
+    Line,
+    Cubic,
+    Close
+}
+
+internal sealed class PdfPathCommand
+{
+    public required PdfPathCommandKind Kind { get; init; }
+    public double X1 { get; init; }
+    public double Y1 { get; init; }
+    public double X2 { get; init; }
+    public double Y2 { get; init; }
+    public double X3 { get; init; }
+    public double Y3 { get; init; }
 }
 
 /// <summary>
@@ -41,9 +75,9 @@ internal sealed class PdfTextRun
 }
 
 /// <summary>
-/// Интерпретирует PDF content stream для текстового слоя и Image XObject.
-/// Поддерживает graphics state `q/Q/cm`, оператор `Do`, text/line matrices,
-/// leading, spacing, font size, ToUnicode font resources и позиционированные Tj/TJ-фрагменты.
+/// Интерпретирует PDF content stream для текста, Image XObject и vector paths.
+/// Поддерживает graphics state `q/Q/cm`, `Do`, path construction/painting,
+/// text/line matrices, colors, line width, font state и позиционированные Tj/TJ-фрагменты.
 /// </summary>
 internal static class PdfTextExtractor
 {
@@ -70,6 +104,8 @@ internal static class PdfTextExtractor
         private readonly StringBuilder output_ = new();
         private readonly List<PdfTextRun> runs_ = new();
         private readonly List<PdfImagePlacement> images_ = new();
+        private readonly List<PdfPathPlacement> paths_ = new();
+        private readonly List<PdfPathCommand> currentPath_ = new();
         private readonly Stack<GraphicsState> graphicsStateStack_ = new();
 
         private int position_;
@@ -83,6 +119,11 @@ internal static class PdfTextExtractor
         private double wordSpacing_;
         private double horizontalScale_ = 1;
         private double textRise_;
+        private double lineWidth_ = 1;
+        private string strokeColor_ = "#000000";
+        private string fillColor_ = "#000000";
+        private TextPoint? currentPathPoint_;
+        private TextPoint? subpathStart_;
 
         public ContentParser(
             byte[] data,
@@ -153,7 +194,8 @@ internal static class PdfTextExtractor
             {
                 Text = NormalizeOutput(output_.ToString()),
                 Runs = runs_.ToArray(),
-                Images = images_.ToArray()
+                Images = images_.ToArray(),
+                Paths = paths_.ToArray()
             };
         }
 
@@ -175,6 +217,99 @@ internal static class PdfTextExtractor
 
                 case "Do":
                     DrawXObject();
+                    break;
+
+                case "w":
+                    lineWidth_ = Math.Abs(GetLastNumber());
+                    break;
+
+                case "G":
+                    strokeColor_ = GrayColor(GetNumbers());
+                    break;
+
+                case "g":
+                    fillColor_ = GrayColor(GetNumbers());
+                    break;
+
+                case "RG":
+                    strokeColor_ = RgbColor(GetNumbers());
+                    break;
+
+                case "rg":
+                    fillColor_ = RgbColor(GetNumbers());
+                    break;
+
+                case "K":
+                    strokeColor_ = CmykColor(GetNumbers());
+                    break;
+
+                case "k":
+                    fillColor_ = CmykColor(GetNumbers());
+                    break;
+
+                case "m":
+                    MovePath();
+                    break;
+
+                case "l":
+                    LinePath();
+                    break;
+
+                case "c":
+                    CubicPath();
+                    break;
+
+                case "v":
+                    CubicPathV();
+                    break;
+
+                case "y":
+                    CubicPathY();
+                    break;
+
+                case "h":
+                    ClosePath();
+                    break;
+
+                case "re":
+                    RectanglePath();
+                    break;
+
+                case "S":
+                    PaintPath(fill: false, stroke: true, evenOdd: false, close: false);
+                    break;
+
+                case "s":
+                    PaintPath(fill: false, stroke: true, evenOdd: false, close: true);
+                    break;
+
+                case "f":
+                case "F":
+                    PaintPath(fill: true, stroke: false, evenOdd: false, close: false);
+                    break;
+
+                case "f*":
+                    PaintPath(fill: true, stroke: false, evenOdd: true, close: false);
+                    break;
+
+                case "B":
+                    PaintPath(fill: true, stroke: true, evenOdd: false, close: false);
+                    break;
+
+                case "B*":
+                    PaintPath(fill: true, stroke: true, evenOdd: true, close: false);
+                    break;
+
+                case "b":
+                    PaintPath(fill: true, stroke: true, evenOdd: false, close: true);
+                    break;
+
+                case "b*":
+                    PaintPath(fill: true, stroke: true, evenOdd: true, close: true);
+                    break;
+
+                case "n":
+                    ClearPath();
                     break;
 
                 case "BT":
@@ -230,6 +365,341 @@ internal static class PdfTextExtractor
             operands_.Clear();
         }
 
+        private void MovePath()
+        {
+            var numbers = GetNumbers();
+
+            if (numbers.Length < 2)
+            {
+                throw new InvalidDataException(
+                    "PDF m должен содержать два числа.");
+            }
+
+            var point = currentTransformation_.Transform(
+                numbers[^2],
+                numbers[^1]);
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Move,
+                X1 = point.X,
+                Y1 = point.Y
+            });
+
+            currentPathPoint_ = point;
+            subpathStart_ = point;
+        }
+
+        private void LinePath()
+        {
+            var numbers = GetNumbers();
+
+            if (numbers.Length < 2)
+            {
+                throw new InvalidDataException(
+                    "PDF l должен содержать два числа.");
+            }
+
+            var point = currentTransformation_.Transform(
+                numbers[^2],
+                numbers[^1]);
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Line,
+                X1 = point.X,
+                Y1 = point.Y
+            });
+
+            currentPathPoint_ = point;
+        }
+
+        private void CubicPath()
+        {
+            var numbers = GetNumbers();
+
+            if (numbers.Length != 6)
+            {
+                throw new InvalidDataException(
+                    "PDF c должен содержать шесть чисел.");
+            }
+
+            var p1 = currentTransformation_.Transform(
+                numbers[0],
+                numbers[1]);
+
+            var p2 = currentTransformation_.Transform(
+                numbers[2],
+                numbers[3]);
+
+            var p3 = currentTransformation_.Transform(
+                numbers[4],
+                numbers[5]);
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Cubic,
+                X1 = p1.X,
+                Y1 = p1.Y,
+                X2 = p2.X,
+                Y2 = p2.Y,
+                X3 = p3.X,
+                Y3 = p3.Y
+            });
+
+            currentPathPoint_ = p3;
+        }
+
+        private void CubicPathV()
+        {
+            if (currentPathPoint_ == null)
+            {
+                throw new InvalidDataException(
+                    "PDF v используется без current point.");
+            }
+
+            var numbers = GetNumbers();
+
+            if (numbers.Length != 4)
+            {
+                throw new InvalidDataException(
+                    "PDF v должен содержать четыре числа.");
+            }
+
+            var p1 = currentPathPoint_.Value;
+            var p2 = currentTransformation_.Transform(
+                numbers[0],
+                numbers[1]);
+            var p3 = currentTransformation_.Transform(
+                numbers[2],
+                numbers[3]);
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Cubic,
+                X1 = p1.X,
+                Y1 = p1.Y,
+                X2 = p2.X,
+                Y2 = p2.Y,
+                X3 = p3.X,
+                Y3 = p3.Y
+            });
+
+            currentPathPoint_ = p3;
+        }
+
+        private void CubicPathY()
+        {
+            var numbers = GetNumbers();
+
+            if (numbers.Length != 4)
+            {
+                throw new InvalidDataException(
+                    "PDF y должен содержать четыре числа.");
+            }
+
+            var p1 = currentTransformation_.Transform(
+                numbers[0],
+                numbers[1]);
+            var p3 = currentTransformation_.Transform(
+                numbers[2],
+                numbers[3]);
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Cubic,
+                X1 = p1.X,
+                Y1 = p1.Y,
+                X2 = p3.X,
+                Y2 = p3.Y,
+                X3 = p3.X,
+                Y3 = p3.Y
+            });
+
+            currentPathPoint_ = p3;
+        }
+
+        private void ClosePath()
+        {
+            if (currentPath_.Count == 0)
+            {
+                return;
+            }
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Close
+            });
+
+            currentPathPoint_ = subpathStart_;
+        }
+
+        private void RectanglePath()
+        {
+            var numbers = GetNumbers();
+
+            if (numbers.Length != 4)
+            {
+                throw new InvalidDataException(
+                    "PDF re должен содержать четыре числа.");
+            }
+
+            var x = numbers[0];
+            var y = numbers[1];
+            var width = numbers[2];
+            var height = numbers[3];
+
+            var p0 = currentTransformation_.Transform(x, y);
+            var p1 = currentTransformation_.Transform(
+                x + width,
+                y);
+            var p2 = currentTransformation_.Transform(
+                x + width,
+                y + height);
+            var p3 = currentTransformation_.Transform(
+                x,
+                y + height);
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Move,
+                X1 = p0.X,
+                Y1 = p0.Y
+            });
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Line,
+                X1 = p1.X,
+                Y1 = p1.Y
+            });
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Line,
+                X1 = p2.X,
+                Y1 = p2.Y
+            });
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Line,
+                X1 = p3.X,
+                Y1 = p3.Y
+            });
+
+            currentPath_.Add(new PdfPathCommand
+            {
+                Kind = PdfPathCommandKind.Close
+            });
+
+            currentPathPoint_ = p0;
+            subpathStart_ = p0;
+        }
+
+        private void PaintPath(
+            bool fill,
+            bool stroke,
+            bool evenOdd,
+            bool close)
+        {
+            if (close)
+            {
+                ClosePath();
+            }
+
+            if (currentPath_.Count > 0 &&
+                (fill || stroke))
+            {
+                paths_.Add(new PdfPathPlacement
+                {
+                    Commands = currentPath_.ToArray(),
+                    Fill = fill,
+                    Stroke = stroke,
+                    EvenOddFill = evenOdd,
+                    FillColor = fillColor_,
+                    StrokeColor = strokeColor_,
+                    StrokeWidth = Math.Max(
+                        0,
+                        lineWidth_ *
+                        currentTransformation_.ApproximateScale())
+                });
+            }
+
+            ClearPath();
+        }
+
+        private void ClearPath()
+        {
+            currentPath_.Clear();
+            currentPathPoint_ = null;
+            subpathStart_ = null;
+        }
+
+        private static string GrayColor(double[] values)
+        {
+            if (values.Length < 1)
+            {
+                throw new InvalidDataException(
+                    "PDF gray color operator ожидает один компонент.");
+            }
+
+            var value = ToByte(values[^1]);
+            return $"#{value:X2}{value:X2}{value:X2}";
+        }
+
+        private static string RgbColor(double[] values)
+        {
+            if (values.Length < 3)
+            {
+                throw new InvalidDataException(
+                    "PDF RGB color operator ожидает три компонента.");
+            }
+
+            var r = ToByte(values[^3]);
+            var g = ToByte(values[^2]);
+            var b = ToByte(values[^1]);
+
+            return $"#{r:X2}{g:X2}{b:X2}";
+        }
+
+        private static string CmykColor(double[] values)
+        {
+            if (values.Length < 4)
+            {
+                throw new InvalidDataException(
+                    "PDF CMYK color operator ожидает четыре компонента.");
+            }
+
+            var c = Clamp01(values[^4]);
+            var m = Clamp01(values[^3]);
+            var y = Clamp01(values[^2]);
+            var k = Clamp01(values[^1]);
+
+            var r = ToByte(
+                (1 - c) * (1 - k));
+            var g = ToByte(
+                (1 - m) * (1 - k));
+            var b = ToByte(
+                (1 - y) * (1 - k));
+
+            return $"#{r:X2}{g:X2}{b:X2}";
+        }
+
+        private static byte ToByte(double value)
+        {
+            return (byte)Math.Round(
+                Clamp01(value) * 255);
+        }
+
+        private static double Clamp01(double value)
+        {
+            return Math.Clamp(
+                value,
+                0,
+                1);
+        }
+
         private void SaveGraphicsState()
         {
             graphicsStateStack_.Push(new GraphicsState(
@@ -240,7 +710,10 @@ internal static class PdfTextExtractor
                 characterSpacing_,
                 wordSpacing_,
                 horizontalScale_,
-                textRise_));
+                textRise_,
+                lineWidth_,
+                strokeColor_,
+                fillColor_));
         }
 
         private void RestoreGraphicsState()
@@ -261,6 +734,9 @@ internal static class PdfTextExtractor
             wordSpacing_ = state.WordSpacing;
             horizontalScale_ = state.HorizontalScale;
             textRise_ = state.TextRise;
+            lineWidth_ = state.LineWidth;
+            strokeColor_ = state.StrokeColor;
+            fillColor_ = state.FillColor;
         }
 
         private void ConcatenateTransformation()
@@ -938,7 +1414,10 @@ internal static class PdfTextExtractor
         double CharacterSpacing,
         double WordSpacing,
         double HorizontalScale,
-        double TextRise);
+        double TextRise,
+        double LineWidth,
+        string StrokeColor,
+        string FillColor);
 
     private readonly record struct AffineMatrix(
         double A,
@@ -967,6 +1446,12 @@ internal static class PdfTextExtractor
             return new TextPoint(
                 A * x + C * y + E,
                 B * x + D * y + F);
+        }
+
+        public double ApproximateScale()
+        {
+            var determinant = A * D - B * C;
+            return Math.Sqrt(Math.Abs(determinant));
         }
     }
 

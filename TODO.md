@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.17
+Текущая версия: 1.0.18
 
 ## Архитектура
 
@@ -112,7 +112,8 @@
 - [x] Type0 custom Encoding CMap stream: `codespacerange`, `cidchar`, `cidrange` и code→CID mapping для точных widths.
 - [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
 - [ ] Встроенные изображения. Поддержаны Image XObject с `DCTDecode` (JPEG) и 8-bit `FlateDecode` для `DeviceGray`/`DeviceRGB`; остаются predictor, alpha/SMask, Indexed/CMYK и filter chains.
-- [ ] Paths/fills/strokes.
+- [x] Базовые paths/fills/strokes: `m/l/c/v/y/h/re`, `S/s/f/F/f*/B/B*/b/b*/n`, `w`, Gray/RGB/CMYK colors.
+- [ ] Line cap/join, miter limit, dash pattern, clipping paths и точный mixed paint order.
 - [x] Постраничная модель MYBOOK.
 - [x] SVG renderer фиксированной страницы для геометрического текстового слоя через исходные PDF points и `viewBox`.
 - [ ] Ссылки и outlines.
