@@ -6,4 +6,10 @@
         <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
     </PropertyGroup>
 
+    <PropertyGroup Condition="'$(MSBuildProjectName)' == 'MYBOOK.RegressionTests'">
+        <BaseOutputPath>$(MSBuildThisFileDirectory)Build\bin\Tests\</BaseOutputPath>
+        <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)Build\obj\Tests\MYBOOK.RegressionTests\</BaseIntermediateOutputPath>
+        <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    </PropertyGroup>
+
 </Project>

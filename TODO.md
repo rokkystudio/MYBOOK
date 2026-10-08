@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.31
+Текущая версия: 1.0.32
 
 ## Архитектура
 
@@ -9,7 +9,7 @@
 - [x] Разнести readers по `Sources/Formats/<Format>`.
 - [x] Расширить `DocumentModel` моделью фиксированной страницы для PDF/DjVu.
 - [x] Единый реестр поддерживаемых форматов для reader routing, OpenFileDialog, Settings и FileAssociationService.
-- [ ] Добавить набор regression-тестов для readers без запуска GUI.
+- [x] Regression-runner readers без GUI: синтетические TXT/Markdown/RTF/FB2/EPUB/DOCX/PDF fixtures и `.doc` signature dispatch.
 - [ ] Добавить диагностический режим parser trace для сложных повреждённых документов.
 
 ## FB2
@@ -56,6 +56,7 @@
 - [x] FIB и CLX piece table.
 - [x] Основной текст и абзацы.
 - [x] RTF-документы с расширением `.doc` определяются по сигнатуре и открываются RTF reader.
+- [ ] Добавить настоящий CFB Word Binary `.doc` fixture в `Books` и постоянный regression-тест прямого `DocDocumentReader`.
 - [ ] CHP/PAP formatting runs.
 - [ ] Stylesheet.
 - [ ] Таблицы.
