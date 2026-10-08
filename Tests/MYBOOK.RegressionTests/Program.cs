@@ -2,6 +2,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using MYBOOK.Documents;
+using MYBOOK.Rendering;
 using MYBOOK.Services;
 
 namespace MYBOOK.RegressionTests;
@@ -200,7 +201,8 @@ internal static class Program
             path,
             """
             <?xml version="1.0" encoding="utf-8"?>
-            <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+            <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"
+                         xmlns:xlink="http://www.w3.org/1999/xlink">
               <description>
                 <title-info>
                   <book-title>Regression FB2</book-title>
@@ -211,9 +213,18 @@ internal static class Program
                 </title-info>
               </description>
               <body>
-                <section>
+                <section id="chapter-1">
                   <title><p>Regression heading</p></title>
-                  <p>FB2 marker</p>
+                  <p>
+                    FB2 marker
+                    <a xlink:href="#note-1">note link</a>
+                    <a xlink:href="javascript:alert(1)">unsafe link</a>
+                  </p>
+                </section>
+              </body>
+              <body name="notes">
+                <section id="note-1">
+                  <p>Note target</p>
                 </section>
               </body>
             </FictionBook>
@@ -231,6 +242,56 @@ internal static class Program
             FlattenText(model),
             "FB2 marker",
             "FB2 model");
+
+        var paragraphs = model.Blocks
+            .OfType<DocumentParagraph>()
+            .ToArray();
+
+        Assert(
+            paragraphs.Any(paragraph =>
+                string.Equals(
+                    paragraph.AnchorId,
+                    "chapter-1",
+                    StringComparison.Ordinal)),
+            "FB2 section id chapter-1 должен стать внутренним якорем.");
+
+        Assert(
+            paragraphs.Any(paragraph =>
+                string.Equals(
+                    paragraph.AnchorId,
+                    "note-1",
+                    StringComparison.Ordinal)),
+            "FB2 notes section id note-1 должен стать внутренним якорем.");
+
+        Assert(
+            paragraphs
+                .SelectMany(paragraph => paragraph.Inlines)
+                .Any(inline =>
+                    string.Equals(
+                        inline.LinkHref,
+                        "#note-1",
+                        StringComparison.Ordinal)),
+            "FB2 xlink:href должен сохраниться в DocumentInline.");
+
+        var html = DocumentHtmlRenderer.Render(
+            model,
+            "Light");
+
+        AssertContains(
+            html,
+            "id=\"anchor-note-1\"",
+            "FB2 rendered anchor");
+
+        AssertContains(
+            html,
+            "href=\"#anchor-note-1\"",
+            "FB2 rendered internal link");
+
+        Assert(
+            !html.Contains(
+                "href=\"javascript:",
+                StringComparison.OrdinalIgnoreCase),
+            "Опасная javascript: ссылка не должна попадать в HTML href.");
     }
 
     private static void TestEpubReader(string directory)

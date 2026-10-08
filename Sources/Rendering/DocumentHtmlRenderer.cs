@@ -8,7 +8,8 @@ using NeoUI;
 namespace MYBOOK.Rendering;
 
 /// <summary>
-/// Преобразует нейтральную модель документа MYBOOK в автономную HTML-страницу для WebView2.
+/// Преобразует нейтральную модель документа MYBOOK в автономную HTML-страницу для WebView2,
+/// включая безопасные потоковые ссылки/якоря и фиксированную постраничную верстку.
 /// </summary>
 internal static class DocumentHtmlRenderer
 {
@@ -215,7 +216,11 @@ a { color: var(--primary); }
                 return;
 
             case DocumentParagraph paragraph when paragraph.Preformatted:
-                html.Append("<pre>");
+                html.Append("<pre");
+                AppendFlowAnchorAttribute(
+                    html,
+                    paragraph.AnchorId);
+                html.Append('>');
                 AppendInlines(html, paragraph.Inlines);
                 html.AppendLine("</pre>");
                 return;
@@ -224,7 +229,15 @@ a { color: var(--primary); }
             {
                 var level = Math.Clamp(paragraph.HeadingLevel, 0, 6);
                 var tag = level > 0 ? "h" + level : "p";
-                html.Append('<').Append(tag).Append('>');
+
+                html.Append('<')
+                    .Append(tag);
+
+                AppendFlowAnchorAttribute(
+                    html,
+                    paragraph.AnchorId);
+
+                html.Append('>');
                 AppendInlines(html, paragraph.Inlines);
                 html.Append("</").Append(tag).AppendLine(">");
                 return;
@@ -591,10 +604,31 @@ a { color: var(--primary); }
         }
     }
 
-    private static void AppendInlines(StringBuilder html, IReadOnlyList<DocumentInline> inlines)
+    private static void AppendInlines(
+        StringBuilder html,
+        IReadOnlyList<DocumentInline> inlines)
     {
         foreach (var inline in inlines)
         {
+            var link = ResolveFlowLink(
+                inline.LinkHref);
+
+            if (link.Href != null)
+            {
+                html.Append("<a href=\"")
+                    .Append(WebUtility.HtmlEncode(
+                        link.Href))
+                    .Append("\"");
+
+                if (link.External)
+                {
+                    html.Append(
+                        " target=\"_blank\" rel=\"noopener noreferrer\"");
+                }
+
+                html.Append('>');
+            }
+
             if (inline.Bold)
             {
                 html.Append("<strong>");
@@ -620,7 +654,16 @@ a { color: var(--primary); }
                 html.Append("<code>");
             }
 
-            html.Append(WebUtility.HtmlEncode(inline.Text).Replace("\\r\\n", "<br>").Replace("\\n", "<br>"));
+            html.Append(
+                WebUtility.HtmlEncode(inline.Text)
+                    .Replace(
+                        "\r\n",
+                        "<br>",
+                        StringComparison.Ordinal)
+                    .Replace(
+                        "\n",
+                        "<br>",
+                        StringComparison.Ordinal));
 
             if (inline.Code)
             {
@@ -646,8 +689,85 @@ a { color: var(--primary); }
             {
                 html.Append("</strong>");
             }
+
+            if (link.Href != null)
+            {
+                html.Append("</a>");
+            }
         }
     }
+
+    private static void AppendFlowAnchorAttribute(
+        StringBuilder html,
+        string? anchorId)
+    {
+        var id = GetFlowAnchorId(
+            anchorId);
+
+        if (id == null)
+        {
+            return;
+        }
+
+        html.Append(" id=\"")
+            .Append(WebUtility.HtmlEncode(id))
+            .Append('"');
+    }
+
+    private static ResolvedFlowLink ResolveFlowLink(string? href)
+    {
+        if (string.IsNullOrWhiteSpace(href))
+        {
+            return new ResolvedFlowLink(
+                null,
+                false);
+        }
+
+        if (href.StartsWith(
+                "#",
+                StringComparison.Ordinal))
+        {
+            var id = GetFlowAnchorId(
+                href[1..]);
+
+            return new ResolvedFlowLink(
+                id == null
+                    ? null
+                    : "#" + id,
+                false);
+        }
+
+        if (!Uri.TryCreate(
+                href,
+                UriKind.Absolute,
+                out var uri) ||
+            uri.Scheme is not ("http" or "https" or "mailto"))
+        {
+            return new ResolvedFlowLink(
+                null,
+                false);
+        }
+
+        return new ResolvedFlowLink(
+            uri.AbsoluteUri,
+            true);
+    }
+
+    private static string? GetFlowAnchorId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return "anchor-" +
+               Uri.EscapeDataString(
+                   value.Trim());
+    }
+
+    private sealed record ResolvedFlowLink(
+        string? Href,
+        bool External);
 
     private static string FormatNumber(double value)
     {

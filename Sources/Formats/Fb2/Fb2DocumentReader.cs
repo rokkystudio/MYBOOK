@@ -9,7 +9,8 @@ using MYBOOK.Documents;
 namespace MYBOOK.Formats.Fb2;
 
 /// <summary>
-/// Читает FB2 и преобразует метаданные, обложку и текст в нейтральную модель MYBOOK.
+/// Читает FB2 и преобразует метаданные, обложку, текст, ссылки и внутренние якоря
+/// в нейтральную модель MYBOOK.
 /// </summary>
 internal static class Fb2DocumentReader
 {
@@ -77,6 +78,8 @@ internal static class Fb2DocumentReader
     private static IReadOnlyList<DocumentBlock> ReadBlocks(XElement root)
     {
         var blocks = new List<DocumentBlock>();
+        var assignedSectionAnchors = new HashSet<string>(
+            StringComparer.Ordinal);
 
         foreach (var body in root.Elements().Where(element => element.Name.LocalName == "body"))
         {
@@ -101,6 +104,9 @@ internal static class Fb2DocumentReader
                     {
                         blocks.Add(new DocumentParagraph
                         {
+                            AnchorId = ResolveAnchorId(
+                                element,
+                                assignedSectionAnchors),
                             HeadingLevel = 1,
                             Inlines = inlines
                         });
@@ -120,6 +126,9 @@ internal static class Fb2DocumentReader
                 {
                     blocks.Add(new DocumentParagraph
                     {
+                        AnchorId = ResolveAnchorId(
+                            element,
+                            assignedSectionAnchors),
                         Inlines = paragraph
                     });
                 }
@@ -132,7 +141,13 @@ internal static class Fb2DocumentReader
     private static IReadOnlyList<DocumentInline> ReadInlines(XElement paragraph)
     {
         var result = new List<DocumentInline>();
-        AppendNodes(paragraph.Nodes(), result, false, false);
+
+        AppendNodes(
+            paragraph.Nodes(),
+            result,
+            italic: false,
+            superscript: false,
+            linkHref: null);
 
         if (result.Count > 0)
         {
@@ -149,7 +164,8 @@ internal static class Fb2DocumentReader
         IEnumerable<XNode> nodes,
         List<DocumentInline> result,
         bool italic,
-        bool superscript)
+        bool superscript,
+        string? linkHref)
     {
         foreach (var node in nodes)
         {
@@ -158,7 +174,12 @@ internal static class Fb2DocumentReader
                 var text = Regex.Replace(textNode.Value, @"\s+", " ");
                 if (text.Length > 0)
                 {
-                    AppendInline(result, text, italic, superscript);
+                    AppendInline(
+                        result,
+                        text,
+                        italic,
+                        superscript,
+                        linkHref);
                 }
 
                 continue;
@@ -166,11 +187,18 @@ internal static class Fb2DocumentReader
 
             if (node is XElement element)
             {
+                var nestedLinkHref =
+                    element.Name.LocalName == "a"
+                        ? element.Attribute(
+                            XLinkNamespace + "href")?.Value
+                        : linkHref;
+
                 AppendNodes(
                     element.Nodes(),
                     result,
                     italic || element.Name.LocalName == "emphasis",
-                    superscript || element.Name.LocalName == "sup");
+                    superscript || element.Name.LocalName == "sup",
+                    nestedLinkHref);
             }
         }
     }
@@ -179,13 +207,18 @@ internal static class Fb2DocumentReader
         List<DocumentInline> result,
         string text,
         bool italic,
-        bool superscript)
+        bool superscript,
+        string? linkHref)
     {
         if (result.Count > 0)
         {
             var previous = result[^1];
             if (previous.Italic == italic &&
                 previous.Superscript == superscript &&
+                string.Equals(
+                    previous.LinkHref,
+                    linkHref,
+                    StringComparison.Ordinal) &&
                 !previous.Bold &&
                 !previous.Underline &&
                 !previous.Code)
@@ -198,6 +231,7 @@ internal static class Fb2DocumentReader
         result.Add(new DocumentInline
         {
             Text = text,
+            LinkHref = linkHref,
             Italic = italic,
             Superscript = superscript
         });
@@ -208,12 +242,46 @@ internal static class Fb2DocumentReader
         return new DocumentInline
         {
             Text = text,
+            LinkHref = source.LinkHref,
             Bold = source.Bold,
             Italic = source.Italic,
             Underline = source.Underline,
             Superscript = source.Superscript,
             Code = source.Code
         };
+    }
+
+    private static string? ResolveAnchorId(
+        XElement element,
+        HashSet<string> assignedSectionAnchors)
+    {
+        var ownId =
+            ((string?)element.Attribute("id"))?
+            .Trim();
+
+        if (!string.IsNullOrWhiteSpace(ownId))
+        {
+            return ownId;
+        }
+
+        foreach (var section in element.Ancestors().Where(
+                     ancestor =>
+                         ancestor.Name.LocalName == "section"))
+        {
+            var sectionId =
+                ((string?)section.Attribute("id"))?
+                .Trim();
+
+            if (string.IsNullOrWhiteSpace(sectionId) ||
+                !assignedSectionAnchors.Add(sectionId))
+            {
+                continue;
+            }
+
+            return sectionId;
+        }
+
+        return null;
     }
 
     private static string ReadAuthors(XElement? titleInfo)

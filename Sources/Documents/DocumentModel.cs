@@ -23,11 +23,12 @@ internal abstract class DocumentBlock
 }
 
 /// <summary>
-/// Представляет текстовый абзац или заголовок.
+/// Представляет текстовый абзац или заголовок с необязательным внутренним якорем.
 /// </summary>
 internal sealed class DocumentParagraph : DocumentBlock
 {
     public required IReadOnlyList<DocumentInline> Inlines { get; init; }
+    public string? AnchorId { get; init; }
     public int HeadingLevel { get; init; }
     public bool Preformatted { get; init; }
 }
@@ -160,11 +161,12 @@ internal sealed class DocumentFixedTextRun
 }
 
 /// <summary>
-/// Представляет текстовый фрагмент с базовым форматированием.
+/// Представляет текстовый фрагмент с базовым форматированием и необязательной ссылкой.
 /// </summary>
 internal sealed class DocumentInline
 {
     public required string Text { get; init; }
+    public string? LinkHref { get; init; }
     public bool Bold { get; init; }
     public bool Italic { get; init; }
     public bool Underline { get; init; }
