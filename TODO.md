@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.13
+Текущая версия: 1.0.14
 
 ## Архитектура
 
@@ -107,7 +107,8 @@
 - [ ] Graphics state.
 - [x] Text operators и позиционирование: `Tm`, `Td`, `TD`, `T*`, `Tf`, `Tc`, `Tw`, `Tz`, `Ts`, `Tj`, `TJ` и quote operators формируют позиционированные text runs.
 - [x] Font resources и ToUnicode CMap для текстового слоя.
-- [ ] Точные glyph widths/advance из `/Widths`, `/FirstChar` и CID width tables вместо оценочного advance между text runs.
+- [x] Точные glyph widths/advance для simple fonts через `/FirstChar` + `/Widths` и Type0 `Identity-H/Identity-V` через `/DW` + `/W`.
+- [ ] Type0 custom Encoding CMap: полноценное code→CID mapping для точных widths вне `Identity-H/Identity-V`.
 - [ ] Встроенные изображения.
 - [ ] Paths/fills/strokes.
 - [x] Постраничная модель MYBOOK.

@@ -174,13 +174,13 @@ internal sealed class PdfDocumentReader
                    "PDF /Resources не является dictionary.");
     }
 
-    private IReadOnlyDictionary<string, PdfFontDecoder> BuildFontDecoders(
+    private IReadOnlyDictionary<string, PdfFontResource> BuildFontResources(
         PdfDictionary? resources)
     {
         if (resources == null ||
             !resources.Items.TryGetValue("Font", out var fontObject))
         {
-            return new Dictionary<string, PdfFontDecoder>(
+            return new Dictionary<string, PdfFontResource>(
                 StringComparer.Ordinal);
         }
 
@@ -188,7 +188,7 @@ internal sealed class PdfDocumentReader
                              ?? throw new InvalidDataException(
                                  "PDF /Resources /Font не является dictionary.");
 
-        var result = new Dictionary<string, PdfFontDecoder>(
+        var result = new Dictionary<string, PdfFontResource>(
             StringComparer.Ordinal);
 
         foreach (var pair in fontDictionary.Items)
@@ -197,20 +197,297 @@ internal sealed class PdfDocumentReader
                        ?? throw new InvalidDataException(
                            $"PDF font /{pair.Key} не является dictionary.");
 
-            if (!font.Items.TryGetValue("ToUnicode", out var toUnicodeObject))
-            {
-                continue;
-            }
+            var decoder = ReadFontDecoder(
+                pair.Key,
+                font);
 
-            var toUnicode = ResolveIfReference(toUnicodeObject) as PdfStream
-                            ?? throw new InvalidDataException(
-                                $"PDF font /{pair.Key} /ToUnicode не является stream.");
-
-            result[pair.Key] = PdfFontDecoder.FromToUnicode(
-                DecodeStream(toUnicode));
+            result[pair.Key] = string.Equals(
+                GetName(font, "Subtype"),
+                "Type0",
+                StringComparison.Ordinal)
+                ? BuildType0FontResource(font, decoder)
+                : BuildSimpleFontResource(font, decoder);
         }
 
         return result;
+    }
+
+    private PdfFontDecoder? ReadFontDecoder(
+        string resourceName,
+        PdfDictionary font)
+    {
+        if (!font.Items.TryGetValue(
+                "ToUnicode",
+                out var toUnicodeObject))
+        {
+            return null;
+        }
+
+        var toUnicode = ResolveIfReference(toUnicodeObject) as PdfStream
+                        ?? throw new InvalidDataException(
+                            $"PDF font /{resourceName} /ToUnicode не является stream.");
+
+        return PdfFontDecoder.FromToUnicode(
+            DecodeStream(toUnicode));
+    }
+
+    private PdfFontResource BuildSimpleFontResource(
+        PdfDictionary font,
+        PdfFontDecoder? decoder)
+    {
+        var widths = new Dictionary<int, double>();
+
+        if (font.Items.TryGetValue("Widths", out var widthsObject))
+        {
+            var array = ResolveIfReference(widthsObject) as PdfArray
+                        ?? throw new InvalidDataException(
+                            "PDF simple font /Widths не является массивом.");
+
+            var firstChar = GetRequiredInteger(
+                font,
+                "FirstChar");
+
+            for (var index = 0; index < array.Items.Count; index++)
+            {
+                widths[firstChar + index] =
+                    GetNumberValue(
+                        array.Items[index],
+                        "PDF simple font /Widths");
+            }
+        }
+
+        return new PdfFontResource(
+            decoder,
+            widths,
+            ReadSimpleFontMissingWidth(font),
+            codeUnitLength: 1,
+            applyWordSpacing: true);
+    }
+
+    private PdfFontResource BuildType0FontResource(
+        PdfDictionary font,
+        PdfFontDecoder? decoder)
+    {
+        var encoding = GetName(
+            font,
+            "Encoding");
+
+        var identityEncoding =
+            string.Equals(
+                encoding,
+                "Identity-H",
+                StringComparison.Ordinal) ||
+            string.Equals(
+                encoding,
+                "Identity-V",
+                StringComparison.Ordinal);
+
+        if (!font.Items.TryGetValue(
+                "DescendantFonts",
+                out var descendantsObject))
+        {
+            throw new InvalidDataException(
+                "PDF Type0 font не содержит /DescendantFonts.");
+        }
+
+        var descendants = ResolveIfReference(descendantsObject) as PdfArray
+                          ?? throw new InvalidDataException(
+                              "PDF Type0 /DescendantFonts не является массивом.");
+
+        if (descendants.Items.Count == 0)
+        {
+            throw new InvalidDataException(
+                "PDF Type0 /DescendantFonts пуст.");
+        }
+
+        var descendant = ResolveIfReference(
+                             descendants.Items[0]) as PdfDictionary
+                         ?? throw new InvalidDataException(
+                             "PDF CID descendant font не является dictionary.");
+
+        if (!identityEncoding)
+        {
+            return new PdfFontResource(
+                decoder,
+                new Dictionary<int, double>(),
+                defaultWidth: 0,
+                codeUnitLength: 2,
+                applyWordSpacing: false);
+        }
+
+        var widths = ReadCidWidths(descendant);
+        var defaultWidth = TryGetNumber(
+            descendant,
+            "DW",
+            out var dw)
+            ? dw
+            : 1000;
+
+        return new PdfFontResource(
+            decoder,
+            widths,
+            defaultWidth,
+            codeUnitLength: 2,
+            applyWordSpacing: false);
+    }
+
+    private Dictionary<int, double> ReadCidWidths(
+        PdfDictionary descendant)
+    {
+        var result = new Dictionary<int, double>();
+
+        if (!descendant.Items.TryGetValue(
+                "W",
+                out var widthsObject))
+        {
+            return result;
+        }
+
+        var widths = ResolveIfReference(widthsObject) as PdfArray
+                     ?? throw new InvalidDataException(
+                         "PDF CID font /W не является массивом.");
+
+        var index = 0;
+
+        while (index < widths.Items.Count)
+        {
+            var firstCid = GetIntegerValue(
+                widths.Items[index++],
+                "PDF CID font /W CID");
+
+            if (index >= widths.Items.Count)
+            {
+                throw new InvalidDataException(
+                    "PDF CID font /W завершился после CID.");
+            }
+
+            var next = ResolveIfReference(
+                widths.Items[index++]);
+
+            if (next is PdfArray explicitWidths)
+            {
+                for (var offset = 0;
+                     offset < explicitWidths.Items.Count;
+                     offset++)
+                {
+                    result[firstCid + offset] =
+                        GetNumberValue(
+                            explicitWidths.Items[offset],
+                            "PDF CID font /W widths");
+                }
+
+                continue;
+            }
+
+            var lastCid = GetIntegerValue(
+                next,
+                "PDF CID font /W last CID");
+
+            if (index >= widths.Items.Count)
+            {
+                throw new InvalidDataException(
+                    "PDF CID font /W range не содержит width.");
+            }
+
+            var width = GetNumberValue(
+                widths.Items[index++],
+                "PDF CID font /W range width");
+
+            if (lastCid < firstCid)
+            {
+                throw new InvalidDataException(
+                    "PDF CID font /W содержит обратный CID range.");
+            }
+
+            for (var cid = firstCid; cid <= lastCid; cid++)
+            {
+                result[cid] = width;
+
+                if (cid == int.MaxValue)
+                {
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private double ReadSimpleFontMissingWidth(
+        PdfDictionary font)
+    {
+        if (!font.Items.TryGetValue(
+                "FontDescriptor",
+                out var descriptorObject))
+        {
+            return 0;
+        }
+
+        var descriptor = ResolveIfReference(descriptorObject) as PdfDictionary
+                         ?? throw new InvalidDataException(
+                             "PDF /FontDescriptor не является dictionary.");
+
+        return TryGetNumber(
+            descriptor,
+            "MissingWidth",
+            out var missingWidth)
+            ? missingWidth
+            : 0;
+    }
+
+    private int GetIntegerValue(
+        PdfObject value,
+        string context)
+    {
+        var resolved = ResolveIfReference(value);
+
+        if (resolved is not PdfNumber number ||
+            number.Value != Math.Truncate(number.Value) ||
+            number.Value < int.MinValue ||
+            number.Value > int.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"{context} не является целым числом.");
+        }
+
+        return (int)number.Value;
+    }
+
+    private double GetNumberValue(
+        PdfObject value,
+        string context)
+    {
+        var resolved = ResolveIfReference(value);
+
+        return resolved is PdfNumber number
+            ? number.Value
+            : throw new InvalidDataException(
+                $"{context} не является числом.");
+    }
+
+    private bool TryGetNumber(
+        PdfDictionary dictionary,
+        string key,
+        out double value)
+    {
+        value = 0;
+
+        if (!dictionary.Items.TryGetValue(
+                key,
+                out var item))
+        {
+            return false;
+        }
+
+        var resolved = ResolveIfReference(item);
+
+        if (resolved is not PdfNumber number)
+        {
+            return false;
+        }
+
+        value = number.Value;
+        return true;
     }
 
     private static IReadOnlyList<DocumentFixedTextRun> TransformTextRuns(
@@ -293,14 +570,14 @@ internal sealed class PdfDocumentReader
 
         var output = new StringBuilder();
         var runs = new List<PdfTextRun>();
-        var fontDecoders = BuildFontDecoders(resources);
+        var fontResources = BuildFontResources(resources);
 
         foreach (var stream in streams)
         {
             var decoded = DecodeStream(stream);
             var extracted = PdfTextExtractor.Extract(
                 decoded,
-                fontDecoders);
+                fontResources);
 
             if (output.Length > 0 &&
                 !string.IsNullOrWhiteSpace(extracted.Text))

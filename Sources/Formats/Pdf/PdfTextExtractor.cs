@@ -37,21 +37,21 @@ internal static class PdfTextExtractor
     /// </summary>
     public static PdfTextExtractionResult Extract(
         byte[] content,
-        IReadOnlyDictionary<string, PdfFontDecoder> fontDecoders)
+        IReadOnlyDictionary<string, PdfFontResource> fontResources)
     {
-        return new ContentParser(content, fontDecoders).Extract();
+        return new ContentParser(content, fontResources).Extract();
     }
 
     private sealed class ContentParser
     {
         private readonly byte[] data_;
-        private readonly IReadOnlyDictionary<string, PdfFontDecoder> fontDecoders_;
+        private readonly IReadOnlyDictionary<string, PdfFontResource> fontResources_;
         private readonly List<Operand> operands_ = new();
         private readonly StringBuilder output_ = new();
         private readonly List<PdfTextRun> runs_ = new();
 
         private int position_;
-        private PdfFontDecoder? currentFontDecoder_;
+        private PdfFontResource? currentFontResource_;
         private TextMatrix textMatrix_ = TextMatrix.Identity;
         private TextMatrix lineMatrix_ = TextMatrix.Identity;
         private double fontSize_ = 12;
@@ -63,10 +63,10 @@ internal static class PdfTextExtractor
 
         public ContentParser(
             byte[] data,
-            IReadOnlyDictionary<string, PdfFontDecoder> fontDecoders)
+            IReadOnlyDictionary<string, PdfFontResource> fontResources)
         {
             data_ = data;
-            fontDecoders_ = fontDecoders;
+            fontResources_ = fontResources;
         }
 
         public PdfTextExtractionResult Extract()
@@ -209,10 +209,10 @@ internal static class PdfTextExtractor
                 fontSize_ = Math.Abs(size.Value);
             }
 
-            currentFontDecoder_ =
+            currentFontResource_ =
                 font != null &&
-                fontDecoders_.TryGetValue(font.Name, out var decoder)
-                    ? decoder
+                fontResources_.TryGetValue(font.Name, out var resource)
+                    ? resource
                     : null;
         }
 
@@ -345,7 +345,17 @@ internal static class PdfTextExtractor
             });
 
             output_.Append(text);
-            AdvanceText(EstimateAdvance(text));
+
+            var advance = currentFontResource_?.HasWidthMetrics == true
+                ? currentFontResource_.MeasureAdvance(
+                    data,
+                    fontSize_,
+                    characterSpacing_,
+                    wordSpacing_,
+                    horizontalScale_)
+                : EstimateAdvance(text);
+
+            AdvanceText(advance);
         }
 
         private double EstimateAdvance(string text)
@@ -721,7 +731,7 @@ internal static class PdfTextExtractor
 
         private string DecodePdfString(byte[] data)
         {
-            return currentFontDecoder_?.Decode(data)
+            return currentFontResource_?.Decode(data)
                    ?? PdfFontDecoder.DecodeFallback(data);
         }
 
