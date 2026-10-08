@@ -39,8 +39,8 @@ internal sealed class DocumentHtmlBlock : DocumentBlock
 }
 
 /// <summary>
-/// Представляет фиксированную страницу документа с размерами в typographic points
-/// и извлечённым текстовым слоем.
+/// Представляет фиксированную страницу документа с размерами в typographic points,
+/// позиционированными текстовым и графическим слоями.
 /// </summary>
 internal sealed class DocumentFixedPage : DocumentBlock
 {
@@ -51,6 +51,24 @@ internal sealed class DocumentFixedPage : DocumentBlock
     public string Text { get; init; } = string.Empty;
     public IReadOnlyList<DocumentFixedTextRun> TextRuns { get; init; } =
         Array.Empty<DocumentFixedTextRun>();
+    public IReadOnlyList<DocumentFixedImageRun> ImageRuns { get; init; } =
+        Array.Empty<DocumentFixedImageRun>();
+}
+
+/// <summary>
+/// Представляет позиционированное изображение фиксированной страницы.
+/// Transform задаёт SVG affine matrix для нормализованного image rectangle 0..1.
+/// </summary>
+internal sealed class DocumentFixedImageRun
+{
+    public required byte[] Data { get; init; }
+    public required string ContentType { get; init; }
+    public required double TransformA { get; init; }
+    public required double TransformB { get; init; }
+    public required double TransformC { get; init; }
+    public required double TransformD { get; init; }
+    public required double TransformE { get; init; }
+    public required double TransformF { get; init; }
 }
 
 /// <summary>

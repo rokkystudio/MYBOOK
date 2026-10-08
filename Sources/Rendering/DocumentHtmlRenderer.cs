@@ -244,13 +244,34 @@ a { color: var(--primary); }
             .Append(page.PageNumber)
             .AppendLine("</div>");
 
-        if (page.TextRuns.Count > 0)
+        if (page.TextRuns.Count > 0 || page.ImageRuns.Count > 0)
         {
             html.Append("""<svg class="fixed-page-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 """)
                 .Append(FormatNumber(width))
                 .Append(' ')
                 .Append(FormatNumber(height))
                 .AppendLine("\" preserveAspectRatio=\"xMidYMin meet\">");
+
+            foreach (var image in page.ImageRuns)
+            {
+                html.Append("<image x=\"0\" y=\"0\" width=\"1\" height=\"1\" preserveAspectRatio=\"none\" href=\"data:")
+                    .Append(WebUtility.HtmlEncode(image.ContentType))
+                    .Append(";base64,")
+                    .Append(Convert.ToBase64String(image.Data))
+                    .Append("\" transform=\"matrix(")
+                    .Append(FormatNumber(image.TransformA))
+                    .Append(' ')
+                    .Append(FormatNumber(image.TransformB))
+                    .Append(' ')
+                    .Append(FormatNumber(image.TransformC))
+                    .Append(' ')
+                    .Append(FormatNumber(image.TransformD))
+                    .Append(' ')
+                    .Append(FormatNumber(image.TransformE))
+                    .Append(' ')
+                    .Append(FormatNumber(image.TransformF))
+                    .AppendLine(")\" />");
+            }
 
             foreach (var run in page.TextRuns)
             {

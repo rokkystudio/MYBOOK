@@ -12,6 +12,21 @@ internal sealed class PdfTextExtractionResult
 {
     public required string Text { get; init; }
     public required IReadOnlyList<PdfTextRun> Runs { get; init; }
+    public required IReadOnlyList<PdfImagePlacement> Images { get; init; }
+}
+
+/// <summary>
+/// Представляет Image XObject с CTM на момент оператора Do.
+/// </summary>
+internal sealed class PdfImagePlacement
+{
+    public required PdfImageResource Resource { get; init; }
+    public required double A { get; init; }
+    public required double B { get; init; }
+    public required double C { get; init; }
+    public required double D { get; init; }
+    public required double E { get; init; }
+    public required double F { get; init; }
 }
 
 /// <summary>
@@ -26,9 +41,9 @@ internal sealed class PdfTextRun
 }
 
 /// <summary>
-/// Интерпретирует текстовые операторы PDF content stream.
-/// Поддерживает graphics state `q/Q/cm`, text/line matrices, leading, spacing,
-/// font size, ToUnicode font resources и позиционированные Tj/TJ-фрагменты.
+/// Интерпретирует PDF content stream для текстового слоя и Image XObject.
+/// Поддерживает graphics state `q/Q/cm`, оператор `Do`, text/line matrices,
+/// leading, spacing, font size, ToUnicode font resources и позиционированные Tj/TJ-фрагменты.
 /// </summary>
 internal static class PdfTextExtractor
 {
@@ -37,18 +52,24 @@ internal static class PdfTextExtractor
     /// </summary>
     public static PdfTextExtractionResult Extract(
         byte[] content,
-        IReadOnlyDictionary<string, PdfFontResource> fontResources)
+        IReadOnlyDictionary<string, PdfFontResource> fontResources,
+        IReadOnlyDictionary<string, PdfImageResource> imageResources)
     {
-        return new ContentParser(content, fontResources).Extract();
+        return new ContentParser(
+            content,
+            fontResources,
+            imageResources).Extract();
     }
 
     private sealed class ContentParser
     {
         private readonly byte[] data_;
         private readonly IReadOnlyDictionary<string, PdfFontResource> fontResources_;
+        private readonly IReadOnlyDictionary<string, PdfImageResource> imageResources_;
         private readonly List<Operand> operands_ = new();
         private readonly StringBuilder output_ = new();
         private readonly List<PdfTextRun> runs_ = new();
+        private readonly List<PdfImagePlacement> images_ = new();
         private readonly Stack<GraphicsState> graphicsStateStack_ = new();
 
         private int position_;
@@ -65,10 +86,12 @@ internal static class PdfTextExtractor
 
         public ContentParser(
             byte[] data,
-            IReadOnlyDictionary<string, PdfFontResource> fontResources)
+            IReadOnlyDictionary<string, PdfFontResource> fontResources,
+            IReadOnlyDictionary<string, PdfImageResource> imageResources)
         {
             data_ = data;
             fontResources_ = fontResources;
+            imageResources_ = imageResources;
         }
 
         public PdfTextExtractionResult Extract()
@@ -129,7 +152,8 @@ internal static class PdfTextExtractor
             return new PdfTextExtractionResult
             {
                 Text = NormalizeOutput(output_.ToString()),
-                Runs = runs_.ToArray()
+                Runs = runs_.ToArray(),
+                Images = images_.ToArray()
             };
         }
 
@@ -147,6 +171,10 @@ internal static class PdfTextExtractor
 
                 case "cm":
                     ConcatenateTransformation();
+                    break;
+
+                case "Do":
+                    DrawXObject();
                     break;
 
                 case "BT":
@@ -255,6 +283,32 @@ internal static class PdfTextExtractor
 
             currentTransformation_ =
                 currentTransformation_.Multiply(matrix);
+        }
+
+        private void DrawXObject()
+        {
+            var name = operands_
+                .OfType<NameOperand>()
+                .LastOrDefault();
+
+            if (name == null ||
+                !imageResources_.TryGetValue(
+                    name.Name,
+                    out var image))
+            {
+                return;
+            }
+
+            images_.Add(new PdfImagePlacement
+            {
+                Resource = image,
+                A = currentTransformation_.A,
+                B = currentTransformation_.B,
+                C = currentTransformation_.C,
+                D = currentTransformation_.D,
+                E = currentTransformation_.E,
+                F = currentTransformation_.F
+            });
         }
 
         private void BeginTextObject()

@@ -118,6 +118,10 @@ internal sealed class PdfDocumentReader
                 TextRuns = TransformTextRuns(
                     textLayer.Runs,
                     box,
+                    rotation),
+                ImageRuns = TransformImageRuns(
+                    textLayer.Images,
+                    box,
                     rotation)
             });
 
@@ -172,6 +176,147 @@ internal sealed class PdfDocumentReader
         return ResolveIfReference(resourcesObject) as PdfDictionary
                ?? throw new InvalidDataException(
                    "PDF /Resources не является dictionary.");
+    }
+
+    private IReadOnlyDictionary<string, PdfImageResource> BuildImageResources(
+        PdfDictionary? resources)
+    {
+        var result = new Dictionary<string, PdfImageResource>(
+            StringComparer.Ordinal);
+
+        if (resources == null ||
+            !resources.Items.TryGetValue(
+                "XObject",
+                out var xObjectValue))
+        {
+            return result;
+        }
+
+        var xObjects = ResolveIfReference(xObjectValue) as PdfDictionary
+                       ?? throw new InvalidDataException(
+                           "PDF /Resources /XObject не является dictionary.");
+
+        foreach (var pair in xObjects.Items)
+        {
+            var value = ResolveIfReference(pair.Value);
+
+            if (value is not PdfStream stream ||
+                !string.Equals(
+                    GetName(stream.Dictionary, "Subtype"),
+                    "Image",
+                    StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            result[pair.Key] = BuildImageResource(
+                pair.Key,
+                stream);
+        }
+
+        return result;
+    }
+
+    private PdfImageResource BuildImageResource(
+        string resourceName,
+        PdfStream stream)
+    {
+        var filter = ReadSingleFilterName(stream.Dictionary);
+
+        if (string.Equals(filter, "DCTDecode", StringComparison.Ordinal) ||
+            string.Equals(filter, "DCT", StringComparison.Ordinal))
+        {
+            return new PdfImageResource
+            {
+                Data = stream.Data,
+                ContentType = "image/jpeg"
+            };
+        }
+
+        if (filter != null &&
+            !string.Equals(filter, "FlateDecode", StringComparison.Ordinal) &&
+            !string.Equals(filter, "Fl", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} использует неподдерживаемый filter /{filter}.");
+        }
+
+        var width = GetRequiredInteger(
+            stream.Dictionary,
+            "Width");
+        var height = GetRequiredInteger(
+            stream.Dictionary,
+            "Height");
+        var bits = GetRequiredInteger(
+            stream.Dictionary,
+            "BitsPerComponent");
+
+        if (bits != 8)
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} использует {bits} bits per component; поддерживается 8.");
+        }
+
+        if (!stream.Dictionary.Items.TryGetValue(
+                "ColorSpace",
+                out var colorSpaceValue))
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} не содержит /ColorSpace.");
+        }
+
+        var colorSpace = ResolveIfReference(colorSpaceValue) as PdfName
+                         ?? throw new InvalidDataException(
+                             $"PDF Image XObject /{resourceName} использует сложный ColorSpace; пока поддерживаются DeviceGray/DeviceRGB.");
+
+        var channels = colorSpace.Value switch
+        {
+            "DeviceGray" or "G" => 1,
+            "DeviceRGB" or "RGB" => 3,
+            _ => throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} использует неподдерживаемый ColorSpace /{colorSpace.Value}.")
+        };
+
+        if (stream.Dictionary.Items.ContainsKey("DecodeParms"))
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} содержит /DecodeParms; predictor пока не поддерживается.");
+        }
+
+        var pixels = filter == null
+            ? stream.Data
+            : DecodeStream(stream);
+
+        return new PdfImageResource
+        {
+            Data = PdfPngEncoder.Encode(
+                pixels,
+                width,
+                height,
+                channels),
+            ContentType = "image/png"
+        };
+    }
+
+    private string? ReadSingleFilterName(
+        PdfDictionary dictionary)
+    {
+        if (!dictionary.Items.TryGetValue(
+                "Filter",
+                out var filterValue))
+        {
+            return null;
+        }
+
+        var resolved = ResolveIfReference(filterValue);
+
+        if (resolved is PdfName name)
+        {
+            return name.Value;
+        }
+
+        throw new InvalidDataException(
+            "PDF Image XObject с цепочкой filters пока не поддерживается.");
     }
 
     private IReadOnlyDictionary<string, PdfFontResource> BuildFontResources(
@@ -567,6 +712,114 @@ internal sealed class PdfDocumentReader
         return result;
     }
 
+    private static IReadOnlyList<DocumentFixedImageRun> TransformImageRuns(
+        IReadOnlyList<PdfImagePlacement> images,
+        PageBox box,
+        int rotation)
+    {
+        if (images.Count == 0)
+        {
+            return Array.Empty<DocumentFixedImageRun>();
+        }
+
+        var result = new List<DocumentFixedImageRun>(
+            images.Count);
+
+        foreach (var image in images)
+        {
+            var topLeftPdf = TransformImagePoint(
+                image,
+                0,
+                1);
+
+            var topRightPdf = TransformImagePoint(
+                image,
+                1,
+                1);
+
+            var bottomLeftPdf = TransformImagePoint(
+                image,
+                0,
+                0);
+
+            var topLeft = TransformPagePoint(
+                topLeftPdf.X,
+                topLeftPdf.Y,
+                box,
+                rotation);
+
+            var topRight = TransformPagePoint(
+                topRightPdf.X,
+                topRightPdf.Y,
+                box,
+                rotation);
+
+            var bottomLeft = TransformPagePoint(
+                bottomLeftPdf.X,
+                bottomLeftPdf.Y,
+                box,
+                rotation);
+
+            result.Add(new DocumentFixedImageRun
+            {
+                Data = image.Resource.Data,
+                ContentType = image.Resource.ContentType,
+                TransformA = topRight.X - topLeft.X,
+                TransformB = topRight.Y - topLeft.Y,
+                TransformC = bottomLeft.X - topLeft.X,
+                TransformD = bottomLeft.Y - topLeft.Y,
+                TransformE = topLeft.X,
+                TransformF = topLeft.Y
+            });
+        }
+
+        return result;
+    }
+
+    private static PagePoint TransformImagePoint(
+        PdfImagePlacement image,
+        double x,
+        double y)
+    {
+        return new PagePoint(
+            image.A * x + image.C * y + image.E,
+            image.B * x + image.D * y + image.F);
+    }
+
+    private static PagePoint TransformPagePoint(
+        double x,
+        double y,
+        PageBox box,
+        int rotation)
+    {
+        var left = Math.Min(box.X1, box.X2);
+        var right = Math.Max(box.X1, box.X2);
+        var bottom = Math.Min(box.Y1, box.Y2);
+        var top = Math.Max(box.Y1, box.Y2);
+
+        return rotation switch
+        {
+            0 => new PagePoint(
+                x - left,
+                top - y),
+
+            90 => new PagePoint(
+                y - bottom,
+                x - left),
+
+            180 => new PagePoint(
+                right - x,
+                y - bottom),
+
+            270 => new PagePoint(
+                top - y,
+                right - x),
+
+            _ => throw new InvalidDataException(
+                $"PDF /Rotate имеет неподдерживаемое значение {rotation}.")
+        };
+    }
+
     private PdfTextExtractionResult ReadPageText(
         PdfDictionary page,
         PdfDictionary? resources)
@@ -576,7 +829,8 @@ internal sealed class PdfDocumentReader
             return new PdfTextExtractionResult
             {
                 Text = string.Empty,
-                Runs = Array.Empty<PdfTextRun>()
+                Runs = Array.Empty<PdfTextRun>(),
+                Images = Array.Empty<PdfImagePlacement>()
             };
         }
 
@@ -588,20 +842,24 @@ internal sealed class PdfDocumentReader
             return new PdfTextExtractionResult
             {
                 Text = string.Empty,
-                Runs = Array.Empty<PdfTextRun>()
+                Runs = Array.Empty<PdfTextRun>(),
+                Images = Array.Empty<PdfImagePlacement>()
             };
         }
 
         var output = new StringBuilder();
         var runs = new List<PdfTextRun>();
+        var images = new List<PdfImagePlacement>();
         var fontResources = BuildFontResources(resources);
+        var imageResources = BuildImageResources(resources);
 
         foreach (var stream in streams)
         {
             var decoded = DecodeStream(stream);
             var extracted = PdfTextExtractor.Extract(
                 decoded,
-                fontResources);
+                fontResources,
+                imageResources);
 
             if (output.Length > 0 &&
                 !string.IsNullOrWhiteSpace(extracted.Text))
@@ -611,12 +869,14 @@ internal sealed class PdfDocumentReader
 
             output.Append(extracted.Text);
             runs.AddRange(extracted.Runs);
+            images.AddRange(extracted.Images);
         }
 
         return new PdfTextExtractionResult
         {
             Text = output.ToString().Trim(),
-            Runs = runs
+            Runs = runs,
+            Images = images
         };
     }
 
@@ -1605,6 +1865,10 @@ internal sealed class PdfDocumentReader
         double Y1,
         double X2,
         double Y2);
+
+    private readonly record struct PagePoint(
+        double X,
+        double Y);
 
     private sealed record PageInheritance(
         PageBox? MediaBox = null,

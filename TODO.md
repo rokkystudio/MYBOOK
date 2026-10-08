@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.16
+Текущая версия: 1.0.17
 
 ## Архитектура
 
@@ -111,7 +111,7 @@
 - [x] Точные glyph widths/advance для simple fonts через `/FirstChar` + `/Widths` и Type0 `Identity-H/Identity-V` через `/DW` + `/W`.
 - [x] Type0 custom Encoding CMap stream: `codespacerange`, `cidchar`, `cidrange` и code→CID mapping для точных widths.
 - [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
-- [ ] Встроенные изображения.
+- [ ] Встроенные изображения. Поддержаны Image XObject с `DCTDecode` (JPEG) и 8-bit `FlateDecode` для `DeviceGray`/`DeviceRGB`; остаются predictor, alpha/SMask, Indexed/CMYK и filter chains.
 - [ ] Paths/fills/strokes.
 - [x] Постраничная модель MYBOOK.
 - [x] SVG renderer фиксированной страницы для геометрического текстового слоя через исходные PDF points и `viewBox`.
