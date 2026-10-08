@@ -268,20 +268,6 @@ internal sealed class PdfDocumentReader
         PdfDictionary font,
         PdfFontDecoder? decoder)
     {
-        var encoding = GetName(
-            font,
-            "Encoding");
-
-        var identityEncoding =
-            string.Equals(
-                encoding,
-                "Identity-H",
-                StringComparison.Ordinal) ||
-            string.Equals(
-                encoding,
-                "Identity-V",
-                StringComparison.Ordinal);
-
         if (!font.Items.TryGetValue(
                 "DescendantFonts",
                 out var descendantsObject))
@@ -305,16 +291,6 @@ internal sealed class PdfDocumentReader
                          ?? throw new InvalidDataException(
                              "PDF CID descendant font не является dictionary.");
 
-        if (!identityEncoding)
-        {
-            return new PdfFontResource(
-                decoder,
-                new Dictionary<int, double>(),
-                defaultWidth: 0,
-                codeUnitLength: 2,
-                applyWordSpacing: false);
-        }
-
         var widths = ReadCidWidths(descendant);
         var defaultWidth = TryGetNumber(
             descendant,
@@ -323,12 +299,60 @@ internal sealed class PdfDocumentReader
             ? dw
             : 1000;
 
-        return new PdfFontResource(
-            decoder,
-            widths,
-            defaultWidth,
-            codeUnitLength: 2,
-            applyWordSpacing: false);
+        if (!font.Items.TryGetValue(
+                "Encoding",
+                out var encodingObject))
+        {
+            throw new InvalidDataException(
+                "PDF Type0 font не содержит /Encoding.");
+        }
+
+        var resolvedEncoding = ResolveIfReference(
+            encodingObject);
+
+        if (resolvedEncoding is PdfName encodingName)
+        {
+            var identityEncoding =
+                string.Equals(
+                    encodingName.Value,
+                    "Identity-H",
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    encodingName.Value,
+                    "Identity-V",
+                    StringComparison.Ordinal);
+
+            return identityEncoding
+                ? new PdfFontResource(
+                    decoder,
+                    widths,
+                    defaultWidth,
+                    codeUnitLength: 2,
+                    applyWordSpacing: false)
+                : new PdfFontResource(
+                    decoder,
+                    new Dictionary<int, double>(),
+                    defaultWidth: 0,
+                    codeUnitLength: 2,
+                    applyWordSpacing: false);
+        }
+
+        if (resolvedEncoding is PdfStream encodingStream)
+        {
+            var cidMap = PdfCidMap.FromCMap(
+                DecodeStream(encodingStream));
+
+            return new PdfFontResource(
+                decoder,
+                widths,
+                defaultWidth,
+                codeUnitLength: 1,
+                applyWordSpacing: false,
+                cidMap: cidMap);
+        }
+
+        throw new InvalidDataException(
+            "PDF Type0 /Encoding имеет неподдерживаемый тип.");
     }
 
     private Dictionary<int, double> ReadCidWidths(

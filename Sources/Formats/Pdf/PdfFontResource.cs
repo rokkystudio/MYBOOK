@@ -1,3 +1,5 @@
+using System.IO;
+
 namespace MYBOOK.Formats.Pdf;
 
 /// <summary>
@@ -11,13 +13,15 @@ internal sealed class PdfFontResource
     private readonly double defaultWidth_;
     private readonly int codeUnitLength_;
     private readonly bool applyWordSpacing_;
+    private readonly PdfCidMap? cidMap_;
 
     public PdfFontResource(
         PdfFontDecoder? decoder,
         IReadOnlyDictionary<int, double> widths,
         double defaultWidth,
         int codeUnitLength,
-        bool applyWordSpacing)
+        bool applyWordSpacing,
+        PdfCidMap? cidMap = null)
     {
         if (codeUnitLength <= 0)
         {
@@ -30,6 +34,7 @@ internal sealed class PdfFontResource
         defaultWidth_ = defaultWidth;
         codeUnitLength_ = codeUnitLength;
         applyWordSpacing_ = applyWordSpacing;
+        cidMap_ = cidMap;
     }
 
     /// <summary>
@@ -51,6 +56,7 @@ internal sealed class PdfFontResource
     /// <summary>
     /// Вычисляет горизонтальное смещение текста в user-space units
     /// по PDF glyph widths, размеру шрифта и text-state spacing.
+    /// Для custom Type0 CMap исходный code сначала преобразуется в CID.
     /// </summary>
     public double MeasureAdvance(
         byte[] data,
@@ -70,22 +76,46 @@ internal sealed class PdfFontResource
 
         while (position < data.Length)
         {
-            var remaining = data.Length - position;
-            var length = Math.Min(
-                codeUnitLength_,
-                remaining);
+            int cid;
+            int sourceCode;
+            int length;
 
-            var code = 0;
-
-            for (var index = 0; index < length; index++)
+            if (cidMap_ != null)
             {
-                code = checked(
-                    (code << 8) |
-                    data[position + index]);
+                var sourcePosition = position;
+
+                if (!cidMap_.TryReadCid(
+                        data,
+                        ref position,
+                        out cid,
+                        out length))
+                {
+                    throw new InvalidDataException(
+                        $"PDF Type0 Encoding CMap не содержит character code в позиции {sourcePosition}.");
+                }
+
+                sourceCode = ReadCode(
+                    data,
+                    sourcePosition,
+                    length);
+            }
+            else
+            {
+                var remaining = data.Length - position;
+                length = Math.Min(
+                    codeUnitLength_,
+                    remaining);
+
+                sourceCode = ReadCode(
+                    data,
+                    position,
+                    length);
+                cid = sourceCode;
+                position += length;
             }
 
             var width = widths_.TryGetValue(
-                code,
+                cid,
                 out var explicitWidth)
                 ? explicitWidth
                 : defaultWidth_;
@@ -95,14 +125,38 @@ internal sealed class PdfFontResource
 
             if (applyWordSpacing_ &&
                 length == 1 &&
-                code == 0x20)
+                sourceCode == 0x20)
             {
                 total += wordSpacing;
             }
-
-            position += length;
         }
 
         return total * horizontalScale;
+    }
+
+    private static int ReadCode(
+        byte[] data,
+        int position,
+        int length)
+    {
+        if (length <= 0 ||
+            length > sizeof(int) ||
+            position < 0 ||
+            position + length > data.Length)
+        {
+            throw new InvalidDataException(
+                "PDF character code имеет неподдерживаемую длину.");
+        }
+
+        var code = 0;
+
+        for (var index = 0; index < length; index++)
+        {
+            code = checked(
+                (code << 8) |
+                data[position + index]);
+        }
+
+        return code;
     }
 }
