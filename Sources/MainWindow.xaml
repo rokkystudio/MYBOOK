@@ -27,7 +27,7 @@
                              Grid.Row="0"
                              TitleText="MYBOOK"
                              SubtitleText="Document Reader"
-                             VersionText="1.0.28"
+                             VersionText="1.0.29"
                              ShowIcon="True"
                              ShowLanguageButton="False"
                              ShowThemeButton="False"
@@ -55,6 +55,22 @@
                                            VerticalAlignment="Center" />
                                 <TextBlock x:Name="OpenButtonText"
                                            Text="Открыть"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button x:Name="OutlineButton"
+                                Margin="6,0,0,0"
+                                IsEnabled="False"
+                                Style="{StaticResource NeoToolBarButtonStyle}"
+                                Click="OutlineButton_OnClick">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="☰"
+                                           Margin="0,0,7,0"
+                                           VerticalAlignment="Center"
+                                           FontSize="16" />
+                                <TextBlock x:Name="OutlineButtonText"
+                                           Text="Оглавление"
                                            VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
@@ -98,18 +114,67 @@
             </Border>
 
             <Grid Grid.Row="2">
-                <TextBlock x:Name="EmptyStateTextBlock"
-                           Margin="28"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           FontSize="18"
-                           Foreground="{DynamicResource MutedTextBrush}"
-                           Text="Open a supported document to start reading."
-                           TextAlignment="Center"
-                           TextWrapping="Wrap" />
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-                <wv2:WebView2 x:Name="Reader"
-                              Visibility="Collapsed" />
+                <Border x:Name="OutlinePanel"
+                        Grid.Column="0"
+                        Width="280"
+                        Visibility="Collapsed"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="0,0,1,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock x:Name="OutlineHeaderText"
+                                   Margin="14,12,14,10"
+                                   FontFamily="Segoe UI"
+                                   FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Text="Оглавление" />
+
+                        <TreeView x:Name="OutlineTree"
+                                  Grid.Row="1"
+                                  Margin="6,0,6,8"
+                                  Padding="2"
+                                  BorderThickness="0"
+                                  Background="{DynamicResource SurfaceBrush}"
+                                  Foreground="{DynamicResource TextBrush}"
+                                  SelectedItemChanged="OutlineTree_OnSelectedItemChanged" />
+                    </Grid>
+                </Border>
+
+                <GridSplitter x:Name="OutlineSplitter"
+                              Grid.Column="1"
+                              Width="4"
+                              Visibility="Collapsed"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              Background="{DynamicResource BorderBrush}"
+                              ResizeDirection="Columns"
+                              ResizeBehavior="PreviousAndNext" />
+
+                <Grid Grid.Column="2">
+                    <TextBlock x:Name="EmptyStateTextBlock"
+                               Margin="28"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="18"
+                               Foreground="{DynamicResource MutedTextBrush}"
+                               Text="Open a supported document to start reading."
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+
+                    <wv2:WebView2 x:Name="Reader"
+                                  Visibility="Collapsed" />
+                </Grid>
             </Grid>
         </Grid>
     </Border>

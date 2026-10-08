@@ -1,8 +1,10 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using FlagsPack;
 using Microsoft.Win32;
 using MYBOOK.Documents;
@@ -23,7 +25,8 @@ namespace MYBOOK;
 
 /// <summary>
 /// Отображает главное окно MYBOOK, открывает поддерживаемые документы,
-/// преобразует их в нейтральную модель и рендерит через единый HTML/WebView2 слой.
+/// преобразует их в нейтральную модель, рендерит через единый HTML/WebView2 слой
+/// и предоставляет боковую навигацию по `DocumentModel.Outlines`.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -32,6 +35,7 @@ public partial class MainWindow : Window
     private readonly string? startupDocumentPath_;
     private bool readerInitialized_;
     private bool generatedDocumentOpen_;
+    private bool outlinePanelOpen_;
 
     /// <summary>
     /// Инициализирует окно, загружает общую иконку приложения,
@@ -110,6 +114,9 @@ public partial class MainWindow : Window
 
         OpenButtonText.Text = LocalizationService.Text("open");
         OpenButton.ToolTip = LocalizationService.Text("open");
+        OutlineButtonText.Text = LocalizationService.Text("contents");
+        OutlineHeaderText.Text = LocalizationService.Text("contents");
+        OutlineButton.ToolTip = LocalizationService.Text("tooltip_contents");
         SettingsButton.ToolTip = LocalizationService.Text("settings");
         LanguageToolButton.ToolTip = LocalizationService.Text("tooltip_language");
         ThemeToolButton.ToolTip = LocalizationService.Text("tooltip_theme");
@@ -206,11 +213,14 @@ public partial class MainWindow : Window
             {
                 Reader.Source = new Uri(fullPath, UriKind.Absolute);
                 generatedDocumentOpen_ = false;
+                UpdateOutlinePanel(null);
                 Title = Path.GetFileNameWithoutExtension(fullPath) + " — MYBOOK";
             }
             else
             {
                 var document = ReadDocument(fullPath, extension);
+                UpdateOutlinePanel(document);
+
                 var html = DocumentHtmlRenderer.Render(document, settings_.Theme);
                 var htmlPath = GetReaderHtmlPath();
 
@@ -359,6 +369,159 @@ public partial class MainWindow : Window
             await Reader.CoreWebView2.ExecuteScriptAsync(
                 DocumentHtmlRenderer.CreateThemeScript(settings_.Theme));
         }
+    }
+
+    /// <summary>
+    /// Перестраивает боковое оглавление для текущего документа
+    /// и синхронизирует доступность кнопки панели инструментов.
+    /// </summary>
+    private void UpdateOutlinePanel(DocumentModel? document)
+    {
+        OutlineTree.Items.Clear();
+
+        if (document?.Outlines.Count > 0)
+        {
+            AddOutlineItems(
+                OutlineTree,
+                document.Outlines,
+                depth: 0);
+        }
+
+        OutlineButton.IsEnabled =
+            OutlineTree.Items.Count > 0;
+
+        SetOutlinePanelVisibility(
+            outlinePanelOpen_ &&
+            OutlineButton.IsEnabled);
+    }
+
+    /// <summary>
+    /// Добавляет иерархические элементы оглавления в WPF TreeView.
+    /// </summary>
+    private static void AddOutlineItems(
+        ItemsControl parent,
+        IReadOnlyList<DocumentOutlineItem> items,
+        int depth)
+    {
+        foreach (var outline in items)
+        {
+            var item = new TreeViewItem
+            {
+                Header = outline.Title,
+                Tag = outline,
+                IsExpanded = depth == 0
+            };
+
+            parent.Items.Add(item);
+
+            if (outline.Children.Count > 0)
+            {
+                AddOutlineItems(
+                    item,
+                    outline.Children,
+                    depth + 1);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Показывает или скрывает боковую панель оглавления.
+    /// </summary>
+    private void SetOutlinePanelVisibility(bool visible)
+    {
+        outlinePanelOpen_ =
+            visible &&
+            OutlineButton.IsEnabled;
+
+        var visibility = outlinePanelOpen_
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        OutlinePanel.Visibility = visibility;
+        OutlineSplitter.Visibility = visibility;
+    }
+
+    /// <summary>
+    /// Переключает видимость боковой панели оглавления.
+    /// </summary>
+    private void OutlineButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SetOutlinePanelVisibility(
+            !outlinePanelOpen_);
+    }
+
+    /// <summary>
+    /// Переходит к выбранному пункту оглавления:
+    /// внутренние PDF destinations прокручивают WebView2 до страницы,
+    /// разрешённые внешние URI открываются стандартным приложением Windows.
+    /// </summary>
+    private async void OutlineTree_OnSelectedItemChanged(
+        object sender,
+        RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (e.NewValue is not TreeViewItem treeItem ||
+            treeItem.Tag is not DocumentOutlineItem outline)
+        {
+            return;
+        }
+
+        try
+        {
+            if (outline.TargetPageNumber is { } pageNumber)
+            {
+                await ScrollToPageAsync(pageNumber);
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(outline.Uri))
+            {
+                OpenOutlineUri(outline.Uri);
+            }
+        }
+        catch (Exception error)
+        {
+            ShowOpenError(error);
+        }
+    }
+
+    /// <summary>
+    /// Прокручивает сгенерированный документ к фиксированной странице.
+    /// </summary>
+    private async Task ScrollToPageAsync(int pageNumber)
+    {
+        if (pageNumber <= 0 ||
+            !generatedDocumentOpen_ ||
+            !readerInitialized_ ||
+            Reader.CoreWebView2 == null)
+        {
+            return;
+        }
+
+        await Reader.CoreWebView2.ExecuteScriptAsync(
+            $"document.getElementById('page-{pageNumber}')?.scrollIntoView({{behavior:'smooth',block:'start'}});");
+    }
+
+    /// <summary>
+    /// Открывает безопасный внешний URI из outline через оболочку Windows.
+    /// </summary>
+    private static void OpenOutlineUri(string value)
+    {
+        if (!Uri.TryCreate(
+                value,
+                UriKind.Absolute,
+                out var uri) ||
+            uri.Scheme is not ("http" or "https" or "mailto"))
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = uri.AbsoluteUri,
+            UseShellExecute = true
+        });
     }
 
     /// <summary>
