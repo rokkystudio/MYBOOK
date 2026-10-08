@@ -8,6 +8,46 @@ namespace MYBOOK.Formats.Pdf;
 internal static class PdfImageColorConverter
 {
     /// <summary>
+    /// Применяет PDF /Decode pairs к 8-bit component samples.
+    /// </summary>
+    public static byte[] ApplyComponentDecode(
+        byte[] samples,
+        int components,
+        IReadOnlyList<double> decode)
+    {
+        if (components <= 0 ||
+            samples.Length % components != 0)
+        {
+            throw new InvalidDataException(
+                "PDF raster имеет некорректное число component samples.");
+        }
+
+        if (decode.Count != components * 2)
+        {
+            throw new InvalidDataException(
+                "PDF /Decode не совпадает с числом color components.");
+        }
+
+        var output = new byte[samples.Length];
+
+        for (var index = 0; index < samples.Length; index++)
+        {
+            var component = index % components;
+            var minimum = decode[component * 2];
+            var maximum = decode[component * 2 + 1];
+
+            var mapped =
+                minimum +
+                samples[index] / 255.0 *
+                (maximum - minimum);
+
+            output[index] = ToByte(mapped);
+        }
+
+        return output;
+    }
+
+    /// <summary>
     /// Преобразует 8-bit DeviceCMYK samples в RGB.
     /// </summary>
     public static byte[] ConvertCmykToRgb(byte[] samples)
@@ -50,7 +90,9 @@ internal static class PdfImageColorConverter
         int height,
         int bitsPerComponent,
         int highValue,
-        byte[] rgbPalette)
+        byte[] rgbPalette,
+        double decodeMinimum,
+        double decodeMaximum)
     {
         if (width <= 0 || height <= 0)
         {
@@ -104,14 +146,18 @@ internal static class PdfImageColorConverter
                     8 -
                     bitsPerComponent -
                     bitOffset % 8;
-                var paletteIndex =
+                var rawIndex =
                     (sourceByte >> shift) & mask;
 
-                if (paletteIndex > highValue)
-                {
-                    throw new InvalidDataException(
-                        $"PDF Indexed sample {paletteIndex} превышает hival {highValue}.");
-                }
+                var mappedIndex =
+                    decodeMinimum +
+                    rawIndex / (double)mask *
+                    (decodeMaximum - decodeMinimum);
+
+                var paletteIndex = Math.Clamp(
+                    (int)Math.Floor(mappedIndex + 0.5),
+                    0,
+                    highValue);
 
                 var paletteOffset = paletteIndex * 3;
                 var targetOffset = (y * width + x) * 3;

@@ -242,17 +242,6 @@ internal sealed class PdfDocumentReader
             stream,
             resourceName);
 
-        if (decoded.IsJpeg)
-        {
-            return new PdfImageResource
-            {
-                Data = decoded.Data,
-                ContentType = "image/jpeg",
-                SoftMaskData = softMask?.Data,
-                SoftMaskContentType = softMask?.ContentType
-            };
-        }
-
         var bits = GetRequiredInteger(
             stream.Dictionary,
             "BitsPerComponent");
@@ -269,6 +258,31 @@ internal sealed class PdfDocumentReader
             colorSpaceValue,
             resourceName);
 
+        var decodeValues = ReadImageDecodeValues(
+            stream.Dictionary,
+            colorSpace,
+            $"PDF Image XObject /{resourceName}");
+
+        if (decoded.IsJpeg)
+        {
+            if (stream.Dictionary.Items.ContainsKey("Decode") &&
+                !decodeValues.SequenceEqual(
+                    GetDefaultImageDecodeValues(
+                        colorSpace)))
+            {
+                throw new InvalidDataException(
+                    $"PDF Image XObject /{resourceName} использует нестандартный /Decode поверх DCTDecode.");
+            }
+
+            return new PdfImageResource
+            {
+                Data = decoded.Data,
+                ContentType = "image/jpeg",
+                SoftMaskData = softMask?.Data,
+                SoftMaskContentType = softMask?.ContentType
+            };
+        }
+
         if (colorSpace.Kind != ImageColorSpaceKind.Indexed &&
             bits != 8)
         {
@@ -280,11 +294,25 @@ internal sealed class PdfDocumentReader
 
         var renderedPixels = colorSpace.Kind switch
         {
-            ImageColorSpaceKind.Gray => pixels,
-            ImageColorSpaceKind.Rgb => pixels,
+            ImageColorSpaceKind.Gray =>
+                PdfImageColorConverter.ApplyComponentDecode(
+                    pixels,
+                    components: 1,
+                    decodeValues),
+
+            ImageColorSpaceKind.Rgb =>
+                PdfImageColorConverter.ApplyComponentDecode(
+                    pixels,
+                    components: 3,
+                    decodeValues),
+
             ImageColorSpaceKind.Cmyk =>
                 PdfImageColorConverter.ConvertCmykToRgb(
-                    pixels),
+                    PdfImageColorConverter.ApplyComponentDecode(
+                        pixels,
+                        components: 4,
+                        decodeValues)),
+
             ImageColorSpaceKind.Indexed =>
                 PdfImageColorConverter.ConvertIndexedToRgb(
                     pixels,
@@ -294,7 +322,9 @@ internal sealed class PdfDocumentReader
                     colorSpace.HighValue,
                     colorSpace.RgbPalette
                     ?? throw new InvalidDataException(
-                        $"PDF Image XObject /{resourceName} Indexed palette отсутствует.")),
+                        $"PDF Image XObject /{resourceName} Indexed palette отсутствует."),
+                    decodeValues[0],
+                    decodeValues[1]),
             _ => throw new InvalidDataException(
                 $"PDF Image XObject /{resourceName} использует неизвестный ColorSpace.")
         };
@@ -451,6 +481,97 @@ internal sealed class PdfDocumentReader
         return (int)number.Value;
     }
 
+    private double[] ReadImageDecodeValues(
+        PdfDictionary dictionary,
+        ImageColorSpaceInfo colorSpace,
+        string context)
+    {
+        return ReadDecodeValues(
+            dictionary,
+            GetDefaultImageDecodeValues(colorSpace),
+            context);
+    }
+
+    private double[] ReadDecodeValues(
+        PdfDictionary dictionary,
+        IReadOnlyList<double> defaultValues,
+        string context)
+    {
+        if (!dictionary.Items.TryGetValue(
+                "Decode",
+                out var decodeValue))
+        {
+            return defaultValues.ToArray();
+        }
+
+        var resolved = ResolveIfReference(
+            decodeValue) as PdfArray
+                       ?? throw new InvalidDataException(
+                           $"{context} /Decode не является массивом.");
+
+        if (resolved.Items.Count != defaultValues.Count)
+        {
+            throw new InvalidDataException(
+                $"{context} /Decode содержит {resolved.Items.Count} значений вместо ожидаемых {defaultValues.Count}.");
+        }
+
+        var result = new double[resolved.Items.Count];
+
+        for (var index = 0; index < resolved.Items.Count; index++)
+        {
+            var value = GetNumberValue(
+                resolved.Items[index],
+                $"{context} /Decode");
+
+            if (!double.IsFinite(value))
+            {
+                throw new InvalidDataException(
+                    $"{context} /Decode содержит нечисловое конечное значение.");
+            }
+
+            result[index] = value;
+        }
+
+        return result;
+    }
+
+    private static double[] GetDefaultImageDecodeValues(
+        ImageColorSpaceInfo colorSpace)
+    {
+        return colorSpace.Kind switch
+        {
+            ImageColorSpaceKind.Gray =>
+                new[] { 0.0, 1.0 },
+
+            ImageColorSpaceKind.Rgb =>
+                new[]
+                {
+                    0.0, 1.0,
+                    0.0, 1.0,
+                    0.0, 1.0
+                },
+
+            ImageColorSpaceKind.Cmyk =>
+                new[]
+                {
+                    0.0, 1.0,
+                    0.0, 1.0,
+                    0.0, 1.0,
+                    0.0, 1.0
+                },
+
+            ImageColorSpaceKind.Indexed =>
+                new[]
+                {
+                    0.0,
+                    (double)colorSpace.HighValue
+                },
+
+            _ => throw new InvalidDataException(
+                "PDF Image XObject использует неизвестный ColorSpace.")
+        };
+    }
+
     private PdfImageResource? BuildSoftMaskResource(
         string resourceName,
         PdfDictionary imageDictionary,
@@ -490,12 +611,6 @@ internal sealed class PdfDocumentReader
                 $"PDF Image XObject /{resourceName} /SMask /Matte пока не поддерживается.");
         }
 
-        if (softMask.Dictionary.Items.ContainsKey("Decode"))
-        {
-            throw new InvalidDataException(
-                $"PDF Image XObject /{resourceName} /SMask /Decode пока не поддерживается.");
-        }
-
         var bits = GetRequiredInteger(
             softMask.Dictionary,
             "BitsPerComponent");
@@ -529,7 +644,16 @@ internal sealed class PdfDocumentReader
                 $"PDF Image XObject /{resourceName} /SMask не может использовать DCTDecode.");
         }
 
-        var pixels = decoded.Data;
+        var decodeValues = ReadDecodeValues(
+            softMask.Dictionary,
+            new[] { 0.0, 1.0 },
+            $"PDF Image XObject /{resourceName} /SMask");
+
+        var pixels =
+            PdfImageColorConverter.ApplyComponentDecode(
+                decoded.Data,
+                components: 1,
+                decodeValues);
 
         return new PdfImageResource
         {
