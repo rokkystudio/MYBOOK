@@ -7,8 +7,9 @@ namespace MYBOOK.Formats.Epub;
 
 /// <summary>
 /// Безопасно преобразует локальные EPUB-ресурсы для автономного HTML renderer:
-/// изображения/SVG становятся data URI, опасные HTML-атрибуты удаляются,
-/// авторский CSS ограничивается главой и не выполняет внешних загрузок.
+/// изображения/SVG, picture/srcset, media и embedded fonts становятся data URI,
+/// опасные HTML-атрибуты удаляются, а авторский CSS ограничивается главой
+/// и не выполняет внешних загрузок.
 /// </summary>
 internal static class EpubResourceProcessor
 {
@@ -44,7 +45,7 @@ internal static class EpubResourceProcessor
                 attribute.Remove();
             }
 
-            element.Attribute("srcset")?.Remove();
+            element.Attribute("autoplay")?.Remove();
 
             var style = element.Attribute("style");
 
@@ -65,35 +66,75 @@ internal static class EpubResourceProcessor
                 }
             }
 
-            if (string.Equals(
-                    element.Name.LocalName,
-                    "img",
-                    StringComparison.OrdinalIgnoreCase))
+            switch (element.Name.LocalName.ToLowerInvariant())
             {
-                RewriteImageAttribute(
-                    archive,
-                    chapterPath,
-                    element.Attribute("src"));
-            }
-            else if (string.Equals(
-                         element.Name.LocalName,
-                         "image",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                foreach (var attribute in element
-                             .Attributes()
-                             .Where(attribute =>
-                                 string.Equals(
-                                     attribute.Name.LocalName,
-                                     "href",
-                                     StringComparison.OrdinalIgnoreCase))
-                             .ToArray())
-                {
+                case "img":
                     RewriteImageAttribute(
                         archive,
                         chapterPath,
-                        attribute);
-                }
+                        element.Attribute("src"));
+
+                    RewriteSrcSetAttribute(
+                        archive,
+                        chapterPath,
+                        element.Attribute("srcset"));
+                    break;
+
+                case "source":
+                    RewriteResourceAttribute(
+                        archive,
+                        chapterPath,
+                        element.Attribute("src"));
+
+                    RewriteSrcSetAttribute(
+                        archive,
+                        chapterPath,
+                        element.Attribute("srcset"));
+                    break;
+
+                case "video":
+                    RewriteResourceAttribute(
+                        archive,
+                        chapterPath,
+                        element.Attribute("src"));
+
+                    RewriteImageAttribute(
+                        archive,
+                        chapterPath,
+                        element.Attribute("poster"));
+                    break;
+
+                case "audio":
+                    RewriteResourceAttribute(
+                        archive,
+                        chapterPath,
+                        element.Attribute("src"));
+                    break;
+
+                case "track":
+                    RewriteResourceAttribute(
+                        archive,
+                        chapterPath,
+                        element.Attribute("src"));
+                    break;
+
+                case "image":
+                    foreach (var attribute in element
+                                 .Attributes()
+                                 .Where(attribute =>
+                                     string.Equals(
+                                         attribute.Name.LocalName,
+                                         "href",
+                                         StringComparison.OrdinalIgnoreCase))
+                                 .ToArray())
+                    {
+                        RewriteImageAttribute(
+                            archive,
+                            chapterPath,
+                            attribute);
+                    }
+
+                    break;
             }
         }
     }
@@ -219,12 +260,36 @@ internal static class EpubResourceProcessor
             position = close + 1;
 
             if (selector.Length == 0 ||
-                selector.StartsWith(
-                    "@",
-                    StringComparison.Ordinal) ||
                 selector.Contains('<') ||
                 selector.Contains('>') ||
                 body.Contains('{'))
+            {
+                continue;
+            }
+
+            if (string.Equals(
+                    selector,
+                    "@font-face",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                var fontFace = SanitizeFontFaceDeclarations(
+                    archive,
+                    ownerPath,
+                    body);
+
+                if (fontFace.Length > 0)
+                {
+                    result.Append("@font-face{")
+                        .Append(fontFace)
+                        .AppendLine("}");
+                }
+
+                continue;
+            }
+
+            if (selector.StartsWith(
+                    "@",
+                    StringComparison.Ordinal))
             {
                 continue;
             }
@@ -344,6 +409,198 @@ internal static class EpubResourceProcessor
         return string.Join(
             ",",
             result);
+    }
+
+    private static string SanitizeFontFaceDeclarations(
+        ZipArchive archive,
+        string ownerPath,
+        string source)
+    {
+        var result = new StringBuilder();
+
+        foreach (var raw in SplitTopLevel(
+                     source,
+                     ';'))
+        {
+            var separator = raw.IndexOf(':');
+
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var property = raw[..separator]
+                .Trim()
+                .ToLowerInvariant();
+
+            var value = raw[(separator + 1)..]
+                .Trim();
+
+            if (value.Length == 0 ||
+                value.Contains('<') ||
+                value.Contains('>') ||
+                value.Contains(
+                    "javascript:",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string? sanitized = property switch
+            {
+                "font-family" => value,
+                "font-style" => value,
+                "font-weight" => value,
+                "font-stretch" => value,
+                "unicode-range" => value,
+                "font-display" => value,
+                "src" => RewriteFontSources(
+                    archive,
+                    ownerPath,
+                    value),
+                _ => null
+            };
+
+            if (string.IsNullOrWhiteSpace(
+                    sanitized))
+            {
+                continue;
+            }
+
+            if (result.Length > 0)
+            {
+                result.Append(';');
+            }
+
+            result.Append(property)
+                .Append(':')
+                .Append(sanitized);
+        }
+
+        return result.ToString();
+    }
+
+    private static string? RewriteFontSources(
+        ZipArchive archive,
+        string ownerPath,
+        string value)
+    {
+        var sources = new List<string>();
+
+        foreach (var rawSource in SplitTopLevel(
+                     value,
+                     ','))
+        {
+            var source = rawSource.Trim();
+
+            if (source.Length == 0 ||
+                source.StartsWith(
+                    "local(",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var marker = source.IndexOf(
+                "url(",
+                StringComparison.OrdinalIgnoreCase);
+
+            if (marker < 0)
+            {
+                continue;
+            }
+
+            var end = source.IndexOf(
+                ')',
+                marker + 4);
+
+            if (end < 0)
+            {
+                continue;
+            }
+
+            var reference = source[
+                    (marker + 4)..end]
+                .Trim()
+                .Trim(
+                    '"',
+                    '\'');
+
+            var dataUri = ResolveFontDataUri(
+                archive,
+                ownerPath,
+                reference);
+
+            if (dataUri == null)
+            {
+                continue;
+            }
+
+            var suffix = source[(end + 1)..]
+                .Trim();
+
+            if (suffix.Length > 0 &&
+                !suffix.StartsWith(
+                    "format(",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                suffix = string.Empty;
+            }
+
+            sources.Add(
+                "url(" +
+                dataUri +
+                ")" +
+                (suffix.Length == 0
+                    ? string.Empty
+                    : " " + suffix));
+        }
+
+        return sources.Count == 0
+            ? null
+            : string.Join(
+                ",",
+                sources);
+    }
+
+    private static string? ResolveFontDataUri(
+        ZipArchive archive,
+        string ownerPath,
+        string? reference)
+    {
+        var path = ResolveArchivePath(
+            ownerPath,
+            reference);
+
+        if (path == null)
+        {
+            return null;
+        }
+
+        var contentType = GetFontContentType(
+            path);
+
+        if (contentType == null)
+        {
+            return null;
+        }
+
+        var entry = archive.GetEntry(path);
+
+        if (entry == null)
+        {
+            return null;
+        }
+
+        using var stream = entry.Open();
+        using var memory = new MemoryStream();
+        stream.CopyTo(memory);
+
+        return "data:" +
+               contentType +
+               ";base64," +
+               Convert.ToBase64String(
+                   memory.ToArray());
     }
 
     private static string SanitizeDeclarations(
@@ -659,6 +916,205 @@ internal static class EpubResourceProcessor
         return result;
     }
 
+    private static void RewriteSrcSetAttribute(
+        ZipArchive archive,
+        string ownerPath,
+        XAttribute? attribute)
+    {
+        if (attribute == null)
+        {
+            return;
+        }
+
+        var candidates = new List<string>();
+
+        foreach (var raw in attribute.Value.Split(
+                     ',',
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            var candidate = raw.Trim();
+
+            if (candidate.Length == 0)
+            {
+                continue;
+            }
+
+            var separator = candidate.LastIndexOfAny(
+                [' ', '\t', '\r', '\n']);
+
+            var reference = separator < 0
+                ? candidate
+                : candidate[..separator].Trim();
+
+            var descriptor = separator < 0
+                ? string.Empty
+                : candidate[(separator + 1)..].Trim();
+
+            if (descriptor.Length > 0 &&
+                !IsValidSrcSetDescriptor(
+                    descriptor))
+            {
+                continue;
+            }
+
+            var dataUri = ResolveImageDataUri(
+                archive,
+                ownerPath,
+                reference);
+
+            if (dataUri == null)
+            {
+                continue;
+            }
+
+            candidates.Add(
+                dataUri +
+                (descriptor.Length == 0
+                    ? string.Empty
+                    : " " + descriptor));
+        }
+
+        if (candidates.Count == 0)
+        {
+            attribute.Remove();
+        }
+        else
+        {
+            attribute.Value = string.Join(
+                ", ",
+                candidates);
+        }
+    }
+
+    private static bool IsValidSrcSetDescriptor(string value)
+    {
+        if (value.Length < 2)
+        {
+            return false;
+        }
+
+        var suffix = value[^1];
+
+        if (suffix == 'w')
+        {
+            return int.TryParse(
+                       value[..^1],
+                       out var width) &&
+                   width > 0;
+        }
+
+        if (suffix == 'x')
+        {
+            return double.TryParse(
+                       value[..^1],
+                       System.Globalization.NumberStyles.Float,
+                       System.Globalization.CultureInfo.InvariantCulture,
+                       out var scale) &&
+                   scale > 0;
+        }
+
+        return false;
+    }
+
+    private static void RewriteResourceAttribute(
+        ZipArchive archive,
+        string ownerPath,
+        XAttribute? attribute)
+    {
+        if (attribute == null)
+        {
+            return;
+        }
+
+        var dataUri = ResolveResourceDataUri(
+            archive,
+            ownerPath,
+            attribute.Value);
+
+        if (dataUri == null)
+        {
+            attribute.Remove();
+        }
+        else
+        {
+            attribute.Value = dataUri;
+        }
+    }
+
+    private static string? ResolveResourceDataUri(
+        ZipArchive archive,
+        string ownerPath,
+        string? reference)
+    {
+        if (string.IsNullOrWhiteSpace(
+                reference))
+        {
+            return null;
+        }
+
+        var value = reference.Trim();
+
+        if (value.StartsWith(
+                "data:",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return IsAllowedDataResource(
+                    value)
+                ? value
+                : null;
+        }
+
+        var path = ResolveArchivePath(
+            ownerPath,
+            value);
+
+        if (path == null)
+        {
+            return null;
+        }
+
+        var contentType = GetResourceContentType(
+            path);
+
+        if (contentType == null)
+        {
+            return null;
+        }
+
+        var entry = archive.GetEntry(path);
+
+        if (entry == null)
+        {
+            return null;
+        }
+
+        using var stream = entry.Open();
+        using var memory = new MemoryStream();
+        stream.CopyTo(memory);
+
+        return "data:" +
+               contentType +
+               ";base64," +
+               Convert.ToBase64String(
+                   memory.ToArray());
+    }
+
+    private static bool IsAllowedDataResource(string value)
+    {
+        return value.StartsWith(
+                   "data:image/",
+                   StringComparison.OrdinalIgnoreCase) ||
+               value.StartsWith(
+                   "data:audio/",
+                   StringComparison.OrdinalIgnoreCase) ||
+               value.StartsWith(
+                   "data:video/",
+                   StringComparison.OrdinalIgnoreCase) ||
+               value.StartsWith(
+                   "data:text/vtt",
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void RewriteImageAttribute(
         ZipArchive archive,
         string ownerPath,
@@ -834,6 +1290,37 @@ internal static class EpubResourceProcessor
                 '\\',
                 '/')
             .TrimStart('/');
+    }
+
+    private static string? GetResourceContentType(string path)
+    {
+        return GetImageContentType(path) ??
+               Path.GetExtension(path)
+                   .ToLowerInvariant() switch
+               {
+                   ".mp3" => "audio/mpeg",
+                   ".m4a" or ".aac" => "audio/mp4",
+                   ".ogg" or ".oga" => "audio/ogg",
+                   ".wav" => "audio/wav",
+                   ".mp4" or ".m4v" => "video/mp4",
+                   ".webm" => "video/webm",
+                   ".ogv" => "video/ogg",
+                   ".vtt" => "text/vtt",
+                   _ => null
+               };
+    }
+
+    private static string? GetFontContentType(string path)
+    {
+        return Path.GetExtension(path)
+            .ToLowerInvariant() switch
+        {
+            ".woff" => "font/woff",
+            ".woff2" => "font/woff2",
+            ".ttf" => "font/ttf",
+            ".otf" => "font/otf",
+            _ => null
+        };
     }
 
     private static string? GetImageContentType(string path)

@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.40
+Текущая версия: 1.0.41
 
 В этом файле перечислены только незавершённые задачи.
 
@@ -19,8 +19,6 @@
 
 ## EPUB
 
-- [ ] Встроенные шрифты EPUB.
-- [ ] EPUB `picture/srcset` и дополнительные media-ресурсы; обычные `img`, inline SVG, SVG `<image>` и CSS image resources уже поддерживаются.
 - [ ] EPUB 2/3 compatibility tests на отдельном corpus.
 
 ## DOCX

@@ -368,6 +368,18 @@ internal static class Program
                     <item id="svg"
                           href="Images/icon.svg"
                           media-type="image/svg+xml" />
+                    <item id="font"
+                          href="Fonts/embedded.woff2"
+                          media-type="font/woff2" />
+                    <item id="audio"
+                          href="Media/tone.mp3"
+                          media-type="audio/mpeg" />
+                    <item id="video"
+                          href="Media/clip.mp4"
+                          media-type="video/mp4" />
+                    <item id="captions"
+                          href="Media/captions.vtt"
+                          media-type="text/vtt" />
                   </manifest>
                   <spine>
                     <itemref idref="chapter1" />
@@ -416,9 +428,18 @@ internal static class Program
                 "OEBPS/Styles/book.css",
                 """
                 @import url("https://example.invalid/remote.css");
+                @font-face {
+                    font-family: "EmbeddedTest";
+                    src: local("DoNotUse"),
+                         url("../Fonts/embedded.woff2") format("woff2"),
+                         url("https://example.invalid/remote.woff2") format("woff2");
+                    font-style: normal;
+                    font-weight: 400;
+                }
                 body { color: rgb(1, 2, 3); }
                 .illustrated {
                     background-image: url("../Images/pixel.png");
+                    font-family: "EmbeddedTest";
                     margin-top: 4px;
                     position: fixed;
                 }
@@ -439,6 +460,31 @@ internal static class Program
                      viewBox="0 0 10 10">
                   <rect x="0" y="0" width="10" height="10" fill="red" />
                 </svg>
+                """);
+
+            WriteZipBytes(
+                archive,
+                "OEBPS/Fonts/embedded.woff2",
+                [0x77, 0x4F, 0x46, 0x32, 0x00, 0x01, 0x00, 0x00]);
+
+            WriteZipBytes(
+                archive,
+                "OEBPS/Media/tone.mp3",
+                [0x49, 0x44, 0x33, 0x04, 0x00, 0x00]);
+
+            WriteZipBytes(
+                archive,
+                "OEBPS/Media/clip.mp4",
+                [0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]);
+
+            WriteZipEntry(
+                archive,
+                "OEBPS/Media/captions.vtt",
+                """
+                WEBVTT
+
+                00:00.000 --> 00:01.000
+                Caption
                 """);
 
             WriteZipEntry(
@@ -465,6 +511,19 @@ internal static class Program
                     <img src="../Images/pixel.png"
                          onerror="alert(1)" />
                     <img src="../Images/icon.svg" />
+                    <picture>
+                      <source srcset="../Images/pixel.png 1x, ../Images/icon.svg 2x"
+                              type="image/png" />
+                      <img src="../Images/pixel.png"
+                           srcset="../Images/pixel.png 1x, ../Images/icon.svg 2x" />
+                    </picture>
+                    <audio src="../Media/tone.mp3" autoplay="autoplay"></audio>
+                    <video src="../Media/clip.mp4"
+                           poster="../Images/pixel.png"
+                           autoplay="autoplay">
+                      <track src="../Media/captions.vtt" kind="captions" />
+                    </video>
+                    <audio src="https://example.invalid/remote.mp3"></audio>
                     <svg:svg width="12" height="12" viewBox="0 0 12 12">
                       <svg:image href="../Images/pixel.png"
                                  x="0" y="0" width="12" height="12" />
@@ -624,6 +683,48 @@ internal static class Program
             combinedHtml,
             "src=\"data:image/svg+xml;base64,",
             "EPUB SVG resource");
+
+        AssertContains(
+            combinedHtml,
+            "@font-face{font-family:\"EmbeddedTest\";src:url(data:font/woff2;base64,",
+            "EPUB embedded font data URI");
+
+        Assert(
+            !combinedHtml.Contains(
+                "local(\"DoNotUse\")",
+                StringComparison.OrdinalIgnoreCase),
+            "EPUB embedded font не должен зависеть от local() font source.");
+
+        AssertContains(
+            combinedHtml,
+            "srcset=\"data:image/png;base64,",
+            "EPUB srcset first embedded candidate");
+
+        AssertContains(
+            combinedHtml,
+            "data:image/svg+xml;base64,",
+            "EPUB srcset SVG candidate");
+
+        AssertContains(
+            combinedHtml,
+            "src=\"data:audio/mpeg;base64,",
+            "EPUB audio resource");
+
+        AssertContains(
+            combinedHtml,
+            "src=\"data:video/mp4;base64,",
+            "EPUB video resource");
+
+        AssertContains(
+            combinedHtml,
+            "src=\"data:text/vtt;base64,",
+            "EPUB captions track resource");
+
+        Assert(
+            !combinedHtml.Contains(
+                "autoplay=",
+                StringComparison.OrdinalIgnoreCase),
+            "EPUB autoplay должен удаляться.");
 
         AssertContains(
             combinedHtml,
