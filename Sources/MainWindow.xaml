@@ -27,7 +27,7 @@
                              Grid.Row="0"
                              TitleText="MYBOOK"
                              SubtitleText="Document Reader"
-                             VersionText="1.0.32"
+                             VersionText="1.0.33"
                              ShowIcon="True"
                              ShowLanguageButton="False"
                              ShowThemeButton="False"
@@ -169,51 +169,98 @@
                                       Foreground="{DynamicResource TextBrush}"
                                       SelectedItemChanged="OutlineTree_OnSelectedItemChanged" />
 
-                            <ListBox x:Name="PagePreviewList"
-                                     Margin="4,0,4,8"
-                                     Visibility="Collapsed"
-                                     BorderThickness="0"
-                                     Background="{DynamicResource SurfaceBrush}"
-                                     Foreground="{DynamicResource TextBrush}"
-                                     ScrollViewer.CanContentScroll="True"
-                                     VirtualizingPanel.IsVirtualizing="True"
-                                     VirtualizingPanel.VirtualizationMode="Recycling"
-                                     SelectionChanged="PagePreviewList_OnSelectionChanged">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Margin="6"
-                                                Padding="7"
-                                                Background="{DynamicResource RaisedSurfaceBrush}"
-                                                BorderBrush="{DynamicResource BorderBrush}"
-                                                BorderThickness="1"
-                                                CornerRadius="7">
-                                            <StackPanel>
-                                                <Border HorizontalAlignment="Center"
-                                                        Background="White"
-                                                        BorderBrush="#C8CCD2"
-                                                        BorderThickness="1">
-                                                    <Viewbox Width="150"
-                                                             MaxHeight="210"
-                                                             Stretch="Uniform">
-                                                        <Canvas Width="{Binding PreviewWidth}"
-                                                                Height="{Binding PreviewHeight}"
-                                                                Background="White"
-                                                                Loaded="PagePreviewCanvas_OnLoaded"
-                                                                Unloaded="PagePreviewCanvas_OnUnloaded" />
-                                                    </Viewbox>
-                                                </Border>
+                            <Grid x:Name="PagesPanel"
+                                  Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
 
-                                                <TextBlock Margin="0,7,0,0"
-                                                           HorizontalAlignment="Center"
-                                                           FontFamily="Segoe UI"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource MutedTextBrush}"
-                                                           Text="{Binding PageNumber}" />
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
+                                <Grid Margin="10,2,10,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="58" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock x:Name="PageJumpLabelText"
+                                               Grid.Column="0"
+                                               Margin="0,0,7,0"
+                                               VerticalAlignment="Center"
+                                               Text="Страница" />
+
+                                    <TextBox x:Name="PageNumberTextBox"
+                                             Grid.Column="1"
+                                             Height="28"
+                                             Padding="6,3"
+                                             VerticalContentAlignment="Center"
+                                             Text="1"
+                                             KeyDown="PageNumberTextBox_OnKeyDown" />
+
+                                    <TextBlock x:Name="PageCountTextBlock"
+                                               Grid.Column="2"
+                                               Margin="6,0,8,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource MutedTextBrush}"
+                                               Text="/ 0" />
+
+                                    <Button x:Name="GoToPageButton"
+                                            Grid.Column="3"
+                                            HorizontalAlignment="Right"
+                                            Style="{StaticResource NeoToolBarButtonStyle}"
+                                            Click="GoToPageButton_OnClick">
+                                        <TextBlock x:Name="GoToPageButtonText"
+                                                   Text="Перейти" />
+                                    </Button>
+                                </Grid>
+
+                                <ListBox x:Name="PagePreviewList"
+                                         Grid.Row="1"
+                                         Margin="4,0,4,8"
+                                         BorderThickness="0"
+                                         Background="{DynamicResource SurfaceBrush}"
+                                         Foreground="{DynamicResource TextBrush}"
+                                         ScrollViewer.CanContentScroll="True"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling"
+                                         SelectionChanged="PagePreviewList_OnSelectionChanged">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="6"
+                                                    Padding="7"
+                                                    Background="{DynamicResource RaisedSurfaceBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="7">
+                                                <StackPanel>
+                                                    <Border HorizontalAlignment="Center"
+                                                            Background="White"
+                                                            BorderBrush="#C8CCD2"
+                                                            BorderThickness="1">
+                                                        <Viewbox Width="150"
+                                                                 MaxHeight="210"
+                                                                 Stretch="Uniform">
+                                                            <Canvas Width="{Binding PreviewWidth}"
+                                                                    Height="{Binding PreviewHeight}"
+                                                                    Background="White"
+                                                                    Loaded="PagePreviewCanvas_OnLoaded"
+                                                                    Unloaded="PagePreviewCanvas_OnUnloaded" />
+                                                        </Viewbox>
+                                                    </Border>
+
+                                                    <TextBlock Margin="0,7,0,0"
+                                                               HorizontalAlignment="Center"
+                                                               FontFamily="Segoe UI"
+                                                               FontSize="12"
+                                                               Foreground="{DynamicResource MutedTextBrush}"
+                                                               Text="{Binding PageNumber}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
                         </Grid>
                     </Grid>
                 </Border>

@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
     private bool readerInitialized_;
     private bool generatedDocumentOpen_;
     private bool navigationPanelOpen_;
+    private bool synchronizingPageSelection_;
     private NavigationMode navigationMode_ = NavigationMode.Contents;
 
     /// <summary>
@@ -113,6 +115,8 @@ public partial class MainWindow : Window
         NavigationButton.ToolTip = LocalizationService.Text("tooltip_navigation");
         ContentsModeButtonText.Text = LocalizationService.Text("contents");
         PagesModeButtonText.Text = LocalizationService.Text("pages");
+        PageJumpLabelText.Text = LocalizationService.Text("page");
+        GoToPageButtonText.Text = LocalizationService.Text("go");
         SettingsButton.ToolTip = LocalizationService.Text("settings");
         LanguageToolButton.ToolTip = LocalizationService.Text("tooltip_language");
         ThemeToolButton.ToolTip = LocalizationService.Text("tooltip_theme");
@@ -353,10 +357,23 @@ public partial class MainWindow : Window
         if (fixedPages.Length > 0)
         {
             PagePreviewList.ItemsSource = fixedPages;
+            PageNumberTextBox.Text = "1";
+            PageCountTextBlock.Text =
+                "/ " +
+                fixedPages.Length.ToString(
+                    CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            PageNumberTextBox.Text = string.Empty;
+            PageCountTextBlock.Text = "/ 0";
         }
 
         var hasContents = OutlineTree.Items.Count > 0;
         var hasPages = fixedPages.Length > 0;
+
+        GoToPageButton.IsEnabled = hasPages;
+        PageNumberTextBox.IsEnabled = hasPages;
 
         ContentsModeButton.Visibility = hasContents
             ? Visibility.Visible
@@ -461,7 +478,7 @@ public partial class MainWindow : Window
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
-        PagePreviewList.Visibility =
+        PagesPanel.Visibility =
             mode == NavigationMode.Pages
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -500,6 +517,87 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Выполняет прямой переход к номеру фиксированной страницы из боковой панели.
+    /// </summary>
+    private async void GoToPageButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await GoToPageFromInputAsync();
+    }
+
+    /// <summary>
+    /// Выполняет переход к странице по Enter в поле номера.
+    /// </summary>
+    private async void PageNumberTextBox_OnKeyDown(
+        object sender,
+        System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Enter)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        await GoToPageFromInputAsync();
+    }
+
+    /// <summary>
+    /// Проверяет введённый номер страницы, синхронизирует выбранный thumbnail
+    /// и прокручивает WebView2 к соответствующей фиксированной странице.
+    /// </summary>
+    private async Task GoToPageFromInputAsync()
+    {
+        var pageCount = PagePreviewList.Items.Count;
+
+        if (pageCount <= 0)
+        {
+            return;
+        }
+
+        if (!int.TryParse(
+                PageNumberTextBox.Text,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var pageNumber) ||
+            pageNumber < 1 ||
+            pageNumber > pageCount)
+        {
+            MessageBox.Show(
+                this,
+                string.Format(
+                    CultureInfo.CurrentCulture,
+                    LocalizationService.Text("page_number_error"),
+                    pageCount),
+                LocalizationService.Text("navigation"),
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+
+            PageNumberTextBox.Focus();
+            PageNumberTextBox.SelectAll();
+            return;
+        }
+
+        if (PagePreviewList.Items[pageNumber - 1] is PagePreviewItem item)
+        {
+            synchronizingPageSelection_ = true;
+
+            try
+            {
+                PagePreviewList.SelectedItem = item;
+                PagePreviewList.ScrollIntoView(item);
+            }
+            finally
+            {
+                synchronizingPageSelection_ = false;
+            }
+        }
+
+        await ScrollToPageAsync(
+            pageNumber);
+    }
+
+    /// <summary>
     /// Переходит к фиксированной странице, выбранной в плёнке превью.
     /// </summary>
     private async void PagePreviewList_OnSelectionChanged(
@@ -507,6 +605,15 @@ public partial class MainWindow : Window
         SelectionChangedEventArgs e)
     {
         if (PagePreviewList.SelectedItem is not PagePreviewItem item)
+        {
+            return;
+        }
+
+        PageNumberTextBox.Text =
+            item.PageNumber.ToString(
+                CultureInfo.InvariantCulture);
+
+        if (synchronizingPageSelection_)
         {
             return;
         }
