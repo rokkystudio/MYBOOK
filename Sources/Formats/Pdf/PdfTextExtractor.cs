@@ -27,8 +27,8 @@ internal sealed class PdfTextRun
 
 /// <summary>
 /// Интерпретирует текстовые операторы PDF content stream.
-/// Поддерживает text/line matrices, leading, spacing, font size,
-/// ToUnicode font decoders и позиционированные Tj/TJ-фрагменты.
+/// Поддерживает graphics state `q/Q/cm`, text/line matrices, leading, spacing,
+/// font size, ToUnicode font resources и позиционированные Tj/TJ-фрагменты.
 /// </summary>
 internal static class PdfTextExtractor
 {
@@ -49,9 +49,11 @@ internal static class PdfTextExtractor
         private readonly List<Operand> operands_ = new();
         private readonly StringBuilder output_ = new();
         private readonly List<PdfTextRun> runs_ = new();
+        private readonly Stack<GraphicsState> graphicsStateStack_ = new();
 
         private int position_;
         private PdfFontResource? currentFontResource_;
+        private AffineMatrix currentTransformation_ = AffineMatrix.Identity;
         private TextMatrix textMatrix_ = TextMatrix.Identity;
         private TextMatrix lineMatrix_ = TextMatrix.Identity;
         private double fontSize_ = 12;
@@ -135,6 +137,18 @@ internal static class PdfTextExtractor
         {
             switch (token)
             {
+                case "q":
+                    SaveGraphicsState();
+                    break;
+
+                case "Q":
+                    RestoreGraphicsState();
+                    break;
+
+                case "cm":
+                    ConcatenateTransformation();
+                    break;
+
                 case "BT":
                     BeginTextObject();
                     break;
@@ -186,6 +200,61 @@ internal static class PdfTextExtractor
             }
 
             operands_.Clear();
+        }
+
+        private void SaveGraphicsState()
+        {
+            graphicsStateStack_.Push(new GraphicsState(
+                currentTransformation_,
+                currentFontResource_,
+                fontSize_,
+                leading_,
+                characterSpacing_,
+                wordSpacing_,
+                horizontalScale_,
+                textRise_));
+        }
+
+        private void RestoreGraphicsState()
+        {
+            if (graphicsStateStack_.Count == 0)
+            {
+                throw new InvalidDataException(
+                    "PDF operator Q не имеет соответствующего q.");
+            }
+
+            var state = graphicsStateStack_.Pop();
+
+            currentTransformation_ = state.Transformation;
+            currentFontResource_ = state.FontResource;
+            fontSize_ = state.FontSize;
+            leading_ = state.Leading;
+            characterSpacing_ = state.CharacterSpacing;
+            wordSpacing_ = state.WordSpacing;
+            horizontalScale_ = state.HorizontalScale;
+            textRise_ = state.TextRise;
+        }
+
+        private void ConcatenateTransformation()
+        {
+            var numbers = GetNumbers();
+
+            if (numbers.Length != 6)
+            {
+                throw new InvalidDataException(
+                    "PDF cm должен содержать шесть чисел.");
+            }
+
+            var matrix = new AffineMatrix(
+                numbers[0],
+                numbers[1],
+                numbers[2],
+                numbers[3],
+                numbers[4],
+                numbers[5]);
+
+            currentTransformation_ =
+                currentTransformation_.Multiply(matrix);
         }
 
         private void BeginTextObject()
@@ -326,10 +395,20 @@ internal static class PdfTextExtractor
                 return;
             }
 
-            var origin = textMatrix_.Transform(0, textRise_);
+            var localOrigin = textMatrix_.Transform(0, textRise_);
+            var localTop = textMatrix_.Transform(0, textRise_ + 1);
+
+            var origin = currentTransformation_.Transform(
+                localOrigin.X,
+                localOrigin.Y);
+
+            var top = currentTransformation_.Transform(
+                localTop.X,
+                localTop.Y);
+
             var matrixScale = Math.Sqrt(
-                textMatrix_.A * textMatrix_.A +
-                textMatrix_.B * textMatrix_.B);
+                Math.Pow(top.X - origin.X, 2) +
+                Math.Pow(top.Y - origin.Y, 2));
 
             if (matrixScale <= 0)
             {
@@ -795,6 +874,46 @@ internal static class PdfTextExtractor
         private sealed record NumberOperand(double Value) : Operand;
         private sealed record NameOperand(string Name) : Operand;
         private sealed record OtherOperand : Operand;
+    }
+
+    private readonly record struct GraphicsState(
+        AffineMatrix Transformation,
+        PdfFontResource? FontResource,
+        double FontSize,
+        double Leading,
+        double CharacterSpacing,
+        double WordSpacing,
+        double HorizontalScale,
+        double TextRise);
+
+    private readonly record struct AffineMatrix(
+        double A,
+        double B,
+        double C,
+        double D,
+        double E,
+        double F)
+    {
+        public static AffineMatrix Identity =>
+            new(1, 0, 0, 1, 0, 0);
+
+        public AffineMatrix Multiply(AffineMatrix other)
+        {
+            return new AffineMatrix(
+                A * other.A + C * other.B,
+                B * other.A + D * other.B,
+                A * other.C + C * other.D,
+                B * other.C + D * other.D,
+                A * other.E + C * other.F + E,
+                B * other.E + D * other.F + F);
+        }
+
+        public TextPoint Transform(double x, double y)
+        {
+            return new TextPoint(
+                A * x + C * y + E,
+                B * x + D * y + F);
+        }
     }
 
     private readonly record struct TextPoint(double X, double Y);

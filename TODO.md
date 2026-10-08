@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.15
+Текущая версия: 1.0.16
 
 ## Архитектура
 
@@ -104,7 +104,8 @@
 - [x] Page tree.
 - [x] MediaBox/CropBox/Rotate.
 - [x] Content stream tokenization.
-- [ ] Graphics state.
+- [x] Базовый graphics state: `q`, `Q`, `cm`, стек CTM и text-state параметров.
+- [ ] ExtGState (`gs`), clipping state и остальные параметры graphics state.
 - [x] Text operators и позиционирование: `Tm`, `Td`, `TD`, `T*`, `Tf`, `Tc`, `Tw`, `Tz`, `Ts`, `Tj`, `TJ` и quote operators формируют позиционированные text runs.
 - [x] Font resources и ToUnicode CMap для текстового слоя.
 - [x] Точные glyph widths/advance для simple fonts через `/FirstChar` + `/Widths` и Type0 `Identity-H/Identity-V` через `/DW` + `/W`.
