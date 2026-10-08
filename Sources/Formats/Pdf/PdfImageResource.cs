@@ -48,8 +48,7 @@ internal static class PdfPngEncoder
         if (pixels.Length != expectedLength)
         {
             throw new InvalidDataException(
-                $"PDF Flate image содержит {pixels.Length} bytes вместо ожидаемых {expectedLength}. " +
-                "PNG/TIFF predictor и packed samples пока не поддерживаются.");
+                $"PDF raster содержит {pixels.Length} bytes вместо ожидаемых {expectedLength}.");
         }
 
         using var output = new MemoryStream();

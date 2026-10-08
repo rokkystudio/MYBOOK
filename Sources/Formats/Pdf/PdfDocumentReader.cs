@@ -264,12 +264,6 @@ internal sealed class PdfDocumentReader
             stream.Dictionary,
             "BitsPerComponent");
 
-        if (bits != 8)
-        {
-            throw new InvalidDataException(
-                $"PDF Image XObject /{resourceName} использует {bits} bits per component; поддерживается 8.");
-        }
-
         if (!stream.Dictionary.Items.TryGetValue(
                 "ColorSpace",
                 out var colorSpaceValue))
@@ -278,33 +272,192 @@ internal sealed class PdfDocumentReader
                 $"PDF Image XObject /{resourceName} не содержит /ColorSpace.");
         }
 
-        var colorSpace = ResolveIfReference(colorSpaceValue) as PdfName
-                         ?? throw new InvalidDataException(
-                             $"PDF Image XObject /{resourceName} использует сложный ColorSpace; пока поддерживаются DeviceGray/DeviceRGB.");
+        var colorSpace = ReadImageColorSpace(
+            colorSpaceValue,
+            resourceName);
 
-        var channels = colorSpace.Value switch
+        if (colorSpace.Kind != ImageColorSpaceKind.Indexed &&
+            bits != 8)
         {
-            "DeviceGray" or "G" => 1,
-            "DeviceRGB" or "RGB" => 3,
-            _ => throw new InvalidDataException(
-                $"PDF Image XObject /{resourceName} использует неподдерживаемый ColorSpace /{colorSpace.Value}.")
-        };
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} использует {bits} bits per component; для {colorSpace.Kind} поддерживается 8.");
+        }
 
         var pixels = DecodeImageSamples(
             stream,
             filter);
 
+        var renderedPixels = colorSpace.Kind switch
+        {
+            ImageColorSpaceKind.Gray => pixels,
+            ImageColorSpaceKind.Rgb => pixels,
+            ImageColorSpaceKind.Cmyk =>
+                PdfImageColorConverter.ConvertCmykToRgb(
+                    pixels),
+            ImageColorSpaceKind.Indexed =>
+                PdfImageColorConverter.ConvertIndexedToRgb(
+                    pixels,
+                    width,
+                    height,
+                    bits,
+                    colorSpace.HighValue,
+                    colorSpace.RgbPalette
+                    ?? throw new InvalidDataException(
+                        $"PDF Image XObject /{resourceName} Indexed palette отсутствует.")),
+            _ => throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} использует неизвестный ColorSpace.")
+        };
+
+        var outputChannels =
+            colorSpace.Kind == ImageColorSpaceKind.Gray
+                ? 1
+                : 3;
+
         return new PdfImageResource
         {
             Data = PdfPngEncoder.Encode(
-                pixels,
+                renderedPixels,
                 width,
                 height,
-                channels),
+                outputChannels),
             ContentType = "image/png",
             SoftMaskData = softMask?.Data,
             SoftMaskContentType = softMask?.ContentType
         };
+    }
+
+    private ImageColorSpaceInfo ReadImageColorSpace(
+        PdfObject colorSpaceValue,
+        string resourceName)
+    {
+        var resolved = ResolveIfReference(
+            colorSpaceValue);
+
+        if (resolved is PdfName name)
+        {
+            return name.Value switch
+            {
+                "DeviceGray" or "G" =>
+                    new ImageColorSpaceInfo(
+                        ImageColorSpaceKind.Gray,
+                        0,
+                        null),
+
+                "DeviceRGB" or "RGB" =>
+                    new ImageColorSpaceInfo(
+                        ImageColorSpaceKind.Rgb,
+                        0,
+                        null),
+
+                "DeviceCMYK" or "CMYK" =>
+                    new ImageColorSpaceInfo(
+                        ImageColorSpaceKind.Cmyk,
+                        0,
+                        null),
+
+                _ => throw new InvalidDataException(
+                    $"PDF Image XObject /{resourceName} использует неподдерживаемый ColorSpace /{name.Value}.")
+            };
+        }
+
+        if (resolved is not PdfArray array ||
+            array.Items.Count < 4)
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} использует неподдерживаемый ColorSpace.");
+        }
+
+        var family = ResolveIfReference(
+            array.Items[0]) as PdfName
+                     ?? throw new InvalidDataException(
+                         $"PDF Image XObject /{resourceName} Indexed ColorSpace не содержит имя семейства.");
+
+        if (!string.Equals(
+                family.Value,
+                "Indexed",
+                StringComparison.Ordinal) &&
+            !string.Equals(
+                family.Value,
+                "I",
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} использует неподдерживаемое ColorSpace family /{family.Value}.");
+        }
+
+        var baseSpace = ResolveIfReference(
+            array.Items[1]) as PdfName
+                        ?? throw new InvalidDataException(
+                            $"PDF Image XObject /{resourceName} Indexed base ColorSpace не является name.");
+
+        var baseComponents = baseSpace.Value switch
+        {
+            "DeviceGray" or "G" => 1,
+            "DeviceRGB" or "RGB" => 3,
+            "DeviceCMYK" or "CMYK" => 4,
+            _ => throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} Indexed base ColorSpace /{baseSpace.Value} пока не поддерживается.")
+        };
+
+        var highValue = ReadIntegerValue(
+            array.Items[2],
+            $"PDF Image XObject /{resourceName} Indexed hival");
+
+        if (highValue is < 0 or > 255)
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} Indexed hival должен быть 0..255.");
+        }
+
+        var lookup = ReadIndexedLookup(
+            array.Items[3],
+            resourceName);
+
+        var rgbPalette =
+            PdfImageColorConverter.ConvertPaletteToRgb(
+                lookup,
+                checked(highValue + 1),
+                baseComponents);
+
+        return new ImageColorSpaceInfo(
+            ImageColorSpaceKind.Indexed,
+            highValue,
+            rgbPalette);
+    }
+
+    private byte[] ReadIndexedLookup(
+        PdfObject lookupValue,
+        string resourceName)
+    {
+        var resolved = ResolveIfReference(
+            lookupValue);
+
+        return resolved switch
+        {
+            PdfString text => text.Data,
+            PdfStream stream => DecodeStream(stream),
+            _ => throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} Indexed lookup не является string или stream.")
+        };
+    }
+
+    private int ReadIntegerValue(
+        PdfObject value,
+        string context)
+    {
+        var resolved = ResolveIfReference(
+            value);
+
+        if (resolved is not PdfNumber number ||
+            number.Value != Math.Truncate(number.Value) ||
+            number.Value < int.MinValue ||
+            number.Value > int.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"{context} не является целым числом.");
+        }
+
+        return (int)number.Value;
     }
 
     private PdfImageResource? BuildSoftMaskResource(
@@ -2454,6 +2607,19 @@ internal sealed class PdfDocumentReader
 
         return -1;
     }
+
+    private enum ImageColorSpaceKind
+    {
+        Gray,
+        Rgb,
+        Cmyk,
+        Indexed
+    }
+
+    private sealed record ImageColorSpaceInfo(
+        ImageColorSpaceKind Kind,
+        int HighValue,
+        byte[]? RgbPalette);
 
     private sealed record XrefEntry(
         int Type,
