@@ -811,6 +811,7 @@ internal sealed class PdfDocumentReader
 
             result.Add(new DocumentFixedTextRun
             {
+                PaintOrder = run.PaintOrder,
                 Text = run.Text,
                 XPoints = x,
                 YPoints = y,
@@ -1060,6 +1061,7 @@ internal sealed class PdfDocumentReader
 
             result.Add(new DocumentFixedPathRun
             {
+                PaintOrder = path.PaintOrder,
                 PathData = data.ToString(),
                 Fill = path.Fill
                     ? path.FillColor
@@ -1174,6 +1176,7 @@ internal sealed class PdfDocumentReader
 
             result.Add(new DocumentFixedImageRun
             {
+                PaintOrder = image.PaintOrder,
                 Data = image.Resource.Data,
                 ContentType = image.Resource.ContentType,
                 TransformA = topRight.X - topLeft.X,

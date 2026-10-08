@@ -39,8 +39,8 @@ internal sealed class DocumentHtmlBlock : DocumentBlock
 }
 
 /// <summary>
-/// Представляет фиксированную страницу документа с размерами в typographic points,
-/// позиционированными текстовым и графическим слоями.
+/// Представляет фиксированную страницу документа с размерами в typographic points.
+/// Text/image/path runs сохраняют исходный PDF paint order для корректного SVG z-order.
 /// </summary>
 internal sealed class DocumentFixedPage : DocumentBlock
 {
@@ -73,6 +73,7 @@ internal sealed class DocumentFixedClipPath
 /// </summary>
 internal sealed class DocumentFixedPathRun
 {
+    public required int PaintOrder { get; init; }
     public required string PathData { get; init; }
     public IReadOnlyList<DocumentFixedClipPath> ClipPaths { get; init; } =
         Array.Empty<DocumentFixedClipPath>();
@@ -96,6 +97,7 @@ internal sealed class DocumentFixedPathRun
 /// </summary>
 internal sealed class DocumentFixedImageRun
 {
+    public required int PaintOrder { get; init; }
     public required byte[] Data { get; init; }
     public IReadOnlyList<DocumentFixedClipPath> ClipPaths { get; init; } =
         Array.Empty<DocumentFixedClipPath>();
@@ -115,6 +117,7 @@ internal sealed class DocumentFixedImageRun
 /// </summary>
 internal sealed class DocumentFixedTextRun
 {
+    public required int PaintOrder { get; init; }
     public required string Text { get; init; }
     public IReadOnlyList<DocumentFixedClipPath> ClipPaths { get; init; } =
         Array.Empty<DocumentFixedClipPath>();

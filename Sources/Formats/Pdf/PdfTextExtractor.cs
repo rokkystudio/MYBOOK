@@ -21,6 +21,7 @@ internal sealed class PdfTextExtractionResult
 /// </summary>
 internal sealed class PdfPathPlacement
 {
+    public required int PaintOrder { get; init; }
     public required IReadOnlyList<PdfPathCommand> Commands { get; init; }
     public required IReadOnlyList<PdfClipPlacement> Clips { get; init; }
     public required bool Fill { get; init; }
@@ -68,6 +69,7 @@ internal sealed class PdfPathCommand
 /// </summary>
 internal sealed class PdfImagePlacement
 {
+    public required int PaintOrder { get; init; }
     public required PdfImageResource Resource { get; init; }
     public required IReadOnlyList<PdfClipPlacement> Clips { get; init; }
     public required double A { get; init; }
@@ -84,6 +86,7 @@ internal sealed class PdfImagePlacement
 /// </summary>
 internal sealed class PdfTextRun
 {
+    public required int PaintOrder { get; init; }
     public required string Text { get; init; }
     public required IReadOnlyList<PdfClipPlacement> Clips { get; init; }
     public required double X { get; init; }
@@ -132,6 +135,7 @@ internal static class PdfTextExtractor
         private readonly Stack<GraphicsState> graphicsStateStack_ = new();
 
         private int position_;
+        private int paintOrder_;
         private PdfFontResource? currentFontResource_;
         private AffineMatrix currentTransformation_ = AffineMatrix.Identity;
         private TextMatrix textMatrix_ = TextMatrix.Identity;
@@ -776,6 +780,7 @@ internal static class PdfTextExtractor
             {
                 paths_.Add(new PdfPathPlacement
                 {
+                    PaintOrder = paintOrder_++,
                     Commands = currentPath_.ToArray(),
                     Clips = activeClips_.ToArray(),
                     Fill = fill,
@@ -995,6 +1000,7 @@ internal static class PdfTextExtractor
 
             images_.Add(new PdfImagePlacement
             {
+                PaintOrder = paintOrder_++,
                 Resource = image,
                 Clips = activeClips_.ToArray(),
                 A = currentTransformation_.A,
@@ -1167,6 +1173,7 @@ internal static class PdfTextExtractor
 
             runs_.Add(new PdfTextRun
             {
+                PaintOrder = paintOrder_++,
                 Text = text,
                 Clips = activeClips_.ToArray(),
                 X = origin.X,

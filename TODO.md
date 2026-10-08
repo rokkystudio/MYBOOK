@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.20
+Текущая версия: 1.0.21
 
 ## Архитектура
 
@@ -115,7 +115,7 @@
 - [x] Базовые paths/fills/strokes: `m/l/c/v/y/h/re`, `S/s/f/F/f*/B/B*/b/b*/n`, `w`, Gray/RGB/CMYK colors.
 - [x] Line cap/join, miter limit и dash pattern: `J`, `j`, `M`, `d` + SVG stroke styles.
 - [x] Clipping paths: `W`, `W*`, последовательное пересечение clipping областей и восстановление через `q/Q`.
-- [ ] Точный mixed paint order между paths/images/text.
+- [x] Точный mixed paint order между paths/images/text через `PaintOrder` из исходного content stream.
 - [x] Постраничная модель MYBOOK.
 - [x] SVG renderer фиксированной страницы для геометрического текстового слоя через исходные PDF points и `viewBox`.
 - [ ] Ссылки и outlines.

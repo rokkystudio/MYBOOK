@@ -254,121 +254,47 @@ a { color: var(--primary); }
 
             var clipCounter = 0;
 
-            foreach (var pathRun in page.PathRuns)
+            var paintItems = page.PathRuns
+                .Select(item => (
+                    PaintOrder: item.PaintOrder,
+                    Item: (object)item))
+                .Concat(page.ImageRuns.Select(item => (
+                    PaintOrder: item.PaintOrder,
+                    Item: (object)item)))
+                .Concat(page.TextRuns.Select(item => (
+                    PaintOrder: item.PaintOrder,
+                    Item: (object)item)))
+                .OrderBy(item => item.PaintOrder);
+
+            foreach (var paintItem in paintItems)
             {
-                var clipIds = AppendClipDefinitions(
-                    html,
-                    page.PageNumber,
-                    ref clipCounter,
-                    pathRun.ClipPaths);
-
-                AppendClipGroupsStart(html, clipIds);
-                html.Append("<path d=\"")
-                    .Append(WebUtility.HtmlEncode(pathRun.PathData))
-                    .Append("\" fill=\"")
-                    .Append(pathRun.Fill ?? "none")
-                    .Append("\" stroke=\"")
-                    .Append(pathRun.Stroke ?? "none")
-                    .Append("\"");
-
-                if (pathRun.Stroke != null)
+                switch (paintItem.Item)
                 {
-                    html.Append(" stroke-width=\"")
-                        .Append(FormatNumber(pathRun.StrokeWidthPoints))
-                        .Append("\" stroke-linecap=\"")
-                        .Append(pathRun.StrokeLineCap)
-                        .Append("\" stroke-linejoin=\"")
-                        .Append(pathRun.StrokeLineJoin)
-                        .Append("\" stroke-miterlimit=\"")
-                        .Append(FormatNumber(pathRun.StrokeMiterLimit))
-                        .Append("\" stroke-opacity=\"")
-                        .Append(FormatNumber(pathRun.StrokeOpacity))
-                        .Append("\"");
+                    case DocumentFixedPathRun pathRun:
+                        AppendFixedPathRun(
+                            html,
+                            page.PageNumber,
+                            ref clipCounter,
+                            pathRun);
+                        break;
 
-                    if (pathRun.StrokeDashArray.Count > 0)
-                    {
-                        html.Append(" stroke-dasharray=\"")
-                            .Append(string.Join(
-                                " ",
-                                pathRun.StrokeDashArray.Select(FormatNumber)))
-                            .Append("\" stroke-dashoffset=\"")
-                            .Append(FormatNumber(pathRun.StrokeDashOffset))
-                            .Append("\"");
-                    }
+                    case DocumentFixedImageRun imageRun:
+                        AppendFixedImageRun(
+                            html,
+                            page.PageNumber,
+                            ref clipCounter,
+                            imageRun);
+                        break;
+
+                    case DocumentFixedTextRun textRun:
+                        AppendFixedTextRun(
+                            html,
+                            page.PageNumber,
+                            ref clipCounter,
+                            textRun);
+                        break;
                 }
-
-                if (pathRun.Fill != null)
-                {
-                    html.Append(" fill-opacity=\"")
-                        .Append(FormatNumber(pathRun.FillOpacity))
-                        .Append("\"");
-                }
-
-                if (pathRun.EvenOddFill)
-                {
-                    html.Append(" fill-rule=\"evenodd\"");
-                }
-
-                html.AppendLine(" />");
-                AppendClipGroupsEnd(html, clipIds.Count);
             }
-
-            foreach (var image in page.ImageRuns)
-            {
-                var clipIds = AppendClipDefinitions(
-                    html,
-                    page.PageNumber,
-                    ref clipCounter,
-                    image.ClipPaths);
-
-                AppendClipGroupsStart(html, clipIds);
-                html.Append("<image x=\"0\" y=\"0\" width=\"1\" height=\"1\" preserveAspectRatio=\"none\" href=\"data:")
-                    .Append(WebUtility.HtmlEncode(image.ContentType))
-                    .Append(";base64,")
-                    .Append(Convert.ToBase64String(image.Data))
-                    .Append("\" transform=\"matrix(")
-                    .Append(FormatNumber(image.TransformA))
-                    .Append(' ')
-                    .Append(FormatNumber(image.TransformB))
-                    .Append(' ')
-                    .Append(FormatNumber(image.TransformC))
-                    .Append(' ')
-                    .Append(FormatNumber(image.TransformD))
-                    .Append(' ')
-                    .Append(FormatNumber(image.TransformE))
-                    .Append(' ')
-                    .Append(FormatNumber(image.TransformF))
-                    .Append(")\" opacity=\"")
-                    .Append(FormatNumber(image.Opacity))
-                    .AppendLine("\" />");
-
-                AppendClipGroupsEnd(html, clipIds.Count);
-            }
-
-            foreach (var run in page.TextRuns)
-            {
-                var clipIds = AppendClipDefinitions(
-                    html,
-                    page.PageNumber,
-                    ref clipCounter,
-                    run.ClipPaths);
-
-                AppendClipGroupsStart(html, clipIds);
-                html.Append("<text xml:space=\"preserve\" x=\"")
-                    .Append(FormatNumber(run.XPoints))
-                    .Append("\" y=\"")
-                    .Append(FormatNumber(run.YPoints))
-                    .Append("\" font-size=\"")
-                    .Append(FormatNumber(run.FontSizePoints))
-                    .Append("\" opacity=\"")
-                    .Append(FormatNumber(run.Opacity))
-                    .Append("\">")
-                    .Append(WebUtility.HtmlEncode(run.Text))
-                    .AppendLine("</text>");
-
-                AppendClipGroupsEnd(html, clipIds.Count);
-            }
-
             html.AppendLine("</svg>");
         }
         else
@@ -387,6 +313,136 @@ a { color: var(--primary); }
         }
 
         html.AppendLine("</section>");
+    }
+
+    private static void AppendFixedPathRun(
+        StringBuilder html,
+        int pageNumber,
+        ref int clipCounter,
+        DocumentFixedPathRun pathRun)
+    {
+        var clipIds = AppendClipDefinitions(
+            html,
+            pageNumber,
+            ref clipCounter,
+            pathRun.ClipPaths);
+
+        AppendClipGroupsStart(html, clipIds);
+
+        html.Append("<path d=\"")
+            .Append(WebUtility.HtmlEncode(pathRun.PathData))
+            .Append("\" fill=\"")
+            .Append(pathRun.Fill ?? "none")
+            .Append("\" stroke=\"")
+            .Append(pathRun.Stroke ?? "none")
+            .Append("\"");
+
+        if (pathRun.Stroke != null)
+        {
+            html.Append(" stroke-width=\"")
+                .Append(FormatNumber(pathRun.StrokeWidthPoints))
+                .Append("\" stroke-linecap=\"")
+                .Append(pathRun.StrokeLineCap)
+                .Append("\" stroke-linejoin=\"")
+                .Append(pathRun.StrokeLineJoin)
+                .Append("\" stroke-miterlimit=\"")
+                .Append(FormatNumber(pathRun.StrokeMiterLimit))
+                .Append("\" stroke-opacity=\"")
+                .Append(FormatNumber(pathRun.StrokeOpacity))
+                .Append("\"");
+
+            if (pathRun.StrokeDashArray.Count > 0)
+            {
+                html.Append(" stroke-dasharray=\"")
+                    .Append(string.Join(
+                        " ",
+                        pathRun.StrokeDashArray.Select(FormatNumber)))
+                    .Append("\" stroke-dashoffset=\"")
+                    .Append(FormatNumber(pathRun.StrokeDashOffset))
+                    .Append("\"");
+            }
+        }
+
+        if (pathRun.Fill != null)
+        {
+            html.Append(" fill-opacity=\"")
+                .Append(FormatNumber(pathRun.FillOpacity))
+                .Append("\"");
+        }
+
+        if (pathRun.EvenOddFill)
+        {
+            html.Append(" fill-rule=\"evenodd\"");
+        }
+
+        html.AppendLine(" />");
+        AppendClipGroupsEnd(html, clipIds.Count);
+    }
+
+    private static void AppendFixedImageRun(
+        StringBuilder html,
+        int pageNumber,
+        ref int clipCounter,
+        DocumentFixedImageRun image)
+    {
+        var clipIds = AppendClipDefinitions(
+            html,
+            pageNumber,
+            ref clipCounter,
+            image.ClipPaths);
+
+        AppendClipGroupsStart(html, clipIds);
+
+        html.Append("<image x=\"0\" y=\"0\" width=\"1\" height=\"1\" preserveAspectRatio=\"none\" href=\"data:")
+            .Append(WebUtility.HtmlEncode(image.ContentType))
+            .Append(";base64,")
+            .Append(Convert.ToBase64String(image.Data))
+            .Append("\" transform=\"matrix(")
+            .Append(FormatNumber(image.TransformA))
+            .Append(' ')
+            .Append(FormatNumber(image.TransformB))
+            .Append(' ')
+            .Append(FormatNumber(image.TransformC))
+            .Append(' ')
+            .Append(FormatNumber(image.TransformD))
+            .Append(' ')
+            .Append(FormatNumber(image.TransformE))
+            .Append(' ')
+            .Append(FormatNumber(image.TransformF))
+            .Append(")\" opacity=\"")
+            .Append(FormatNumber(image.Opacity))
+            .AppendLine("\" />");
+
+        AppendClipGroupsEnd(html, clipIds.Count);
+    }
+
+    private static void AppendFixedTextRun(
+        StringBuilder html,
+        int pageNumber,
+        ref int clipCounter,
+        DocumentFixedTextRun run)
+    {
+        var clipIds = AppendClipDefinitions(
+            html,
+            pageNumber,
+            ref clipCounter,
+            run.ClipPaths);
+
+        AppendClipGroupsStart(html, clipIds);
+
+        html.Append("<text xml:space=\"preserve\" x=\"")
+            .Append(FormatNumber(run.XPoints))
+            .Append("\" y=\"")
+            .Append(FormatNumber(run.YPoints))
+            .Append("\" font-size=\"")
+            .Append(FormatNumber(run.FontSizePoints))
+            .Append("\" opacity=\"")
+            .Append(FormatNumber(run.Opacity))
+            .Append("\">")
+            .Append(WebUtility.HtmlEncode(run.Text))
+            .AppendLine("</text>");
+
+        AppendClipGroupsEnd(html, clipIds.Count);
     }
 
     private static IReadOnlyList<string> AppendClipDefinitions(
