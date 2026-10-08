@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.42
+Текущая версия: 1.0.43
 
 В этом файле перечислены только незавершённые задачи.
 
@@ -21,10 +21,8 @@
 
 - [ ] `styles.xml` и наследование стилей.
 - [ ] `numbering.xml`, маркированные и нумерованные списки.
-- [ ] Relationships.
 - [ ] Изображения.
 - [ ] Таблицы.
-- [ ] Hyperlinks.
 - [ ] Headers/footers.
 - [ ] Footnotes/endnotes.
 - [ ] Sections и page breaks.

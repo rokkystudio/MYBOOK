@@ -8,12 +8,17 @@ using MYBOOK.Services;
 namespace MYBOOK.Formats.Docx;
 
 /// <summary>
-/// Читает DOCX напрямую как ZIP/OpenXML-пакет средствами стандартной библиотеки .NET.
+/// Читает DOCX напрямую как ZIP/OpenXML-пакет средствами стандартной библиотеки .NET,
+/// включая document relationships, внешние hyperlinks и внутренние Word bookmarks.
 /// </summary>
 internal static class DocxDocumentReader
 {
     private static readonly XNamespace W =
         "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    private static readonly XNamespace R =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    private static readonly XNamespace PackageRelationships =
+        "http://schemas.openxmlformats.org/package/2006/relationships";
 
     /// <summary>
     /// Загружает word/document.xml и преобразует абзацы и базовое форматирование
@@ -41,6 +46,9 @@ internal static class DocxDocumentReader
                    ?? throw new InvalidDataException(
                        "DOCX не содержит основной части документа.");
 
+        var relationships = ReadRelationships(
+            archive);
+
         var paragraphs = body.Elements(W + "p").ToArray();
 
         ParserTrace.Write(
@@ -51,7 +59,9 @@ internal static class DocxDocumentReader
 
         foreach (var paragraph in paragraphs)
         {
-            var model = ReadParagraph(paragraph);
+            var model = ReadParagraph(
+                paragraph,
+                relationships);
             if (model.Inlines.Count > 0)
             {
                 blocks.Add(model);
@@ -69,7 +79,9 @@ internal static class DocxDocumentReader
         };
     }
 
-    private static DocumentParagraph ReadParagraph(XElement paragraph)
+    private static DocumentParagraph ReadParagraph(
+        XElement paragraph,
+        IReadOnlyDictionary<string, DocxRelationship> relationships)
     {
         var styleId = paragraph
             .Element(W + "pPr")?
@@ -77,39 +89,124 @@ internal static class DocxDocumentReader
             .Attribute(W + "val")?
             .Value;
 
+        var anchorId = paragraph
+            .Descendants(W + "bookmarkStart")
+            .Select(bookmark =>
+                bookmark.Attribute(W + "name")?.Value)
+            .FirstOrDefault(name =>
+                !string.IsNullOrWhiteSpace(name) &&
+                !string.Equals(
+                    name,
+                    "_GoBack",
+                    StringComparison.OrdinalIgnoreCase));
+
         var inlines = new List<DocumentInline>();
 
         foreach (var node in paragraph.Descendants())
         {
+            var hyperlink = node
+                .Ancestors(W + "hyperlink")
+                .FirstOrDefault();
+
+            var linkHref = ResolveHyperlink(
+                hyperlink,
+                relationships);
+
             if (node.Name == W + "t")
             {
-                var run = node.Ancestors(W + "r").FirstOrDefault();
-                inlines.Add(ReadRun(node.Value, run));
+                var run = node
+                    .Ancestors(W + "r")
+                    .FirstOrDefault();
+
+                inlines.Add(
+                    ReadRun(
+                        node.Value,
+                        run,
+                        linkHref));
             }
             else if (node.Name == W + "tab")
             {
-                inlines.Add(new DocumentInline { Text = "\t" });
+                inlines.Add(new DocumentInline
+                {
+                    Text = "\t",
+                    LinkHref = linkHref
+                });
             }
-            else if (node.Name == W + "br" || node.Name == W + "cr")
+            else if (node.Name == W + "br" ||
+                     node.Name == W + "cr")
             {
-                inlines.Add(new DocumentInline { Text = Environment.NewLine });
+                inlines.Add(new DocumentInline
+                {
+                    Text = Environment.NewLine,
+                    LinkHref = linkHref
+                });
             }
         }
 
         return new DocumentParagraph
         {
+            AnchorId = anchorId,
             HeadingLevel = GetHeadingLevel(styleId),
             Inlines = MergeAdjacent(inlines)
         };
     }
 
-    private static DocumentInline ReadRun(string text, XElement? run)
+    private static string? ResolveHyperlink(
+        XElement? hyperlink,
+        IReadOnlyDictionary<string, DocxRelationship> relationships)
+    {
+        if (hyperlink == null)
+        {
+            return null;
+        }
+
+        var anchor = hyperlink
+            .Attribute(W + "anchor")?
+            .Value
+            .Trim();
+
+        if (!string.IsNullOrWhiteSpace(anchor))
+        {
+            return "#" + anchor;
+        }
+
+        var relationshipId = hyperlink
+            .Attribute(R + "id")?
+            .Value;
+
+        if (string.IsNullOrWhiteSpace(
+                relationshipId) ||
+            !relationships.TryGetValue(
+                relationshipId,
+                out var relationship) ||
+            !relationship.External)
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(
+                relationship.Target,
+                UriKind.Absolute,
+                out var uri) ||
+            uri.Scheme is not ("http" or "https" or "mailto"))
+        {
+            return null;
+        }
+
+        return uri.AbsoluteUri;
+    }
+
+    private static DocumentInline ReadRun(
+        string text,
+        XElement? run,
+        string? linkHref)
     {
         var properties = run?.Element(W + "rPr");
 
         return new DocumentInline
         {
             Text = text,
+            LinkHref = linkHref,
             Bold = IsEnabled(properties?.Element(W + "b")),
             Italic = IsEnabled(properties?.Element(W + "i")),
             Underline = IsUnderline(properties?.Element(W + "u")),
@@ -139,6 +236,7 @@ internal static class DocxDocumentReader
                     result[^1] = new DocumentInline
                     {
                         Text = previous.Text + item.Text,
+                        LinkHref = previous.LinkHref,
                         Bold = previous.Bold,
                         Italic = previous.Italic,
                         Underline = previous.Underline,
@@ -157,7 +255,11 @@ internal static class DocxDocumentReader
 
     private static bool SameStyle(DocumentInline left, DocumentInline right)
     {
-        return left.Bold == right.Bold &&
+        return string.Equals(
+                   left.LinkHref,
+                   right.LinkHref,
+                   StringComparison.Ordinal) &&
+               left.Bold == right.Bold &&
                left.Italic == right.Italic &&
                left.Underline == right.Underline &&
                left.Superscript == right.Superscript &&
@@ -190,6 +292,68 @@ internal static class DocxDocumentReader
                !string.Equals(value, "0", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static IReadOnlyDictionary<string, DocxRelationship> ReadRelationships(
+        ZipArchive archive)
+    {
+        var entry = archive.GetEntry(
+            "word/_rels/document.xml.rels");
+
+        if (entry == null)
+        {
+            return new Dictionary<string, DocxRelationship>(
+                StringComparer.Ordinal);
+        }
+
+        XDocument xml;
+
+        using (var stream = entry.Open())
+        {
+            xml = XDocument.Load(
+                stream,
+                LoadOptions.PreserveWhitespace);
+        }
+
+        var result = new Dictionary<string, DocxRelationship>(
+            StringComparer.Ordinal);
+
+        foreach (var relationship in xml
+                     .Root?
+                     .Elements(PackageRelationships + "Relationship")
+                 ?? Enumerable.Empty<XElement>())
+        {
+            var id = relationship
+                .Attribute("Id")?
+                .Value;
+
+            var target = relationship
+                .Attribute("Target")?
+                .Value;
+
+            if (string.IsNullOrWhiteSpace(id) ||
+                string.IsNullOrWhiteSpace(target))
+            {
+                continue;
+            }
+
+            var targetMode = relationship
+                .Attribute("TargetMode")?
+                .Value;
+
+            result[id] = new DocxRelationship(
+                target,
+                string.Equals(
+                    targetMode,
+                    "External",
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        ParserTrace.Write(
+            "docx",
+            $"relationships={result.Count}");
+
+        return result;
+    }
+
     private static int GetHeadingLevel(string? styleId)
     {
         if (string.IsNullOrWhiteSpace(styleId))
@@ -207,4 +371,8 @@ internal static class DocxDocumentReader
 
         return 0;
     }
+
+    private sealed record DocxRelationship(
+        string Target,
+        bool External);
 }

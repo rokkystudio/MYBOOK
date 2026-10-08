@@ -1042,15 +1042,48 @@ internal static class Program
                 "word/document.xml",
                 """
                 <?xml version="1.0" encoding="utf-8"?>
-                <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
                   <w:body>
                     <w:p>
+                      <w:bookmarkStart w:id="0" w:name="target" />
                       <w:r>
                         <w:t>DOCX marker</w:t>
                       </w:r>
+                      <w:bookmarkEnd w:id="0" />
+                    </w:p>
+                    <w:p>
+                      <w:hyperlink r:id="rIdExternal">
+                        <w:r><w:t>External link</w:t></w:r>
+                      </w:hyperlink>
+                      <w:r><w:t> / </w:t></w:r>
+                      <w:hyperlink w:anchor="target">
+                        <w:r><w:t>Internal link</w:t></w:r>
+                      </w:hyperlink>
+                      <w:r><w:t> / </w:t></w:r>
+                      <w:hyperlink r:id="rIdUnsafe">
+                        <w:r><w:t>Unsafe link</w:t></w:r>
+                      </w:hyperlink>
                     </w:p>
                   </w:body>
                 </w:document>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "word/_rels/document.xml.rels",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rIdExternal"
+                                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+                                Target="https://example.com/docx"
+                                TargetMode="External" />
+                  <Relationship Id="rIdUnsafe"
+                                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+                                Target="file:///C:/secret.txt"
+                                TargetMode="External" />
+                </Relationships>
                 """);
         }
 
@@ -1060,6 +1093,70 @@ internal static class Program
             FlattenText(model),
             "DOCX marker",
             "DOCX model");
+
+        var paragraphs = model.Blocks
+            .OfType<DocumentParagraph>()
+            .ToArray();
+
+        AssertEqual(
+            "target",
+            paragraphs[0].AnchorId!,
+            "DOCX bookmark anchor");
+
+        var links = paragraphs
+            .SelectMany(paragraph => paragraph.Inlines)
+            .Where(inline =>
+                !string.IsNullOrWhiteSpace(
+                    inline.LinkHref))
+            .ToArray();
+
+        Assert(
+            links.Any(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "https://example.com/docx",
+                    StringComparison.Ordinal)),
+            "DOCX external relationship hyperlink должен сохраниться.");
+
+        Assert(
+            links.Any(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "#target",
+                    StringComparison.Ordinal)),
+            "DOCX internal bookmark hyperlink должен сохраниться.");
+
+        Assert(
+            !links.Any(inline =>
+                inline.LinkHref?.StartsWith(
+                    "file:",
+                    StringComparison.OrdinalIgnoreCase) == true),
+            "DOCX file: hyperlink не должен попадать в нейтральную модель.");
+
+        var html = DocumentHtmlRenderer.Render(
+            model,
+            "Light");
+
+        AssertContains(
+            html,
+            "id=\"anchor-target\"",
+            "DOCX bookmark rendered anchor");
+
+        AssertContains(
+            html,
+            "href=\"#anchor-target\"",
+            "DOCX internal rendered link");
+
+        AssertContains(
+            html,
+            "href=\"https://example.com/docx\"",
+            "DOCX external rendered link");
+
+        Assert(
+            !html.Contains(
+                "href=\"file:",
+                StringComparison.OrdinalIgnoreCase),
+            "DOCX renderer не должен выпускать file: hyperlink.");
     }
 
     private static void TestPdfReader(string directory)
