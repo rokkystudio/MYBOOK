@@ -345,25 +345,44 @@ internal static class Program
                     <dc:creator>Test Author</dc:creator>
                   </metadata>
                   <manifest>
-                    <item id="chapter"
-                          href="chapter.xhtml"
+                    <item id="chapter1"
+                          href="Text/chapter1.xhtml"
+                          media-type="application/xhtml+xml" />
+                    <item id="chapter2"
+                          href="Text/chapter2.xhtml"
                           media-type="application/xhtml+xml" />
                   </manifest>
                   <spine>
-                    <itemref idref="chapter" />
+                    <itemref idref="chapter1" />
+                    <itemref idref="chapter2" />
                   </spine>
                 </package>
                 """);
 
             WriteZipEntry(
                 archive,
-                "OEBPS/chapter.xhtml",
+                "OEBPS/Text/chapter1.xhtml",
                 """
                 <?xml version="1.0" encoding="utf-8"?>
                 <html xmlns="http://www.w3.org/1999/xhtml">
                   <body>
-                    <h1>Regression EPUB</h1>
+                    <h1 id="start">Regression EPUB</h1>
                     <p>EPUB marker</p>
+                    <p><a href="chapter2.xhtml#target">Next chapter</a></p>
+                    <p><a href="javascript:alert(1)">Unsafe link</a></p>
+                  </body>
+                </html>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "OEBPS/Text/chapter2.xhtml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                  <body>
+                    <h2 id="target">Target heading</h2>
+                    <p><a href="chapter1.xhtml#start">Previous chapter</a></p>
                   </body>
                 </html>
                 """);
@@ -380,6 +399,45 @@ internal static class Program
             FlattenText(model),
             "EPUB marker",
             "EPUB model");
+
+        var htmlBlocks = model.Blocks
+            .OfType<DocumentHtmlBlock>()
+            .ToArray();
+
+        AssertEqual(
+            2,
+            htmlBlocks.Length,
+            "EPUB spine chapter count");
+
+        var combinedHtml = string.Join(
+            "\n",
+            htmlBlocks.Select(block => block.Html));
+
+        AssertContains(
+            combinedHtml,
+            "id=\"epub-chapter-1\"",
+            "EPUB chapter 1 anchor");
+
+        AssertContains(
+            combinedHtml,
+            "id=\"epub-chapter-2-target\"",
+            "EPUB target anchor");
+
+        AssertContains(
+            combinedHtml,
+            "href=\"#epub-chapter-2-target\"",
+            "EPUB relative forward link");
+
+        AssertContains(
+            combinedHtml,
+            "href=\"#epub-chapter-1-start\"",
+            "EPUB relative backward link");
+
+        Assert(
+            !combinedHtml.Contains(
+                "href=\"javascript:",
+                StringComparison.OrdinalIgnoreCase),
+            "Опасная javascript: ссылка EPUB не должна попадать в HTML href.");
     }
 
     private static void TestDocxReader(string directory)

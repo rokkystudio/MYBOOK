@@ -8,8 +8,8 @@ using MYBOOK.Services;
 namespace MYBOOK.Formats.Epub;
 
 /// <summary>
-/// Читает EPUB напрямую как ZIP-контейнер, разбирает container.xml, OPF manifest/spine
-/// и объединяет XHTML-главы в нейтральную модель MYBOOK.
+/// Читает EPUB напрямую как ZIP-контейнер, разбирает container.xml, OPF manifest/spine,
+/// объединяет XHTML-главы и нормализует внутренние anchors/relative links между spine-главами.
 /// </summary>
 internal static class EpubDocumentReader
 {
@@ -60,52 +60,55 @@ internal static class EpubDocumentReader
 
         var baseDirectory = GetDirectory(opfPath);
         var blocks = new List<DocumentBlock>();
-        var spineItemCount = 0;
 
-        var spine = package.Element(OpfNs + "spine");
-        if (spine != null)
+        var chapters = ReadSpineChapters(
+            archive,
+            package,
+            items,
+            baseDirectory);
+
+        var chapterAnchors = chapters.ToDictionary(
+            chapter => chapter.Path,
+            chapter => chapter.AnchorId,
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var chapter in chapters)
         {
-            foreach (var itemRef in spine.Elements(OpfNs + "itemref"))
+            ParserTrace.Write(
+                "epub-spine",
+                $"index={chapter.Index} path={chapter.Path}");
+
+            RewriteChapterNavigation(
+                chapter.Body,
+                chapter.Path,
+                chapter.Index,
+                chapterAnchors);
+
+            var html = string.Concat(
+                chapter.Body.Nodes().Select(
+                    node => node.ToString(
+                        SaveOptions.DisableFormatting)));
+
+            html = RewriteEmbeddedResources(
+                archive,
+                chapter.Path,
+                html);
+
+            if (!string.IsNullOrWhiteSpace(html))
             {
-                var idRef = itemRef.Attribute("idref")?.Value;
-                if (string.IsNullOrWhiteSpace(idRef) || !items.TryGetValue(idRef, out var item))
+                blocks.Add(new DocumentHtmlBlock
                 {
-                    continue;
-                }
-
-                if (!item.MediaType.Contains("xhtml", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                spineItemCount++;
-
-                var chapterPath = CombinePath(baseDirectory, item.Href);
-
-                ParserTrace.Write(
-                    "epub-spine",
-                    $"index={spineItemCount} path={chapterPath}");
-                var chapter = LoadXml(archive, chapterPath);
-                var body = chapter.Descendants().FirstOrDefault(element =>
-                    element.Name.LocalName == "body");
-
-                if (body == null)
-                {
-                    continue;
-                }
-
-                var html = string.Concat(body.Nodes().Select(node => node.ToString(SaveOptions.DisableFormatting)));
-                html = RewriteEmbeddedResources(archive, chapterPath, html);
-
-                if (!string.IsNullOrWhiteSpace(html))
-                {
-                    blocks.Add(new DocumentHtmlBlock
-                    {
-                        Html = "<section class=\"epub-chapter\">" + html + "</section>"
-                    });
-                }
+                    Html =
+                        "<section class=\"epub-chapter\" id=\"" +
+                        chapter.AnchorId +
+                        "\">" +
+                        html +
+                        "</section>"
+                });
             }
         }
+
+        var spineItemCount = chapters.Count;
 
         var metadata = package.Element(OpfNs + "metadata");
         var title = metadata?.Elements(DcNs + "title").FirstOrDefault()?.Value?.Trim();
@@ -128,6 +131,222 @@ internal static class EpubDocumentReader
             Cover = ReadCover(archive, package, items, baseDirectory),
             Blocks = blocks
         };
+    }
+
+    private static IReadOnlyList<SpineChapter> ReadSpineChapters(
+        ZipArchive archive,
+        XElement package,
+        IReadOnlyDictionary<string, ManifestItem> items,
+        string baseDirectory)
+    {
+        var result = new List<SpineChapter>();
+        var spine = package.Element(OpfNs + "spine");
+
+        if (spine == null)
+        {
+            return result;
+        }
+
+        foreach (var itemRef in spine.Elements(OpfNs + "itemref"))
+        {
+            var idRef = itemRef.Attribute("idref")?.Value;
+
+            if (string.IsNullOrWhiteSpace(idRef) ||
+                !items.TryGetValue(idRef, out var item) ||
+                !item.MediaType.Contains(
+                    "xhtml",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var chapterPath = CombinePath(
+                baseDirectory,
+                item.Href);
+
+            var chapter = LoadXml(
+                archive,
+                chapterPath);
+
+            var body = chapter
+                .Descendants()
+                .FirstOrDefault(element =>
+                    element.Name.LocalName == "body");
+
+            if (body == null)
+            {
+                continue;
+            }
+
+            var index = result.Count + 1;
+
+            result.Add(new SpineChapter(
+                index,
+                chapterPath,
+                $"epub-chapter-{index}",
+                body));
+        }
+
+        return result;
+    }
+
+    private static void RewriteChapterNavigation(
+        XElement body,
+        string chapterPath,
+        int chapterIndex,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        foreach (var element in body.DescendantsAndSelf())
+        {
+            var id = element.Attribute("id")?.Value;
+
+            if (string.IsNullOrWhiteSpace(id) &&
+                string.Equals(
+                    element.Name.LocalName,
+                    "a",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                id = element.Attribute("name")?.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                element.SetAttributeValue(
+                    "id",
+                    BuildChapterElementAnchor(
+                        chapterIndex,
+                        id));
+            }
+        }
+
+        foreach (var anchor in body
+                     .Descendants()
+                     .Where(element =>
+                         string.Equals(
+                             element.Name.LocalName,
+                             "a",
+                             StringComparison.OrdinalIgnoreCase)))
+        {
+            var hrefAttribute = anchor.Attribute("href");
+
+            if (hrefAttribute == null ||
+                string.IsNullOrWhiteSpace(hrefAttribute.Value))
+            {
+                continue;
+            }
+
+            var rewritten = RewriteChapterHref(
+                hrefAttribute.Value,
+                chapterPath,
+                chapterAnchors);
+
+            if (rewritten == null)
+            {
+                hrefAttribute.Remove();
+            }
+            else
+            {
+                hrefAttribute.Value = rewritten;
+            }
+        }
+    }
+
+    private static string? RewriteChapterHref(
+        string href,
+        string chapterPath,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        var trimmed = href.Trim();
+
+        if (trimmed.Length == 0)
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(
+                trimmed,
+                UriKind.Absolute,
+                out var absolute))
+        {
+            return absolute.Scheme switch
+            {
+                "http" or "https" or "mailto" =>
+                    absolute.AbsoluteUri,
+                _ => null
+            };
+        }
+
+        var hashIndex = trimmed.IndexOf('#');
+        var pathPart = hashIndex >= 0
+            ? trimmed[..hashIndex]
+            : trimmed;
+
+        var fragment = hashIndex >= 0 &&
+                       hashIndex + 1 < trimmed.Length
+            ? Uri.UnescapeDataString(
+                trimmed[(hashIndex + 1)..])
+            : null;
+
+        var queryIndex = pathPart.IndexOf('?');
+
+        if (queryIndex >= 0)
+        {
+            pathPart = pathPart[..queryIndex];
+        }
+
+        var targetPath = pathPart.Length == 0
+            ? NormalizePath(chapterPath)
+            : CombinePath(
+                GetDirectory(chapterPath),
+                Uri.UnescapeDataString(pathPart));
+
+        if (!chapterAnchors.TryGetValue(
+                targetPath,
+                out var chapterAnchor))
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(fragment))
+        {
+            return "#" + chapterAnchor;
+        }
+
+        var chapterIndex = ParseChapterIndex(
+            chapterAnchor);
+
+        return "#" +
+               BuildChapterElementAnchor(
+                   chapterIndex,
+                   fragment);
+    }
+
+    private static string BuildChapterElementAnchor(
+        int chapterIndex,
+        string sourceId)
+    {
+        return $"epub-chapter-{chapterIndex}-" +
+               Uri.EscapeDataString(
+                   sourceId.Trim());
+    }
+
+    private static int ParseChapterIndex(string chapterAnchor)
+    {
+        const string prefix = "epub-chapter-";
+
+        if (!chapterAnchor.StartsWith(
+                prefix,
+                StringComparison.Ordinal) ||
+            !int.TryParse(
+                chapterAnchor[prefix.Length..],
+                out var index) ||
+            index <= 0)
+        {
+            throw new InvalidDataException(
+                $"Некорректный EPUB chapter anchor: {chapterAnchor}");
+        }
+
+        return index;
     }
 
     private static string ReadPackagePath(ZipArchive archive)
@@ -315,6 +534,12 @@ internal static class EpubDocumentReader
             _ => null
         };
     }
+
+    private sealed record SpineChapter(
+        int Index,
+        string Path,
+        string AnchorId,
+        XElement Body);
 
     private sealed record ManifestItem(
         string Href,
