@@ -32,6 +32,7 @@ internal static class Program
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
+            ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),
@@ -919,6 +920,111 @@ internal static class Program
             "epub-chapter-1-one",
             model.Outlines[3].Children[0].TargetAnchorId!,
             "EPUB2 guide landmark target");
+    }
+
+    private static void TestEpubCorpusCompatibility(
+        string repositoryRoot)
+    {
+        var epub2Path = Path.Combine(
+            repositoryRoot,
+            "Books",
+            "Regression_EPUB2.epub");
+
+        var epub3Path = Path.Combine(
+            repositoryRoot,
+            "Books",
+            "Regression_EPUB3.epub");
+
+        Assert(
+            File.Exists(epub2Path),
+            "EPUB2 compatibility fixture отсутствует в Books.");
+
+        Assert(
+            File.Exists(epub3Path),
+            "EPUB3 compatibility fixture отсутствует в Books.");
+
+        var epub2 = SupportedFormatRegistry.ReadDocument(
+            epub2Path);
+
+        AssertEqual(
+            "MYBOOK EPUB2 Corpus",
+            epub2.Title,
+            "EPUB2 corpus title");
+
+        AssertEqual(
+            4,
+            epub2.Outlines.Count,
+            "EPUB2 corpus navigation groups");
+
+        AssertEqual(
+            "epub-chapter-1-start",
+            epub2.Outlines[0].TargetAnchorId!,
+            "EPUB2 corpus NCX target");
+
+        AssertEqual(
+            "Pages",
+            epub2.Outlines[2].Title,
+            "EPUB2 corpus NCX page-list");
+
+        AssertEqual(
+            "Landmarks",
+            epub2.Outlines[3].Title,
+            "EPUB2 corpus OPF guide");
+
+        var epub2Html = string.Join(
+            "\n",
+            epub2.Blocks
+                .OfType<DocumentHtmlBlock>()
+                .Select(block => block.Html));
+
+        AssertContains(
+            epub2Html,
+            "href=\"#epub-chapter-2-target\"",
+            "EPUB2 corpus relative link");
+
+        var epub3 = SupportedFormatRegistry.ReadDocument(
+            epub3Path);
+
+        AssertEqual(
+            "MYBOOK EPUB3 Corpus",
+            epub3.Title,
+            "EPUB3 corpus title");
+
+        AssertEqual(
+            3,
+            epub3.Outlines.Count,
+            "EPUB3 corpus navigation groups");
+
+        AssertEqual(
+            "Landmarks",
+            epub3.Outlines[1].Title,
+            "EPUB3 corpus landmarks");
+
+        AssertEqual(
+            "Pages",
+            epub3.Outlines[2].Title,
+            "EPUB3 corpus page-list");
+
+        var epub3Html = string.Join(
+            "\n",
+            epub3.Blocks
+                .OfType<DocumentHtmlBlock>()
+                .Select(block => block.Html));
+
+        AssertContains(
+            epub3Html,
+            "epub-noteref",
+            "EPUB3 corpus noteref semantics");
+
+        AssertContains(
+            epub3Html,
+            "epub-note",
+            "EPUB3 corpus footnote semantics");
+
+        AssertContains(
+            epub3Html,
+            "epub-pagebreak",
+            "EPUB3 corpus pagebreak semantics");
     }
 
     private static void TestDocxReader(string directory)
