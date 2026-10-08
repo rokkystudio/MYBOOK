@@ -99,6 +99,8 @@ internal sealed class DocumentFixedImageRun
 {
     public required int PaintOrder { get; init; }
     public required byte[] Data { get; init; }
+    public byte[]? SoftMaskData { get; init; }
+    public string? SoftMaskContentType { get; init; }
     public IReadOnlyList<DocumentFixedClipPath> ClipPaths { get; init; } =
         Array.Empty<DocumentFixedClipPath>();
     public required string ContentType { get; init; }

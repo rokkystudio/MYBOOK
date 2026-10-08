@@ -391,6 +391,31 @@ a { color: var(--primary); }
             ref clipCounter,
             image.ClipPaths);
 
+        string? softMaskId = null;
+
+        if (image.SoftMaskData is { Length: > 0 } softMaskData)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    image.SoftMaskContentType))
+            {
+                throw new InvalidOperationException(
+                    "Document image содержит soft mask без ContentType.");
+            }
+
+            softMaskId =
+                $"mask-{pageNumber}-{clipCounter++}";
+
+            html.Append("<defs><mask id=\"")
+                .Append(softMaskId)
+                .Append("\" maskUnits=\"objectBoundingBox\" maskContentUnits=\"objectBoundingBox\" style=\"mask-type:luminance\"><image x=\"0\" y=\"0\" width=\"1\" height=\"1\" preserveAspectRatio=\"none\" href=\"data:")
+                .Append(WebUtility.HtmlEncode(
+                    image.SoftMaskContentType))
+                .Append(";base64,")
+                .Append(Convert.ToBase64String(
+                    softMaskData))
+                .AppendLine("\" /></mask></defs>");
+        }
+
         AppendClipGroupsStart(html, clipIds);
 
         html.Append("<image x=\"0\" y=\"0\" width=\"1\" height=\"1\" preserveAspectRatio=\"none\" href=\"data:")
@@ -409,7 +434,16 @@ a { color: var(--primary); }
             .Append(FormatNumber(image.TransformE))
             .Append(' ')
             .Append(FormatNumber(image.TransformF))
-            .Append(")\" opacity=\"")
+            .Append(")\"");
+
+        if (softMaskId != null)
+        {
+            html.Append(" mask=\"url(#")
+                .Append(softMaskId)
+                .Append(")\"");
+        }
+
+        html.Append(" opacity=\"")
             .Append(FormatNumber(image.Opacity))
             .AppendLine("\" />");
 

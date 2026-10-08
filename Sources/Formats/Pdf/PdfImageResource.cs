@@ -5,13 +5,15 @@ using System.Text;
 namespace MYBOOK.Formats.Pdf;
 
 /// <summary>
-/// Представляет подготовленный PDF Image XObject в формате,
-/// который можно встроить в SVG/HTML как data URI.
+/// Представляет подготовленный PDF Image XObject и опциональный grayscale soft mask
+/// в форматах, которые можно встроить в SVG/HTML как data URI.
 /// </summary>
 internal sealed class PdfImageResource
 {
     public required byte[] Data { get; init; }
     public required string ContentType { get; init; }
+    public byte[]? SoftMaskData { get; init; }
+    public string? SoftMaskContentType { get; init; }
 }
 
 /// <summary>

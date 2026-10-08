@@ -225,6 +225,19 @@ internal sealed class PdfDocumentReader
         string resourceName,
         PdfStream stream)
     {
+        var width = GetRequiredInteger(
+            stream.Dictionary,
+            "Width");
+        var height = GetRequiredInteger(
+            stream.Dictionary,
+            "Height");
+
+        var softMask = BuildSoftMaskResource(
+            resourceName,
+            stream.Dictionary,
+            width,
+            height);
+
         var filter = ReadSingleFilterName(stream.Dictionary);
 
         if (string.Equals(filter, "DCTDecode", StringComparison.Ordinal) ||
@@ -233,7 +246,9 @@ internal sealed class PdfDocumentReader
             return new PdfImageResource
             {
                 Data = stream.Data,
-                ContentType = "image/jpeg"
+                ContentType = "image/jpeg",
+                SoftMaskData = softMask?.Data,
+                SoftMaskContentType = softMask?.ContentType
             };
         }
 
@@ -245,12 +260,6 @@ internal sealed class PdfDocumentReader
                 $"PDF Image XObject /{resourceName} использует неподдерживаемый filter /{filter}.");
         }
 
-        var width = GetRequiredInteger(
-            stream.Dictionary,
-            "Width");
-        var height = GetRequiredInteger(
-            stream.Dictionary,
-            "Height");
         var bits = GetRequiredInteger(
             stream.Dictionary,
             "BitsPerComponent");
@@ -281,53 +290,9 @@ internal sealed class PdfDocumentReader
                 $"PDF Image XObject /{resourceName} использует неподдерживаемый ColorSpace /{colorSpace.Value}.")
         };
 
-        var pixels = filter == null
-            ? stream.Data
-            : DecodeStream(stream);
-
-        if (filter != null)
-        {
-            var decodeParameters = ReadSingleDecodeParameters(
-                stream.Dictionary);
-
-            if (decodeParameters != null)
-            {
-                var predictor = TryGetInteger(
-                    decodeParameters,
-                    "Predictor",
-                    out var predictorValue)
-                    ? predictorValue
-                    : 1;
-
-                var predictorColors = TryGetInteger(
-                    decodeParameters,
-                    "Colors",
-                    out var colorsValue)
-                    ? colorsValue
-                    : 1;
-
-                var predictorBits = TryGetInteger(
-                    decodeParameters,
-                    "BitsPerComponent",
-                    out var bitsValue)
-                    ? bitsValue
-                    : 8;
-
-                var predictorColumns = TryGetInteger(
-                    decodeParameters,
-                    "Columns",
-                    out var columnsValue)
-                    ? columnsValue
-                    : 1;
-
-                pixels = PdfPredictorDecoder.Decode(
-                    pixels,
-                    predictor,
-                    predictorColors,
-                    predictorBits,
-                    predictorColumns);
-            }
-        }
+        var pixels = DecodeImageSamples(
+            stream,
+            filter);
 
         return new PdfImageResource
         {
@@ -336,8 +301,161 @@ internal sealed class PdfDocumentReader
                 width,
                 height,
                 channels),
+            ContentType = "image/png",
+            SoftMaskData = softMask?.Data,
+            SoftMaskContentType = softMask?.ContentType
+        };
+    }
+
+    private PdfImageResource? BuildSoftMaskResource(
+        string resourceName,
+        PdfDictionary imageDictionary,
+        int width,
+        int height)
+    {
+        if (!imageDictionary.Items.TryGetValue(
+                "SMask",
+                out var softMaskValue))
+        {
+            return null;
+        }
+
+        var softMask = ResolveIfReference(softMaskValue) as PdfStream
+                       ?? throw new InvalidDataException(
+                           $"PDF Image XObject /{resourceName} /SMask не является stream.");
+
+        if (!string.Equals(
+                GetName(softMask.Dictionary, "Subtype"),
+                "Image",
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} /SMask не является Image XObject.");
+        }
+
+        if (GetRequiredInteger(softMask.Dictionary, "Width") != width ||
+            GetRequiredInteger(softMask.Dictionary, "Height") != height)
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} /SMask имеет другой размер.");
+        }
+
+        if (softMask.Dictionary.Items.ContainsKey("Matte"))
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} /SMask /Matte пока не поддерживается.");
+        }
+
+        if (softMask.Dictionary.Items.ContainsKey("Decode"))
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} /SMask /Decode пока не поддерживается.");
+        }
+
+        var bits = GetRequiredInteger(
+            softMask.Dictionary,
+            "BitsPerComponent");
+
+        if (bits != 8)
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} /SMask использует {bits} bits per component; поддерживается 8.");
+        }
+
+        if (!softMask.Dictionary.Items.TryGetValue(
+                "ColorSpace",
+                out var colorSpaceValue) ||
+            ResolveIfReference(colorSpaceValue) is not PdfName colorSpace ||
+            !string.Equals(
+                colorSpace.Value,
+                "DeviceGray",
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} /SMask должен использовать /DeviceGray.");
+        }
+
+        var filter = ReadSingleFilterName(
+            softMask.Dictionary);
+
+        if (filter != null &&
+            !string.Equals(filter, "FlateDecode", StringComparison.Ordinal) &&
+            !string.Equals(filter, "Fl", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"PDF Image XObject /{resourceName} /SMask использует неподдерживаемый filter /{filter}.");
+        }
+
+        var pixels = DecodeImageSamples(
+            softMask,
+            filter);
+
+        return new PdfImageResource
+        {
+            Data = PdfPngEncoder.Encode(
+                pixels,
+                width,
+                height,
+                channels: 1),
             ContentType = "image/png"
         };
+    }
+
+    private byte[] DecodeImageSamples(
+        PdfStream stream,
+        string? filter)
+    {
+        var pixels = filter == null
+            ? stream.Data
+            : DecodeStream(stream);
+
+        if (filter == null)
+        {
+            return pixels;
+        }
+
+        var decodeParameters = ReadSingleDecodeParameters(
+            stream.Dictionary);
+
+        if (decodeParameters == null)
+        {
+            return pixels;
+        }
+
+        var predictor = TryGetInteger(
+            decodeParameters,
+            "Predictor",
+            out var predictorValue)
+            ? predictorValue
+            : 1;
+
+        var predictorColors = TryGetInteger(
+            decodeParameters,
+            "Colors",
+            out var colorsValue)
+            ? colorsValue
+            : 1;
+
+        var predictorBits = TryGetInteger(
+            decodeParameters,
+            "BitsPerComponent",
+            out var bitsValue)
+            ? bitsValue
+            : 8;
+
+        var predictorColumns = TryGetInteger(
+            decodeParameters,
+            "Columns",
+            out var columnsValue)
+            ? columnsValue
+            : 1;
+
+        return PdfPredictorDecoder.Decode(
+            pixels,
+            predictor,
+            predictorColors,
+            predictorBits,
+            predictorColumns);
     }
 
     private PdfDictionary? ReadSingleDecodeParameters(
@@ -1231,6 +1349,8 @@ internal sealed class PdfDocumentReader
             {
                 PaintOrder = image.PaintOrder,
                 Data = image.Resource.Data,
+                SoftMaskData = image.Resource.SoftMaskData,
+                SoftMaskContentType = image.Resource.SoftMaskContentType,
                 ContentType = image.Resource.ContentType,
                 TransformA = topRight.X - topLeft.X,
                 TransformB = topRight.Y - topLeft.Y,
