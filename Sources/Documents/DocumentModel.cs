@@ -23,7 +23,8 @@ internal abstract class DocumentBlock
 }
 
 /// <summary>
-/// Представляет текстовый абзац или заголовок с необязательным внутренним якорем.
+/// Представляет текстовый абзац или заголовок с необязательным внутренним якорем
+/// и признаком блока примечания.
 /// </summary>
 internal sealed class DocumentParagraph : DocumentBlock
 {
@@ -31,6 +32,7 @@ internal sealed class DocumentParagraph : DocumentBlock
     public string? AnchorId { get; init; }
     public int HeadingLevel { get; init; }
     public bool Preformatted { get; init; }
+    public bool IsNote { get; init; }
 }
 
 /// <summary>

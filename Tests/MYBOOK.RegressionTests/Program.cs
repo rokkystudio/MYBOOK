@@ -264,6 +264,15 @@ internal static class Program
             "FB2 notes section id note-1 должен стать внутренним якорем.");
 
         Assert(
+            paragraphs.Any(paragraph =>
+                paragraph.IsNote &&
+                string.Equals(
+                    paragraph.AnchorId,
+                    "note-1",
+                    StringComparison.Ordinal)),
+            "FB2 body name=notes должен помечать note-блоки в модели.");
+
+        Assert(
             paragraphs
                 .SelectMany(paragraph => paragraph.Inlines)
                 .Any(inline =>
@@ -279,8 +288,8 @@ internal static class Program
 
         AssertContains(
             html,
-            "id=\"anchor-note-1\"",
-            "FB2 rendered anchor");
+            "id=\"anchor-note-1\" class=\"note-body\"",
+            "FB2 rendered note anchor");
 
         AssertContains(
             html,

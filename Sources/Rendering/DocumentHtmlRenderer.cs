@@ -86,6 +86,10 @@ h1 { font-size: 1.55rem; }
 h2 { font-size: 1.34rem; }
 h3 { font-size: 1.18rem; }
 p { margin: 0 0 0.72em; text-align: justify; }
+.note-body {
+    color: var(--muted);
+    font-size: 0.92em;
+}
 pre {
     margin: 0 0 1em;
     white-space: pre-wrap;
@@ -220,6 +224,11 @@ a { color: var(--primary); }
                 AppendFlowAnchorAttribute(
                     html,
                     paragraph.AnchorId);
+
+                AppendNoteClassAttribute(
+                    html,
+                    paragraph.IsNote);
+
                 html.Append('>');
                 AppendInlines(html, paragraph.Inlines);
                 html.AppendLine("</pre>");
@@ -236,6 +245,10 @@ a { color: var(--primary); }
                 AppendFlowAnchorAttribute(
                     html,
                     paragraph.AnchorId);
+
+                AppendNoteClassAttribute(
+                    html,
+                    paragraph.IsNote);
 
                 html.Append('>');
                 AppendInlines(html, paragraph.Inlines);
@@ -712,6 +725,16 @@ a { color: var(--primary); }
         html.Append(" id=\"")
             .Append(WebUtility.HtmlEncode(id))
             .Append('"');
+    }
+
+    private static void AppendNoteClassAttribute(
+        StringBuilder html,
+        bool isNote)
+    {
+        if (isNote)
+        {
+            html.Append(" class=\"note-body\"");
+        }
     }
 
     private static ResolvedFlowLink ResolveFlowLink(string? href)

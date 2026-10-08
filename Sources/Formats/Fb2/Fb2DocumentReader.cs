@@ -83,6 +83,11 @@ internal static class Fb2DocumentReader
 
         foreach (var body in root.Elements().Where(element => element.Name.LocalName == "body"))
         {
+            var isNoteBody = string.Equals(
+                (string?)body.Attribute("name"),
+                "notes",
+                StringComparison.OrdinalIgnoreCase);
+
             foreach (var element in body.Descendants())
             {
                 if (element.Name.LocalName == "title")
@@ -108,7 +113,8 @@ internal static class Fb2DocumentReader
                                 element,
                                 assignedSectionAnchors),
                             HeadingLevel = 1,
-                            Inlines = inlines
+                            Inlines = inlines,
+                            IsNote = isNoteBody
                         });
                     }
 
@@ -129,7 +135,8 @@ internal static class Fb2DocumentReader
                         AnchorId = ResolveAnchorId(
                             element,
                             assignedSectionAnchors),
-                        Inlines = paragraph
+                        Inlines = paragraph,
+                        IsNote = isNoteBody
                     });
                 }
             }
