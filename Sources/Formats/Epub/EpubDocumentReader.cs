@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Xml.Linq;
 using MYBOOK.Documents;
+using MYBOOK.Services;
 
 namespace MYBOOK.Formats.Epub;
 
@@ -26,7 +27,16 @@ internal static class EpubDocumentReader
     {
         using var archive = ZipFile.OpenRead(path);
 
+        ParserTrace.Write(
+            "epub",
+            $"entries={archive.Entries.Count}");
+
         var opfPath = ReadPackagePath(archive);
+
+        ParserTrace.Write(
+            "epub",
+            $"package={opfPath}");
+
         var opf = LoadXml(archive, opfPath);
         var package = opf.Root
                       ?? throw new InvalidDataException("EPUB package document пуст.");
@@ -44,8 +54,13 @@ internal static class EpubDocumentReader
                     item.Attribute("properties")?.Value ?? string.Empty),
                 StringComparer.Ordinal);
 
+        ParserTrace.Write(
+            "epub",
+            $"manifest-items={items.Count}");
+
         var baseDirectory = GetDirectory(opfPath);
         var blocks = new List<DocumentBlock>();
+        var spineItemCount = 0;
 
         var spine = package.Element(OpfNs + "spine");
         if (spine != null)
@@ -63,7 +78,13 @@ internal static class EpubDocumentReader
                     continue;
                 }
 
+                spineItemCount++;
+
                 var chapterPath = CombinePath(baseDirectory, item.Href);
+
+                ParserTrace.Write(
+                    "epub-spine",
+                    $"index={spineItemCount} path={chapterPath}");
                 var chapter = LoadXml(archive, chapterPath);
                 var body = chapter.Descendants().FirstOrDefault(element =>
                     element.Name.LocalName == "body");
@@ -93,6 +114,10 @@ internal static class EpubDocumentReader
                 .Select(element => element.Value.Trim())
                 .Where(value => value.Length > 0)
             ?? Array.Empty<string>());
+
+        ParserTrace.Write(
+            "epub",
+            $"spine-xhtml={spineItemCount} blocks={blocks.Count} title={title ?? string.Empty}");
 
         return new DocumentModel
         {

@@ -7,14 +7,15 @@ using MYBOOK.UI;
 namespace MYBOOK;
 
 /// <summary>
-/// Представляет приложение MYBOOK, загружает пользовательские настройки
-/// и создаёт главное окно с выбранными языком и темой.
+/// Представляет приложение MYBOOK, загружает пользовательские настройки,
+/// включает opt-in parser trace по аргументу командной строки и создаёт главное окно
+/// с выбранными языком и темой.
 /// </summary>
 public partial class App : Application
 {
     /// <summary>
-    /// Загружает настройки, применяет локализацию и тему,
-    /// затем открывает главное окно для переданного файла книги.
+    /// Загружает настройки, применяет локализацию и тему, включает parser trace
+    /// по аргументу <c>--parser-trace</c> и открывает переданный документ.
     /// </summary>
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -28,14 +29,41 @@ public partial class App : Application
             LocalizationService.Initialize(settings.Language);
             ThemeService.Apply(this, settings.Theme);
 
-            var bookPath = e.Args.Length > 0 ? Path.GetFullPath(e.Args[0]) : null;
-            var window = new MainWindow(settingsStore, settings, bookPath);
+            var parserTraceEnabled = e.Args.Any(argument =>
+                string.Equals(
+                    argument,
+                    "--parser-trace",
+                    StringComparison.OrdinalIgnoreCase));
+
+            ParserTrace.Configure(
+                parserTraceEnabled);
+
+            var documentArgument = e.Args.FirstOrDefault(argument =>
+                !string.Equals(
+                    argument,
+                    "--parser-trace",
+                    StringComparison.OrdinalIgnoreCase));
+
+            var bookPath = string.IsNullOrWhiteSpace(documentArgument)
+                ? null
+                : Path.GetFullPath(documentArgument);
+
+            var window = new MainWindow(
+                settingsStore,
+                settings,
+                bookPath);
+
             MainWindow = window;
             window.Show();
         }
         catch (Exception error)
         {
-            MessageBox.Show(error.Message, "MYBOOK", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(
+                error.Message,
+                "MYBOOK",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+
             Shutdown(1);
         }
     }

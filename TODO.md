@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.33
+Текущая версия: 1.0.34
 
 ## Архитектура
 
@@ -10,7 +10,7 @@
 - [x] Расширить `DocumentModel` моделью фиксированной страницы для PDF/DjVu.
 - [x] Единый реестр поддерживаемых форматов для reader routing, OpenFileDialog, Settings и FileAssociationService.
 - [x] Regression-runner readers без GUI: синтетические TXT/Markdown/RTF/FB2/EPUB/DOCX/PDF fixtures и `.doc` signature dispatch.
-- [ ] Добавить диагностический режим parser trace для сложных повреждённых документов.
+- [x] Диагностический parser trace через `--parser-trace`: отдельный UTF-8 log на документ в `%LOCALAPPDATA%\\MYBOOK\\Logs`, единый BEGIN/END/ERROR и checkpoints PDF/DOC/EPUB/DOCX.
 
 ## FB2
 

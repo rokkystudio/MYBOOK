@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Xml.Linq;
 using MYBOOK.Documents;
+using MYBOOK.Services;
 
 namespace MYBOOK.Formats.Docx;
 
@@ -22,6 +23,10 @@ internal static class DocxDocumentReader
     {
         using var archive = ZipFile.OpenRead(path);
 
+        ParserTrace.Write(
+            "docx",
+            $"entries={archive.Entries.Count}");
+
         var documentEntry = archive.GetEntry("word/document.xml")
                             ?? throw new InvalidDataException(
                                 "DOCX не содержит word/document.xml.");
@@ -36,9 +41,15 @@ internal static class DocxDocumentReader
                    ?? throw new InvalidDataException(
                        "DOCX не содержит основной части документа.");
 
+        var paragraphs = body.Elements(W + "p").ToArray();
+
+        ParserTrace.Write(
+            "docx",
+            $"document-bytes={documentEntry.Length} paragraphs={paragraphs.Length}");
+
         var blocks = new List<DocumentBlock>();
 
-        foreach (var paragraph in body.Elements(W + "p"))
+        foreach (var paragraph in paragraphs)
         {
             var model = ReadParagraph(paragraph);
             if (model.Inlines.Count > 0)
@@ -46,6 +57,10 @@ internal static class DocxDocumentReader
                 blocks.Add(model);
             }
         }
+
+        ParserTrace.Write(
+            "docx",
+            $"blocks={blocks.Count}");
 
         return new DocumentModel
         {

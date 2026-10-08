@@ -80,7 +80,32 @@ internal static class SupportedFormatRegistry
                 $"Формат {format.Extension} открывается напрямую и не имеет DocumentModel reader.");
         }
 
-        return format.Reader(path);
+        using var trace = ParserTrace.BeginDocument(
+            path,
+            format);
+
+        ParserTrace.Write(
+            "registry",
+            $"reader={format.Reader.Method.DeclaringType?.FullName}.{format.Reader.Method.Name}");
+
+        try
+        {
+            var document = format.Reader(path);
+
+            ParserTrace.Write(
+                "registry",
+                $"success title={document.Title} blocks={document.Blocks.Count} outlines={document.Outlines.Count}");
+
+            return document;
+        }
+        catch (Exception error)
+        {
+            ParserTrace.WriteException(
+                "registry",
+                error);
+
+            throw;
+        }
     }
 
     /// <summary>
@@ -130,12 +155,20 @@ internal static class SupportedFormatRegistry
                 0xA1, 0xB1, 0x1A, 0xE1
             }))
         {
+            ParserTrace.Write(
+                "doc-dispatch",
+                "signature=CFB reader=DocDocumentReader");
+
             return DocDocumentReader.Read(path);
         }
 
         if (read >= 5 &&
             header[..5].SequenceEqual("{\\rtf"u8))
         {
+            ParserTrace.Write(
+                "doc-dispatch",
+                "signature=RTF reader=RtfDocumentReader");
+
             return RtfDocumentReader.Read(path);
         }
 

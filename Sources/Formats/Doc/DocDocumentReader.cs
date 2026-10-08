@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO;
 using System.Text;
 using MYBOOK.Documents;
+using MYBOOK.Services;
 
 namespace MYBOOK.Formats.Doc;
 
@@ -22,8 +23,16 @@ internal static class DocDocumentReader
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
+        ParserTrace.Write(
+            "doc",
+            $"open path={Path.GetFileName(path)}");
+
         var compound = CompoundBinaryFile.Open(path);
         var word = compound.ReadStream("WordDocument");
+
+        ParserTrace.Write(
+            "doc",
+            $"WordDocument-bytes={word.Length}");
 
         if (word.Length < 0x22)
         {
@@ -54,7 +63,16 @@ internal static class DocDocumentReader
         }
 
         var table = compound.ReadStream(tableStreamName);
+
+        ParserTrace.Write(
+            "doc",
+            $"table-stream={tableStreamName} bytes={table.Length}");
+
         var fib = ReadFib(word);
+
+        ParserTrace.Write(
+            "doc",
+            $"fib language=0x{fib.LanguageId:X4} ccpText={fib.CcpText} fcClx={fib.FcClx} lcbClx={fib.LcbClx}");
 
         if (fib.CcpText <= 0)
         {
@@ -74,9 +92,26 @@ internal static class DocDocumentReader
         var pieces = ReadPieceTable(
             table.AsSpan(fib.FcClx, fib.LcbClx));
 
+        ParserTrace.Write(
+            "doc",
+            $"pieces={pieces.Count}");
+
         var encoding = GetAnsiEncoding(fib.LanguageId);
-        var text = ReadMainText(word, pieces, fib.CcpText, encoding);
+
+        ParserTrace.Write(
+            "doc",
+            $"encoding={encoding.WebName}");
+        var text = ReadMainText(
+            word,
+            pieces,
+            fib.CcpText,
+            encoding);
+
         var blocks = BuildParagraphs(text);
+
+        ParserTrace.Write(
+            "doc",
+            $"text-chars={text.Length} blocks={blocks.Count}");
 
         return new DocumentModel
         {

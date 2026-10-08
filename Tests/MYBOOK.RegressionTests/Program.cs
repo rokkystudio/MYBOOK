@@ -32,6 +32,7 @@ internal static class Program
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
+            ("Parser trace", () => TestParserTrace(temporaryDirectory)),
             (".doc corpus dispatch", () => TestDocCorpusDispatch(repositoryRoot))
         };
 
@@ -370,6 +371,83 @@ internal static class Program
             1,
             page.PageNumber,
             "PDF page number");
+    }
+
+    private static void TestParserTrace(string directory)
+    {
+        var baseName =
+            "parser-trace-" +
+            Guid.NewGuid().ToString("N");
+
+        var path = Path.Combine(
+            directory,
+            baseName + ".pdf");
+
+        CreateSimplePdf(
+            path,
+            "TRACE marker");
+
+        var logDirectory = Path.Combine(
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData),
+            "MYBOOK",
+            "Logs");
+
+        ParserTrace.Configure(true);
+
+        try
+        {
+            var model = SupportedFormatRegistry.ReadDocument(path);
+
+            Assert(
+                model.Blocks.OfType<DocumentFixedPage>().Count() == 1,
+                "Trace fixture должен прочитаться как одностраничный PDF.");
+        }
+        finally
+        {
+            ParserTrace.Configure(false);
+        }
+
+        var logPath = Directory
+            .EnumerateFiles(
+                logDirectory,
+                "*-" + baseName + "-pdf.log",
+                SearchOption.TopDirectoryOnly)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Parser trace не создал log-файл.");
+
+        try
+        {
+            var trace = File.ReadAllText(
+                logPath,
+                Encoding.UTF8);
+
+            AssertContains(
+                trace,
+                "[pdf] version=1.4",
+                "Parser trace PDF header");
+
+            AssertContains(
+                trace,
+                "[pdf-page] page=1",
+                "Parser trace page checkpoint");
+
+            AssertContains(
+                trace,
+                "[registry] success",
+                "Parser trace registry result");
+
+            AssertContains(
+                trace,
+                "[session] END",
+                "Parser trace session completion");
+        }
+        finally
+        {
+            File.Delete(logPath);
+        }
     }
 
     private static void TestDocCorpusDispatch(string repositoryRoot)

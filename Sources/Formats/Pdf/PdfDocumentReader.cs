@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using MYBOOK.Documents;
+using MYBOOK.Services;
 
 namespace MYBOOK.Formats.Pdf;
 
@@ -39,8 +40,18 @@ internal sealed class PdfDocumentReader
     public static DocumentModel Read(string path)
     {
         var data = File.ReadAllBytes(path);
+
+        ParserTrace.Write(
+            "pdf",
+            $"bytes={data.Length}");
+
         var version = ReadVersion(data);
         var startXref = ReadStartXref(data);
+
+        ParserTrace.Write(
+            "pdf",
+            $"version={version} startxref={startXref}");
+
         var xref = new Dictionary<int, XrefEntry>();
         var trailer = ReadXrefChain(
             data,
@@ -49,7 +60,16 @@ internal sealed class PdfDocumentReader
             new HashSet<int>(),
             null);
 
-        var reader = new PdfDocumentReader(data, xref, trailer, version);
+        ParserTrace.Write(
+            "pdf",
+            $"xref-entries={xref.Count}");
+
+        var reader = new PdfDocumentReader(
+            data,
+            xref,
+            trailer,
+            version);
+
         return reader.BuildDocument(path);
     }
 
@@ -91,6 +111,10 @@ internal sealed class PdfDocumentReader
             catalog,
             pageNumbersByObject,
             namedDestinations);
+
+        ParserTrace.Write(
+            "pdf",
+            $"pages={pages.Count} named-destinations={namedDestinations.Count} outlines={outlines.Count}");
 
         return new DocumentModel
         {
@@ -153,6 +177,11 @@ internal sealed class PdfDocumentReader
             };
 
             pages.Add(page);
+
+            ParserTrace.Write(
+                "pdf-page",
+                $"page={page.PageNumber} object={reference.ObjectNumber} width={width:0.###} height={height:0.###} rotate={rotation} text-runs={page.TextRuns.Count} images={page.ImageRuns.Count} paths={page.PathRuns.Count}");
+
             pageContexts_.Add(new PdfPageContext(
                 reference.ObjectNumber,
                 dictionary,
