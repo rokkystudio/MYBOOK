@@ -238,26 +238,19 @@ internal sealed class PdfDocumentReader
             width,
             height);
 
-        var filter = ReadSingleFilterName(stream.Dictionary);
+        var decoded = DecodeImageFilterPipeline(
+            stream,
+            resourceName);
 
-        if (string.Equals(filter, "DCTDecode", StringComparison.Ordinal) ||
-            string.Equals(filter, "DCT", StringComparison.Ordinal))
+        if (decoded.IsJpeg)
         {
             return new PdfImageResource
             {
-                Data = stream.Data,
+                Data = decoded.Data,
                 ContentType = "image/jpeg",
                 SoftMaskData = softMask?.Data,
                 SoftMaskContentType = softMask?.ContentType
             };
-        }
-
-        if (filter != null &&
-            !string.Equals(filter, "FlateDecode", StringComparison.Ordinal) &&
-            !string.Equals(filter, "Fl", StringComparison.Ordinal))
-        {
-            throw new InvalidDataException(
-                $"PDF Image XObject /{resourceName} использует неподдерживаемый filter /{filter}.");
         }
 
         var bits = GetRequiredInteger(
@@ -283,9 +276,7 @@ internal sealed class PdfDocumentReader
                 $"PDF Image XObject /{resourceName} использует {bits} bits per component; для {colorSpace.Kind} поддерживается 8.");
         }
 
-        var pixels = DecodeImageSamples(
-            stream,
-            filter);
+        var pixels = decoded.Data;
 
         var renderedPixels = colorSpace.Kind switch
         {
@@ -528,20 +519,17 @@ internal sealed class PdfDocumentReader
                 $"PDF Image XObject /{resourceName} /SMask должен использовать /DeviceGray.");
         }
 
-        var filter = ReadSingleFilterName(
-            softMask.Dictionary);
+        var decoded = DecodeImageFilterPipeline(
+            softMask,
+            $"PDF Image XObject /{resourceName} /SMask");
 
-        if (filter != null &&
-            !string.Equals(filter, "FlateDecode", StringComparison.Ordinal) &&
-            !string.Equals(filter, "Fl", StringComparison.Ordinal))
+        if (decoded.IsJpeg)
         {
             throw new InvalidDataException(
-                $"PDF Image XObject /{resourceName} /SMask использует неподдерживаемый filter /{filter}.");
+                $"PDF Image XObject /{resourceName} /SMask не может использовать DCTDecode.");
         }
 
-        var pixels = DecodeImageSamples(
-            softMask,
-            filter);
+        var pixels = decoded.Data;
 
         return new PdfImageResource
         {
@@ -554,27 +542,198 @@ internal sealed class PdfDocumentReader
         };
     }
 
-    private byte[] DecodeImageSamples(
+    private DecodedImageData DecodeImageFilterPipeline(
         PdfStream stream,
-        string? filter)
+        string context)
     {
-        var pixels = filter == null
-            ? stream.Data
-            : DecodeStream(stream);
-
-        if (filter == null)
-        {
-            return pixels;
-        }
-
-        var decodeParameters = ReadSingleDecodeParameters(
+        var filters = ReadImageFilters(
             stream.Dictionary);
+        var parameters = ReadImageDecodeParameters(
+            stream.Dictionary,
+            filters.Count);
 
-        if (decodeParameters == null)
+        var data = stream.Data;
+        var isJpeg = false;
+
+        for (var index = 0; index < filters.Count; index++)
         {
-            return pixels;
+            var filter = filters[index];
+            var decodeParameters = parameters[index];
+
+            switch (filter)
+            {
+                case "ASCIIHexDecode":
+                case "AHx":
+                    EnsureNoImageDecodeParameters(
+                        decodeParameters,
+                        context,
+                        filter);
+                    data =
+                        PdfStreamFilterDecoder.DecodeAsciiHex(
+                            data);
+                    break;
+
+                case "ASCII85Decode":
+                case "A85":
+                    EnsureNoImageDecodeParameters(
+                        decodeParameters,
+                        context,
+                        filter);
+                    data =
+                        PdfStreamFilterDecoder.DecodeAscii85(
+                            data);
+                    break;
+
+                case "FlateDecode":
+                case "Fl":
+                    data =
+                        PdfStreamFilterDecoder.DecodeFlate(
+                            data);
+
+                    if (decodeParameters != null)
+                    {
+                        data = ApplyImagePredictor(
+                            data,
+                            decodeParameters);
+                    }
+                    break;
+
+                case "DCTDecode":
+                case "DCT":
+                    if (index != filters.Count - 1)
+                    {
+                        throw new InvalidDataException(
+                            $"{context}: DCTDecode должен быть последним filter.");
+                    }
+
+                    isJpeg = true;
+                    break;
+
+                default:
+                    throw new InvalidDataException(
+                        $"{context}: filter /{filter} пока не поддерживается.");
+            }
         }
 
+        return new DecodedImageData(
+            data,
+            isJpeg);
+    }
+
+    private IReadOnlyList<string> ReadImageFilters(
+        PdfDictionary dictionary)
+    {
+        if (!dictionary.Items.TryGetValue(
+                "Filter",
+                out var filterValue))
+        {
+            return Array.Empty<string>();
+        }
+
+        var resolved = ResolveIfReference(
+            filterValue);
+
+        if (resolved is PdfName name)
+        {
+            return new[] { name.Value };
+        }
+
+        if (resolved is not PdfArray array)
+        {
+            throw new InvalidDataException(
+                "PDF Image XObject /Filter должен быть name или array.");
+        }
+
+        var result = new string[array.Items.Count];
+
+        for (var index = 0; index < array.Items.Count; index++)
+        {
+            var item = ResolveIfReference(
+                array.Items[index]) as PdfName
+                       ?? throw new InvalidDataException(
+                           "PDF Image XObject /Filter array содержит не-name.");
+
+            result[index] = item.Value;
+        }
+
+        return result;
+    }
+
+    private IReadOnlyList<PdfDictionary?> ReadImageDecodeParameters(
+        PdfDictionary dictionary,
+        int filterCount)
+    {
+        if (!dictionary.Items.TryGetValue(
+                "DecodeParms",
+                out var parametersValue))
+        {
+            return Enumerable
+                .Repeat<PdfDictionary?>(
+                    null,
+                    filterCount)
+                .ToArray();
+        }
+
+        if (filterCount == 0)
+        {
+            throw new InvalidDataException(
+                "PDF Image XObject содержит /DecodeParms без /Filter.");
+        }
+
+        var resolved = ResolveIfReference(
+            parametersValue);
+
+        if (resolved is PdfNull)
+        {
+            return Enumerable
+                .Repeat<PdfDictionary?>(
+                    null,
+                    filterCount)
+                .ToArray();
+        }
+
+        if (resolved is PdfDictionary single)
+        {
+            if (filterCount != 1)
+            {
+                throw new InvalidDataException(
+                    "PDF Image XObject с несколькими filters должен использовать массив /DecodeParms.");
+            }
+
+            return new PdfDictionary?[] { single };
+        }
+
+        if (resolved is not PdfArray array ||
+            array.Items.Count != filterCount)
+        {
+            throw new InvalidDataException(
+                "PDF Image XObject /DecodeParms array должен совпадать по длине с /Filter.");
+        }
+
+        var result = new PdfDictionary?[filterCount];
+
+        for (var index = 0; index < filterCount; index++)
+        {
+            var item = ResolveIfReference(
+                array.Items[index]);
+
+            result[index] = item switch
+            {
+                PdfNull => null,
+                PdfDictionary dictionaryItem =>
+                    dictionaryItem,
+                _ => throw new InvalidDataException(
+                    "PDF Image XObject /DecodeParms array содержит не-dictionary и не-null.")
+            };
+        }
+
+        return result;
+    }
+
+    private byte[] ApplyImagePredictor(
+        byte[] data,
+        PdfDictionary decodeParameters)
+    {
         var predictor = TryGetInteger(
             decodeParameters,
             "Predictor",
@@ -604,47 +763,23 @@ internal sealed class PdfDocumentReader
             : 1;
 
         return PdfPredictorDecoder.Decode(
-            pixels,
+            data,
             predictor,
             predictorColors,
             predictorBits,
             predictorColumns);
     }
 
-    private PdfDictionary? ReadSingleDecodeParameters(
-        PdfDictionary dictionary)
+    private static void EnsureNoImageDecodeParameters(
+        PdfDictionary? decodeParameters,
+        string context,
+        string filter)
     {
-        if (!dictionary.Items.TryGetValue(
-                "DecodeParms",
-                out var parametersValue))
+        if (decodeParameters != null)
         {
-            return null;
+            throw new InvalidDataException(
+                $"{context}: /{filter} не поддерживает /DecodeParms в MYBOOK.");
         }
-
-        return ResolveIfReference(parametersValue) as PdfDictionary
-               ?? throw new InvalidDataException(
-                   "PDF Image XObject /DecodeParms не является dictionary.");
-    }
-
-    private string? ReadSingleFilterName(
-        PdfDictionary dictionary)
-    {
-        if (!dictionary.Items.TryGetValue(
-                "Filter",
-                out var filterValue))
-        {
-            return null;
-        }
-
-        var resolved = ResolveIfReference(filterValue);
-
-        if (resolved is PdfName name)
-        {
-            return name.Value;
-        }
-
-        throw new InvalidDataException(
-            "PDF Image XObject с цепочкой filters пока не поддерживается.");
     }
 
     private IReadOnlyDictionary<string, PdfExtGraphicsState> BuildExtGraphicsStates(
@@ -2607,6 +2742,10 @@ internal sealed class PdfDocumentReader
 
         return -1;
     }
+
+    private sealed record DecodedImageData(
+        byte[] Data,
+        bool IsJpeg);
 
     private enum ImageColorSpaceKind
     {

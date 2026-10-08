@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.24
+Текущая версия: 1.0.25
 
 ## Архитектура
 
@@ -111,7 +111,7 @@
 - [x] Точные glyph widths/advance для simple fonts через `/FirstChar` + `/Widths` и Type0 `Identity-H/Identity-V` через `/DW` + `/W`.
 - [x] Type0 custom Encoding CMap stream: `codespacerange`, `cidchar`, `cidrange` и code→CID mapping для точных widths.
 - [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
-- [ ] Встроенные изображения. Поддержаны Image XObject с `DCTDecode` (JPEG), `DeviceGray`/`DeviceRGB`/`DeviceCMYK`, 1/2/4/8-bit `Indexed`, TIFF predictor 2, PNG predictors 10..15 и 8-bit `DeviceGray` `/SMask`; остаются `/SMask /Matte`, нестандартный mask `/Decode`, дополнительные ColorSpace и filter chains.
+- [ ] Встроенные изображения. Поддержаны Image XObject с `DCTDecode` (JPEG), `DeviceGray`/`DeviceRGB`/`DeviceCMYK`, 1/2/4/8-bit `Indexed`, TIFF predictor 2, PNG predictors 10..15, 8-bit `DeviceGray` `/SMask`, filter arrays с `ASCIIHexDecode`/`ASCII85Decode` → `FlateDecode`/`DCTDecode` и aligned `/DecodeParms`; остаются `/SMask /Matte`, нестандартный mask `/Decode`, дополнительные ColorSpace и LZW/CCITT/JPX/JBIG2 filters.
 - [x] Базовые paths/fills/strokes: `m/l/c/v/y/h/re`, `S/s/f/F/f*/B/B*/b/b*/n`, `w`, Gray/RGB/CMYK colors.
 - [x] Line cap/join, miter limit и dash pattern: `J`, `j`, `M`, `d` + SVG stroke styles.
 - [x] Clipping paths: `W`, `W*`, последовательное пересечение clipping областей и восстановление через `q/Q`.
