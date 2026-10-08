@@ -22,7 +22,7 @@
                              Grid.Row="0"
                              TitleText="Settings"
                              SubtitleText="MYBOOK"
-                             VersionText="1.0.26"
+                             VersionText="1.0.27"
                              ShowIcon="True"
                              ShowLanguageButton="False"
                              ShowThemeButton="False"

@@ -265,6 +265,12 @@ internal sealed class PdfDocumentReader
 
         if (decoded.IsJpeg)
         {
+            if (softMask?.Matte != null)
+            {
+                throw new InvalidDataException(
+                    $"PDF Image XObject /{resourceName} использует /SMask /Matte поверх DCTDecode; для распремультипликации нужны decoded color samples.");
+            }
+
             if (stream.Dictionary.Items.ContainsKey("Decode") &&
                 !decodeValues.SequenceEqual(
                     GetDefaultImageDecodeValues(
@@ -295,36 +301,52 @@ internal sealed class PdfDocumentReader
         var renderedPixels = colorSpace.Kind switch
         {
             ImageColorSpaceKind.Gray =>
-                PdfImageColorConverter.ApplyComponentDecode(
-                    pixels,
+                ApplySoftMaskMatte(
+                    PdfImageColorConverter.ApplyComponentDecode(
+                        pixels,
+                        components: 1,
+                        decodeValues),
                     components: 1,
-                    decodeValues),
+                    softMask,
+                    $"PDF Image XObject /{resourceName}"),
 
             ImageColorSpaceKind.Rgb =>
-                PdfImageColorConverter.ApplyComponentDecode(
-                    pixels,
+                ApplySoftMaskMatte(
+                    PdfImageColorConverter.ApplyComponentDecode(
+                        pixels,
+                        components: 3,
+                        decodeValues),
                     components: 3,
-                    decodeValues),
+                    softMask,
+                    $"PDF Image XObject /{resourceName}"),
 
             ImageColorSpaceKind.Cmyk =>
                 PdfImageColorConverter.ConvertCmykToRgb(
-                    PdfImageColorConverter.ApplyComponentDecode(
-                        pixels,
+                    ApplySoftMaskMatte(
+                        PdfImageColorConverter.ApplyComponentDecode(
+                            pixels,
+                            components: 4,
+                            decodeValues),
                         components: 4,
-                        decodeValues)),
+                        softMask,
+                        $"PDF Image XObject /{resourceName}")),
 
             ImageColorSpaceKind.Indexed =>
-                PdfImageColorConverter.ConvertIndexedToRgb(
-                    pixels,
-                    width,
-                    height,
-                    bits,
-                    colorSpace.HighValue,
-                    colorSpace.RgbPalette
-                    ?? throw new InvalidDataException(
-                        $"PDF Image XObject /{resourceName} Indexed palette отсутствует."),
-                    decodeValues[0],
-                    decodeValues[1]),
+                softMask?.Matte != null
+                    ? throw new InvalidDataException(
+                        $"PDF Image XObject /{resourceName} использует /SMask /Matte с Indexed color space; этот случай пока не поддерживается.")
+                    : PdfImageColorConverter.ConvertIndexedToRgb(
+                        pixels,
+                        width,
+                        height,
+                        bits,
+                        colorSpace.HighValue,
+                        colorSpace.RgbPalette
+                        ?? throw new InvalidDataException(
+                            $"PDF Image XObject /{resourceName} Indexed palette отсутствует."),
+                        decodeValues[0],
+                        decodeValues[1]),
+
             _ => throw new InvalidDataException(
                 $"PDF Image XObject /{resourceName} использует неизвестный ColorSpace.")
         };
@@ -572,7 +594,73 @@ internal sealed class PdfDocumentReader
         };
     }
 
-    private PdfImageResource? BuildSoftMaskResource(
+    private double[]? ReadSoftMaskMatte(
+        PdfDictionary dictionary,
+        string context)
+    {
+        if (!dictionary.Items.TryGetValue(
+                "Matte",
+                out var matteValue))
+        {
+            return null;
+        }
+
+        var resolved = ResolveIfReference(
+            matteValue) as PdfArray
+                       ?? throw new InvalidDataException(
+                           $"{context} /Matte не является массивом.");
+
+        if (resolved.Items.Count == 0)
+        {
+            throw new InvalidDataException(
+                $"{context} /Matte не может быть пустым.");
+        }
+
+        var result = new double[resolved.Items.Count];
+
+        for (var index = 0; index < resolved.Items.Count; index++)
+        {
+            var value = GetNumberValue(
+                resolved.Items[index],
+                $"{context} /Matte");
+
+            if (!double.IsFinite(value))
+            {
+                throw new InvalidDataException(
+                    $"{context} /Matte содержит неконечное значение.");
+            }
+
+            result[index] = value;
+        }
+
+        return result;
+    }
+
+    private static byte[] ApplySoftMaskMatte(
+        byte[] samples,
+        int components,
+        SoftMaskResource? softMask,
+        string context)
+    {
+        if (softMask?.Matte == null)
+        {
+            return samples;
+        }
+
+        if (softMask.Matte.Length != components)
+        {
+            throw new InvalidDataException(
+                $"{context}: /SMask /Matte содержит {softMask.Matte.Length} components вместо {components}.");
+        }
+
+        return PdfImageColorConverter.RemoveMatte(
+            samples,
+            components,
+            softMask.AlphaSamples,
+            softMask.Matte);
+    }
+
+    private SoftMaskResource? BuildSoftMaskResource(
         string resourceName,
         PdfDictionary imageDictionary,
         int width,
@@ -603,12 +691,6 @@ internal sealed class PdfDocumentReader
         {
             throw new InvalidDataException(
                 $"PDF Image XObject /{resourceName} /SMask имеет другой размер.");
-        }
-
-        if (softMask.Dictionary.Items.ContainsKey("Matte"))
-        {
-            throw new InvalidDataException(
-                $"PDF Image XObject /{resourceName} /SMask /Matte пока не поддерживается.");
         }
 
         var bits = GetRequiredInteger(
@@ -655,15 +737,17 @@ internal sealed class PdfDocumentReader
                 components: 1,
                 decodeValues);
 
-        return new PdfImageResource
-        {
-            Data = PdfPngEncoder.Encode(
+        return new SoftMaskResource(
+            PdfPngEncoder.Encode(
                 pixels,
                 width,
                 height,
                 channels: 1),
-            ContentType = "image/png"
-        };
+            "image/png",
+            pixels,
+            ReadSoftMaskMatte(
+                softMask.Dictionary,
+                $"PDF Image XObject /{resourceName} /SMask"));
     }
 
     private DecodedImageData DecodeImageFilterPipeline(
@@ -2870,6 +2954,12 @@ internal sealed class PdfDocumentReader
     private sealed record DecodedImageData(
         byte[] Data,
         bool IsJpeg);
+
+    private sealed record SoftMaskResource(
+        byte[] Data,
+        string ContentType,
+        byte[] AlphaSamples,
+        double[]? Matte);
 
     private enum ImageColorSpaceKind
     {

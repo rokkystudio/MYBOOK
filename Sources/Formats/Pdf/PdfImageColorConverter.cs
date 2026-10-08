@@ -48,6 +48,72 @@ internal static class PdfImageColorConverter
     }
 
     /// <summary>
+    /// Убирает matte premultiplication из 8-bit component samples
+    /// по декодированным alpha samples soft mask.
+    /// </summary>
+    public static byte[] RemoveMatte(
+        byte[] samples,
+        int components,
+        byte[] alphaSamples,
+        IReadOnlyList<double> matte)
+    {
+        if (components <= 0 ||
+            samples.Length % components != 0)
+        {
+            throw new InvalidDataException(
+                "PDF raster имеет некорректное число component samples.");
+        }
+
+        var pixelCount = samples.Length / components;
+
+        if (alphaSamples.Length != pixelCount)
+        {
+            throw new InvalidDataException(
+                "PDF /SMask alpha samples не совпадают с числом pixels основного изображения.");
+        }
+
+        if (matte.Count != components)
+        {
+            throw new InvalidDataException(
+                "PDF /SMask /Matte не совпадает с числом color components.");
+        }
+
+        var output = new byte[samples.Length];
+
+        for (var pixel = 0; pixel < pixelCount; pixel++)
+        {
+            var alpha = alphaSamples[pixel] / 255.0;
+
+            for (var component = 0; component < components; component++)
+            {
+                var source =
+                    samples[pixel * components + component] /
+                    255.0;
+
+                double value;
+
+                if (alpha <= 0)
+                {
+                    value = 0;
+                }
+                else
+                {
+                    var matteValue = matte[component];
+                    value =
+                        (source -
+                         (1 - alpha) * matteValue) /
+                        alpha;
+                }
+
+                output[pixel * components + component] =
+                    ToByte(value);
+            }
+        }
+
+        return output;
+    }
+
+    /// <summary>
     /// Преобразует 8-bit DeviceCMYK samples в RGB.
     /// </summary>
     public static byte[] ConvertCmykToRgb(byte[] samples)

@@ -3,13 +3,13 @@ using System.IO;
 namespace MYBOOK.Formats.Pdf;
 
 /// <summary>
-/// Декодирует PDF predictor после FlateDecode для 8-bit raster samples.
-/// Поддерживает TIFF predictor 2 и PNG predictors 10..15.
+/// Декодирует PDF predictor после FlateDecode.
+/// Поддерживает TIFF predictor 2 и PNG predictors 10..15 для 8-bit samples.
 /// </summary>
 internal static class PdfPredictorDecoder
 {
     /// <summary>
-    /// Восстанавливает исходные 8-bit raster samples по параметрам PDF predictor.
+    /// Восстанавливает raster bytes после применения PDF predictor.
     /// </summary>
     public static byte[] Decode(
         byte[] data,
@@ -18,98 +18,204 @@ internal static class PdfPredictorDecoder
         int bitsPerComponent,
         int columns)
     {
-        if (predictor == 1)
+        if (predictor is 0 or 1)
+        {
             return data;
+        }
 
         if (colors <= 0 || columns <= 0)
-            throw new InvalidDataException("PDF predictor содержит недопустимые Colors/Columns.");
+        {
+            throw new InvalidDataException(
+                "PDF predictor требует положительные Colors и Columns.");
+        }
 
         if (bitsPerComponent != 8)
-            throw new InvalidDataException($"PDF predictor для {bitsPerComponent} bits per component пока не поддерживается.");
-
-        var bytesPerPixel = checked(colors);
-        var rowBytes = checked(colors * columns);
+        {
+            throw new InvalidDataException(
+                $"PDF predictor пока поддерживает только 8 bits per component, получено {bitsPerComponent}.");
+        }
 
         return predictor switch
         {
-            2 => DecodeTiff(data, rowBytes, bytesPerPixel),
-            >= 10 and <= 15 => DecodePng(data, rowBytes, bytesPerPixel),
-            _ => throw new InvalidDataException($"PDF predictor {predictor} не поддерживается.")
+            2 => DecodeTiff(
+                data,
+                colors,
+                columns),
+
+            >= 10 and <= 15 => DecodePng(
+                data,
+                colors,
+                columns,
+                predictor),
+
+            _ => throw new InvalidDataException(
+                $"PDF predictor {predictor} не поддерживается.")
         };
     }
 
     private static byte[] DecodeTiff(
         byte[] data,
-        int rowBytes,
-        int bytesPerPixel)
+        int colors,
+        int columns)
     {
+        var rowBytes = checked(colors * columns);
+
         if (data.Length % rowBytes != 0)
-            throw new InvalidDataException("PDF TIFF predictor имеет неполную raster row.");
-
-        var output = data.ToArray();
-
-        for (var rowStart = 0; rowStart < output.Length; rowStart += rowBytes)
         {
-            for (var index = bytesPerPixel; index < rowBytes; index++)
+            throw new InvalidDataException(
+                "TIFF predictor data length не кратна длине строки.");
+        }
+
+        var result = data.ToArray();
+
+        for (var rowOffset = 0;
+             rowOffset < result.Length;
+             rowOffset += rowBytes)
+        {
+            for (var index = colors;
+                 index < rowBytes;
+                 index++)
             {
-                var position = rowStart + index;
-                output[position] = unchecked(
-                    (byte)(output[position] + output[position - bytesPerPixel]));
+                var position = rowOffset + index;
+
+                result[position] = unchecked(
+                    (byte)(
+                        result[position] +
+                        result[position - colors]));
             }
         }
 
-        return output;
+        return result;
     }
 
     private static byte[] DecodePng(
         byte[] data,
-        int rowBytes,
-        int bytesPerPixel)
+        int colors,
+        int columns,
+        int predictor)
     {
-        var encodedRowBytes = checked(rowBytes + 1);
+        var rowBytes = checked(colors * columns);
+        var bytesPerPixel = colors;
 
-        if (data.Length % encodedRowBytes != 0)
-            throw new InvalidDataException("PDF PNG predictor имеет неполную predictor row.");
-
-        var rowCount = data.Length / encodedRowBytes;
-        var output = new byte[checked(rowBytes * rowCount)];
-
-        for (var row = 0; row < rowCount; row++)
+        if (predictor == 15)
         {
-            var encodedStart = row * encodedRowBytes;
-            var filter = data[encodedStart];
-            var outputStart = row * rowBytes;
+            var encodedRowBytes = checked(rowBytes + 1);
 
-            for (var index = 0; index < rowBytes; index++)
+            if (data.Length % encodedRowBytes != 0)
             {
-                var raw = data[encodedStart + 1 + index];
-                var left = index >= bytesPerPixel
-                    ? output[outputStart + index - bytesPerPixel]
-                    : (byte)0;
-                var up = row > 0
-                    ? output[outputStart - rowBytes + index]
-                    : (byte)0;
-                var upLeft = row > 0 && index >= bytesPerPixel
-                    ? output[outputStart - rowBytes + index - bytesPerPixel]
-                    : (byte)0;
-
-                output[outputStart + index] = filter switch
-                {
-                    0 => raw,
-                    1 => unchecked((byte)(raw + left)),
-                    2 => unchecked((byte)(raw + up)),
-                    3 => unchecked((byte)(raw + ((left + up) / 2))),
-                    4 => unchecked((byte)(raw + Paeth(left, up, upLeft))),
-                    _ => throw new InvalidDataException(
-                        $"PDF PNG predictor использует неизвестный row filter {filter}.")
-                };
+                throw new InvalidDataException(
+                    "PNG predictor 15 data length не кратна строке с filter byte.");
             }
+
+            var rows = data.Length / encodedRowBytes;
+            var result = new byte[checked(rows * rowBytes)];
+            var previous = new byte[rowBytes];
+
+            for (var row = 0; row < rows; row++)
+            {
+                var encodedOffset = row * encodedRowBytes;
+                var filter = data[encodedOffset];
+                var current = result.AsSpan(
+                    row * rowBytes,
+                    rowBytes);
+
+                DecodePngRow(
+                    data.AsSpan(
+                        encodedOffset + 1,
+                        rowBytes),
+                    current,
+                    previous,
+                    filter,
+                    bytesPerPixel);
+
+                current.CopyTo(previous);
+            }
+
+            return result;
         }
 
-        return output;
+        var fixedFilter = predictor - 10;
+
+        if (data.Length % rowBytes != 0)
+        {
+            throw new InvalidDataException(
+                "PNG predictor data length не кратна длине строки.");
+        }
+
+        var fixedRows = data.Length / rowBytes;
+        var fixedResult = new byte[data.Length];
+        var previousRow = new byte[rowBytes];
+
+        for (var row = 0; row < fixedRows; row++)
+        {
+            var current = fixedResult.AsSpan(
+                row * rowBytes,
+                rowBytes);
+
+            DecodePngRow(
+                data.AsSpan(
+                    row * rowBytes,
+                    rowBytes),
+                current,
+                previousRow,
+                fixedFilter,
+                bytesPerPixel);
+
+            current.CopyTo(previousRow);
+        }
+
+        return fixedResult;
     }
 
-    private static byte Paeth(byte left, byte up, byte upLeft)
+    private static void DecodePngRow(
+        ReadOnlySpan<byte> encoded,
+        Span<byte> output,
+        ReadOnlySpan<byte> previous,
+        int filter,
+        int bytesPerPixel)
+    {
+        if (filter is < 0 or > 4)
+        {
+            throw new InvalidDataException(
+                $"PNG predictor использует неизвестный filter {filter}.");
+        }
+
+        for (var index = 0;
+             index < encoded.Length;
+             index++)
+        {
+            var left = index >= bytesPerPixel
+                ? output[index - bytesPerPixel]
+                : 0;
+
+            var up = previous[index];
+
+            var upLeft = index >= bytesPerPixel
+                ? previous[index - bytesPerPixel]
+                : 0;
+
+            var predictor = filter switch
+            {
+                0 => 0,
+                1 => left,
+                2 => up,
+                3 => (left + up) / 2,
+                4 => Paeth(
+                    left,
+                    up,
+                    upLeft),
+                _ => 0
+            };
+
+            output[index] = unchecked(
+                (byte)(encoded[index] + predictor));
+        }
+    }
+
+    private static byte Paeth(
+        int left,
+        int up,
+        int upLeft)
     {
         var p = left + up - upLeft;
         var pa = Math.Abs(p - left);
@@ -117,8 +223,15 @@ internal static class PdfPredictorDecoder
         var pc = Math.Abs(p - upLeft);
 
         if (pa <= pb && pa <= pc)
-            return left;
+        {
+            return (byte)left;
+        }
 
-        return pb <= pc ? up : upLeft;
+        if (pb <= pc)
+        {
+            return (byte)up;
+        }
+
+        return (byte)upLeft;
     }
 }
