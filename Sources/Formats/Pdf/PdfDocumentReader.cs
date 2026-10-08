@@ -16,6 +16,7 @@ internal sealed class PdfDocumentReader
     private readonly Dictionary<int, XrefEntry> xref_;
     private readonly Dictionary<int, PdfObject> objectCache_ = new();
     private readonly Dictionary<int, Dictionary<int, PdfObject>> objectStreamCache_ = new();
+    private readonly List<PdfPageContext> pageContexts_ = new();
     private readonly PdfDictionary trailer_;
     private readonly string version_;
 
@@ -70,10 +71,32 @@ internal sealed class PdfDocumentReader
             throw new InvalidDataException("PDF не содержит страниц.");
         }
 
+        var pageNumbersByObject = pageContexts_
+            .ToDictionary(
+                item => item.ObjectNumber,
+                item => item.Page.PageNumber);
+
+        var namedDestinations = ReadNamedDestinations(
+            catalog);
+
+        foreach (var context in pageContexts_)
+        {
+            context.Page.Links = ReadPageLinks(
+                context,
+                pageNumbersByObject,
+                namedDestinations);
+        }
+
+        var outlines = ReadOutlines(
+            catalog,
+            pageNumbersByObject,
+            namedDestinations);
+
         return new DocumentModel
         {
             Title = Path.GetFileNameWithoutExtension(path),
-            Blocks = pages.Cast<DocumentBlock>().ToArray()
+            Blocks = pages.Cast<DocumentBlock>().ToArray(),
+            Outlines = outlines
         };
     }
 
@@ -108,7 +131,7 @@ internal sealed class PdfDocumentReader
                 dictionary,
                 current.Resources);
 
-            pages.Add(new DocumentFixedPage
+            var page = new DocumentFixedPage
             {
                 PageNumber = pages.Count + 1,
                 WidthPoints = width,
@@ -127,7 +150,15 @@ internal sealed class PdfDocumentReader
                     textLayer.Paths,
                     box,
                     rotation)
-            });
+            };
+
+            pages.Add(page);
+            pageContexts_.Add(new PdfPageContext(
+                reference.ObjectNumber,
+                dictionary,
+                box,
+                rotation,
+                page));
 
             return;
         }
@@ -155,6 +186,559 @@ internal sealed class PdfDocumentReader
 
             ReadPageTree(childReference, pages, current);
         }
+    }
+
+    private Dictionary<string, PdfObject> ReadNamedDestinations(
+        PdfDictionary catalog)
+    {
+        var result = new Dictionary<string, PdfObject>(
+            StringComparer.Ordinal);
+
+        if (catalog.Items.TryGetValue(
+                "Dests",
+                out var legacyDestsObject))
+        {
+            var legacyDests = ResolveIfReference(
+                legacyDestsObject) as PdfDictionary
+                              ?? throw new InvalidDataException(
+                                  "PDF catalog /Dests не является dictionary.");
+
+            foreach (var pair in legacyDests.Items)
+            {
+                result[pair.Key] = pair.Value;
+            }
+        }
+
+        if (!catalog.Items.TryGetValue(
+                "Names",
+                out var namesObject))
+        {
+            return result;
+        }
+
+        var names = ResolveIfReference(namesObject) as PdfDictionary
+                    ?? throw new InvalidDataException(
+                        "PDF catalog /Names не является dictionary.");
+
+        if (!names.Items.TryGetValue(
+                "Dests",
+                out var nameTreeObject))
+        {
+            return result;
+        }
+
+        CollectNamedDestinations(
+            nameTreeObject,
+            result,
+            new HashSet<int>());
+
+        return result;
+    }
+
+    private void CollectNamedDestinations(
+        PdfObject nodeObject,
+        Dictionary<string, PdfObject> destinations,
+        HashSet<int> visitedObjects)
+    {
+        if (nodeObject is PdfReference reference &&
+            !visitedObjects.Add(reference.ObjectNumber))
+        {
+            return;
+        }
+
+        var node = ResolveIfReference(nodeObject) as PdfDictionary
+                   ?? throw new InvalidDataException(
+                       "PDF destination name tree node не является dictionary.");
+
+        if (node.Items.TryGetValue(
+                "Names",
+                out var namesObject))
+        {
+            var names = ResolveIfReference(namesObject) as PdfArray
+                        ?? throw new InvalidDataException(
+                            "PDF destination name tree /Names не является массивом.");
+
+            if ((names.Items.Count & 1) != 0)
+            {
+                throw new InvalidDataException(
+                    "PDF destination name tree /Names должен содержать пары key/value.");
+            }
+
+            for (var index = 0;
+                 index < names.Items.Count;
+                 index += 2)
+            {
+                var key = ReadDestinationName(
+                    names.Items[index]);
+
+                destinations[key] =
+                    names.Items[index + 1];
+            }
+        }
+
+        if (!node.Items.TryGetValue(
+                "Kids",
+                out var kidsObject))
+        {
+            return;
+        }
+
+        var kids = ResolveIfReference(kidsObject) as PdfArray
+                   ?? throw new InvalidDataException(
+                       "PDF destination name tree /Kids не является массивом.");
+
+        foreach (var kid in kids.Items)
+        {
+            CollectNamedDestinations(
+                kid,
+                destinations,
+                visitedObjects);
+        }
+    }
+
+    private IReadOnlyList<DocumentFixedLink> ReadPageLinks(
+        PdfPageContext context,
+        IReadOnlyDictionary<int, int> pageNumbersByObject,
+        IReadOnlyDictionary<string, PdfObject> namedDestinations)
+    {
+        if (!context.Dictionary.Items.TryGetValue(
+                "Annots",
+                out var annotationsObject))
+        {
+            return Array.Empty<DocumentFixedLink>();
+        }
+
+        var annotations = ResolveIfReference(
+            annotationsObject) as PdfArray
+                          ?? throw new InvalidDataException(
+                              $"PDF page {context.Page.PageNumber} /Annots не является массивом.");
+
+        var result = new List<DocumentFixedLink>();
+
+        foreach (var annotationObject in annotations.Items)
+        {
+            var annotation = ResolveIfReference(
+                annotationObject) as PdfDictionary;
+
+            if (annotation == null ||
+                !string.Equals(
+                    GetName(annotation, "Subtype"),
+                    "Link",
+                    StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var target = ReadLinkTarget(
+                annotation,
+                pageNumbersByObject,
+                namedDestinations);
+
+            if (target.Uri == null &&
+                target.PageNumber == null)
+            {
+                continue;
+            }
+
+            if (!annotation.Items.TryGetValue(
+                    "Rect",
+                    out var rectangleObject))
+            {
+                continue;
+            }
+
+            var rectangle = ResolveIfReference(
+                rectangleObject) as PdfArray;
+
+            if (rectangle == null ||
+                rectangle.Items.Count != 4)
+            {
+                throw new InvalidDataException(
+                    $"PDF Link annotation на странице {context.Page.PageNumber} содержит некорректный /Rect.");
+            }
+
+            var x1 = GetNumberValue(
+                rectangle.Items[0],
+                "PDF Link /Rect x1");
+            var y1 = GetNumberValue(
+                rectangle.Items[1],
+                "PDF Link /Rect y1");
+            var x2 = GetNumberValue(
+                rectangle.Items[2],
+                "PDF Link /Rect x2");
+            var y2 = GetNumberValue(
+                rectangle.Items[3],
+                "PDF Link /Rect y2");
+
+            var p1 = TransformPagePoint(
+                x1,
+                y1,
+                context.Box,
+                context.Rotation);
+
+            var p2 = TransformPagePoint(
+                x2,
+                y1,
+                context.Box,
+                context.Rotation);
+
+            var p3 = TransformPagePoint(
+                x2,
+                y2,
+                context.Box,
+                context.Rotation);
+
+            var p4 = TransformPagePoint(
+                x1,
+                y2,
+                context.Box,
+                context.Rotation);
+
+            var left = Math.Min(
+                Math.Min(p1.X, p2.X),
+                Math.Min(p3.X, p4.X));
+            var top = Math.Min(
+                Math.Min(p1.Y, p2.Y),
+                Math.Min(p3.Y, p4.Y));
+            var right = Math.Max(
+                Math.Max(p1.X, p2.X),
+                Math.Max(p3.X, p4.X));
+            var bottom = Math.Max(
+                Math.Max(p1.Y, p2.Y),
+                Math.Max(p3.Y, p4.Y));
+
+            result.Add(new DocumentFixedLink
+            {
+                XPoints = left,
+                YPoints = top,
+                WidthPoints = right - left,
+                HeightPoints = bottom - top,
+                Uri = target.Uri,
+                TargetPageNumber = target.PageNumber
+            });
+        }
+
+        return result;
+    }
+
+    private IReadOnlyList<DocumentOutlineItem> ReadOutlines(
+        PdfDictionary catalog,
+        IReadOnlyDictionary<int, int> pageNumbersByObject,
+        IReadOnlyDictionary<string, PdfObject> namedDestinations)
+    {
+        if (!catalog.Items.TryGetValue(
+                "Outlines",
+                out var outlinesObject))
+        {
+            return Array.Empty<DocumentOutlineItem>();
+        }
+
+        var outlines = ResolveIfReference(outlinesObject) as PdfDictionary
+                       ?? throw new InvalidDataException(
+                           "PDF catalog /Outlines не является dictionary.");
+
+        if (!outlines.Items.TryGetValue(
+                "First",
+                out var firstObject))
+        {
+            return Array.Empty<DocumentOutlineItem>();
+        }
+
+        return ReadOutlineSequence(
+            firstObject,
+            pageNumbersByObject,
+            namedDestinations,
+            new HashSet<int>());
+    }
+
+    private IReadOnlyList<DocumentOutlineItem> ReadOutlineSequence(
+        PdfObject firstObject,
+        IReadOnlyDictionary<int, int> pageNumbersByObject,
+        IReadOnlyDictionary<string, PdfObject> namedDestinations,
+        HashSet<int> visitedObjects)
+    {
+        var result = new List<DocumentOutlineItem>();
+        PdfObject? currentObject = firstObject;
+
+        while (currentObject != null)
+        {
+            if (currentObject is PdfReference reference &&
+                !visitedObjects.Add(reference.ObjectNumber))
+            {
+                break;
+            }
+
+            var current = ResolveIfReference(
+                currentObject) as PdfDictionary
+                          ?? throw new InvalidDataException(
+                              "PDF outline item не является dictionary.");
+
+            var title = current.Items.TryGetValue(
+                    "Title",
+                    out var titleObject)
+                ? ReadPdfTextString(titleObject)
+                : string.Empty;
+
+            var target = ReadLinkTarget(
+                current,
+                pageNumbersByObject,
+                namedDestinations);
+
+            var children = current.Items.TryGetValue(
+                    "First",
+                    out var childObject)
+                ? ReadOutlineSequence(
+                    childObject,
+                    pageNumbersByObject,
+                    namedDestinations,
+                    visitedObjects)
+                : Array.Empty<DocumentOutlineItem>();
+
+            result.Add(new DocumentOutlineItem
+            {
+                Title = title,
+                TargetPageNumber = target.PageNumber,
+                Uri = target.Uri,
+                Children = children
+            });
+
+            currentObject = current.Items.TryGetValue(
+                    "Next",
+                    out var nextObject)
+                ? nextObject
+                : null;
+        }
+
+        return result;
+    }
+
+    private ResolvedLinkTarget ReadLinkTarget(
+        PdfDictionary dictionary,
+        IReadOnlyDictionary<int, int> pageNumbersByObject,
+        IReadOnlyDictionary<string, PdfObject> namedDestinations)
+    {
+        if (dictionary.Items.TryGetValue(
+                "A",
+                out var actionObject))
+        {
+            var action = ResolveIfReference(actionObject) as PdfDictionary;
+
+            if (action != null)
+            {
+                var actionType = GetName(action, "S");
+
+                if (string.Equals(
+                        actionType,
+                        "URI",
+                        StringComparison.Ordinal) &&
+                    action.Items.TryGetValue(
+                        "URI",
+                        out var uriObject))
+                {
+                    return new ResolvedLinkTarget(
+                        NormalizeExternalUri(
+                            ReadPdfTextString(uriObject)),
+                        null);
+                }
+
+                if (string.Equals(
+                        actionType,
+                        "GoTo",
+                        StringComparison.Ordinal) &&
+                    action.Items.TryGetValue(
+                        "D",
+                        out var destinationObject))
+                {
+                    return new ResolvedLinkTarget(
+                        null,
+                        ResolveDestinationPage(
+                            destinationObject,
+                            pageNumbersByObject,
+                            namedDestinations,
+                            0));
+                }
+            }
+        }
+
+        if (dictionary.Items.TryGetValue(
+                "Dest",
+                out var directDestination))
+        {
+            return new ResolvedLinkTarget(
+                null,
+                ResolveDestinationPage(
+                    directDestination,
+                    pageNumbersByObject,
+                    namedDestinations,
+                    0));
+        }
+
+        return new ResolvedLinkTarget(
+            null,
+            null);
+    }
+
+    private int? ResolveDestinationPage(
+        PdfObject destinationObject,
+        IReadOnlyDictionary<int, int> pageNumbersByObject,
+        IReadOnlyDictionary<string, PdfObject> namedDestinations,
+        int depth)
+    {
+        if (depth > 16)
+        {
+            throw new InvalidDataException(
+                "PDF destination chain слишком глубокая.");
+        }
+
+        if (destinationObject is PdfReference pageReference &&
+            pageNumbersByObject.TryGetValue(
+                pageReference.ObjectNumber,
+                out var directPageNumber))
+        {
+            return directPageNumber;
+        }
+
+        var destination = ResolveIfReference(
+            destinationObject);
+
+        if (destination is PdfArray array)
+        {
+            if (array.Items.Count == 0)
+            {
+                return null;
+            }
+
+            var first = array.Items[0];
+
+            if (first is PdfReference reference &&
+                pageNumbersByObject.TryGetValue(
+                    reference.ObjectNumber,
+                    out var pageNumber))
+            {
+                return pageNumber;
+            }
+
+            if (ResolveIfReference(first) is PdfNumber pageIndex &&
+                pageIndex.Value == Math.Truncate(pageIndex.Value))
+            {
+                var candidate = checked((int)pageIndex.Value + 1);
+
+                return candidate >= 1 &&
+                       candidate <= pageNumbersByObject.Count
+                    ? candidate
+                    : null;
+            }
+
+            return null;
+        }
+
+        if (destination is PdfDictionary dictionary &&
+            dictionary.Items.TryGetValue(
+                "D",
+                out var nestedDestination))
+        {
+            return ResolveDestinationPage(
+                nestedDestination,
+                pageNumbersByObject,
+                namedDestinations,
+                depth + 1);
+        }
+
+        var destinationName = destination switch
+        {
+            PdfName name => name.Value,
+            PdfString text => DecodePdfTextBytes(text.Data),
+            _ => null
+        };
+
+        if (destinationName != null &&
+            namedDestinations.TryGetValue(
+                destinationName,
+                out var namedDestination))
+        {
+            return ResolveDestinationPage(
+                namedDestination,
+                pageNumbersByObject,
+                namedDestinations,
+                depth + 1);
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeExternalUri(string value)
+    {
+        if (!Uri.TryCreate(
+                value,
+                UriKind.Absolute,
+                out var uri))
+        {
+            return null;
+        }
+
+        return uri.Scheme switch
+        {
+            "http" or "https" or "mailto" => uri.AbsoluteUri,
+            _ => null
+        };
+    }
+
+    private string ReadDestinationName(PdfObject value)
+    {
+        var resolved = ResolveIfReference(value);
+
+        return resolved switch
+        {
+            PdfName name => name.Value,
+            PdfString text => DecodePdfTextBytes(text.Data),
+            _ => throw new InvalidDataException(
+                "PDF destination name не является name/string.")
+        };
+    }
+
+    private string ReadPdfTextString(PdfObject value)
+    {
+        var resolved = ResolveIfReference(value);
+
+        return resolved is PdfString text
+            ? DecodePdfTextBytes(text.Data)
+            : string.Empty;
+    }
+
+    private static string DecodePdfTextBytes(byte[] data)
+    {
+        if (data.Length >= 2 &&
+            data[0] == 0xFE &&
+            data[1] == 0xFF)
+        {
+            return Encoding.BigEndianUnicode.GetString(
+                data,
+                2,
+                data.Length - 2);
+        }
+
+        if (data.Length >= 2 &&
+            data[0] == 0xFF &&
+            data[1] == 0xFE)
+        {
+            return Encoding.Unicode.GetString(
+                data,
+                2,
+                data.Length - 2);
+        }
+
+        if (data.Length >= 3 &&
+            data[0] == 0xEF &&
+            data[1] == 0xBB &&
+            data[2] == 0xBF)
+        {
+            return Encoding.UTF8.GetString(
+                data,
+                3,
+                data.Length - 3);
+        }
+
+        return Encoding.Latin1.GetString(data);
     }
 
     private PageInheritance MergePageInheritance(
@@ -2950,6 +3534,17 @@ internal sealed class PdfDocumentReader
 
         return -1;
     }
+
+    private sealed record PdfPageContext(
+        int ObjectNumber,
+        PdfDictionary Dictionary,
+        PageBox Box,
+        int Rotation,
+        DocumentFixedPage Page);
+
+    private sealed record ResolvedLinkTarget(
+        string? Uri,
+        int? PageNumber);
 
     private sealed record DecodedImageData(
         byte[] Data,

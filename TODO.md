@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.27
+Текущая версия: 1.0.28
 
 ## Архитектура
 
@@ -118,7 +118,7 @@
 - [x] Точный mixed paint order между paths/images/text через `PaintOrder` из исходного content stream.
 - [x] Постраничная модель MYBOOK.
 - [x] SVG renderer фиксированной страницы для геометрического текстового слоя через исходные PDF points и `viewBox`.
-- [ ] Ссылки и outlines.
+- [x] Ссылки и outlines: Link annotations (`URI`, `GoTo`, `/Dest`), named destinations (`/Dests`, `/Names /Dests`) и outline tree в `DocumentModel`; UI-боковая панель остаётся отдельным этапом.
 - [ ] Шифрование PDF — отдельный этап.
 
 ## DjVu

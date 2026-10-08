@@ -11,6 +11,8 @@ internal sealed class DocumentModel
     public string Author { get; init; } = string.Empty;
     public DocumentImage? Cover { get; init; }
     public required IReadOnlyList<DocumentBlock> Blocks { get; init; }
+    public IReadOnlyList<DocumentOutlineItem> Outlines { get; init; } =
+        Array.Empty<DocumentOutlineItem>();
 }
 
 /// <summary>
@@ -55,8 +57,36 @@ internal sealed class DocumentFixedPage : DocumentBlock
         Array.Empty<DocumentFixedImageRun>();
     public IReadOnlyList<DocumentFixedPathRun> PathRuns { get; init; } =
         Array.Empty<DocumentFixedPathRun>();
+    public IReadOnlyList<DocumentFixedLink> Links { get; set; } =
+        Array.Empty<DocumentFixedLink>();
 }
 
+
+/// <summary>
+/// Представляет интерактивную ссылку на фиксированной странице.
+/// Координаты задаются от верхнего левого угла страницы.
+/// </summary>
+internal sealed class DocumentFixedLink
+{
+    public required double XPoints { get; init; }
+    public required double YPoints { get; init; }
+    public required double WidthPoints { get; init; }
+    public required double HeightPoints { get; init; }
+    public string? Uri { get; init; }
+    public int? TargetPageNumber { get; init; }
+}
+
+/// <summary>
+/// Представляет элемент оглавления/outline документа.
+/// </summary>
+internal sealed class DocumentOutlineItem
+{
+    public required string Title { get; init; }
+    public int? TargetPageNumber { get; init; }
+    public string? Uri { get; init; }
+    public IReadOnlyList<DocumentOutlineItem> Children { get; init; } =
+        Array.Empty<DocumentOutlineItem>();
+}
 
 /// <summary>
 /// Представляет один clipping path фиксированной страницы.

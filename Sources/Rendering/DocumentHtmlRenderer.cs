@@ -239,12 +239,14 @@ a { color: var(--primary); }
         var width = Math.Max(page.WidthPoints, 1.0);
         var height = Math.Max(page.HeightPoints, 1.0);
 
-        html.AppendLine("""<section class="fixed-page">""");
+        html.Append("""<section class="fixed-page" id="page-""")
+            .Append(page.PageNumber)
+            .AppendLine("\">");
         html.Append("""<div class="fixed-page-number">Page """)
             .Append(page.PageNumber)
             .AppendLine("</div>");
 
-        if (page.TextRuns.Count > 0 || page.ImageRuns.Count > 0 || page.PathRuns.Count > 0)
+        if (page.TextRuns.Count > 0 || page.ImageRuns.Count > 0 || page.PathRuns.Count > 0 || page.Links.Count > 0)
         {
             html.Append("""<svg class="fixed-page-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 """)
                 .Append(FormatNumber(width))
@@ -295,6 +297,11 @@ a { color: var(--primary); }
                         break;
                 }
             }
+
+            AppendFixedLinks(
+                html,
+                page.Links);
+
             html.AppendLine("</svg>");
         }
         else
@@ -313,6 +320,53 @@ a { color: var(--primary); }
         }
 
         html.AppendLine("</section>");
+    }
+
+    private static void AppendFixedLinks(
+        StringBuilder html,
+        IReadOnlyList<DocumentFixedLink> links)
+    {
+        foreach (var link in links)
+        {
+            string? href = null;
+            var external = false;
+
+            if (!string.IsNullOrWhiteSpace(link.Uri))
+            {
+                href = link.Uri;
+                external = true;
+            }
+            else if (link.TargetPageNumber is { } pageNumber)
+            {
+                href = $"#page-{pageNumber}";
+            }
+
+            if (href == null ||
+                link.WidthPoints <= 0 ||
+                link.HeightPoints <= 0)
+            {
+                continue;
+            }
+
+            html.Append("<a href=\"")
+                .Append(WebUtility.HtmlEncode(href))
+                .Append("\"");
+
+            if (external)
+            {
+                html.Append(" target=\"_blank\" rel=\"noopener noreferrer\"");
+            }
+
+            html.Append("><rect class=\"fixed-page-link\" fill=\"transparent\" pointer-events=\"all\" x=\"")
+                .Append(FormatNumber(link.XPoints))
+                .Append("\" y=\"")
+                .Append(FormatNumber(link.YPoints))
+                .Append("\" width=\"")
+                .Append(FormatNumber(link.WidthPoints))
+                .Append("\" height=\"")
+                .Append(FormatNumber(link.HeightPoints))
+                .AppendLine("\" /></a>");
+        }
     }
 
     private static void AppendFixedPathRun(
