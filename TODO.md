@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.37
+Текущая версия: 1.0.38
 
 В этом файле перечислены только незавершённые задачи.
 
@@ -19,9 +19,8 @@
 
 ## EPUB
 
-- [ ] CSS из EPUB с безопасным применением авторских стилей.
 - [ ] Встроенные шрифты EPUB.
-- [ ] Все изображения и SVG-ресурсы.
+- [ ] EPUB `picture/srcset` и дополнительные media-ресурсы; обычные `img`, inline SVG, SVG `<image>` и CSS image resources уже поддерживаются.
 - [ ] EPUB navigation document и NCX.
 - [ ] Сноски, landmarks и page-list.
 - [ ] EPUB 2/3 compatibility tests на отдельном corpus.

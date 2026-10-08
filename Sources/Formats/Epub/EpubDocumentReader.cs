@@ -9,7 +9,8 @@ namespace MYBOOK.Formats.Epub;
 
 /// <summary>
 /// Читает EPUB напрямую как ZIP-контейнер, разбирает container.xml, OPF manifest/spine,
-/// объединяет XHTML-главы и нормализует внутренние anchors/relative links между spine-главами.
+/// объединяет XHTML-главы, нормализует anchors/relative links и безопасно подключает
+/// scoped CSS и встроенные image/SVG resources без внешних загрузок.
 /// </summary>
 internal static class EpubDocumentReader
 {
@@ -84,21 +85,30 @@ internal static class EpubDocumentReader
                 chapter.Index,
                 chapterAnchors);
 
+            EpubResourceProcessor.RewriteChapterResources(
+                archive,
+                chapter.Path,
+                chapter.Body);
+
+            var chapterCss = EpubResourceProcessor.ReadChapterCss(
+                archive,
+                chapter.Path,
+                chapter.Head,
+                chapter.AnchorId);
+
             var html = string.Concat(
                 chapter.Body.Nodes().Select(
                     node => node.ToString(
                         SaveOptions.DisableFormatting)));
-
-            html = RewriteEmbeddedResources(
-                archive,
-                chapter.Path,
-                html);
 
             if (!string.IsNullOrWhiteSpace(html))
             {
                 blocks.Add(new DocumentHtmlBlock
                 {
                     Html =
+                        (chapterCss.Length == 0
+                            ? string.Empty
+                            : "<style>" + chapterCss + "</style>") +
                         "<section class=\"epub-chapter\" id=\"" +
                         chapter.AnchorId +
                         "\">" +
@@ -178,12 +188,18 @@ internal static class EpubDocumentReader
                 continue;
             }
 
+            var head = chapter
+                .Descendants()
+                .FirstOrDefault(element =>
+                    element.Name.LocalName == "head");
+
             var index = result.Count + 1;
 
             result.Add(new SpineChapter(
                 index,
                 chapterPath,
                 $"epub-chapter-{index}",
+                head,
                 body));
         }
 
@@ -412,44 +428,6 @@ internal static class EpubDocumentReader
         };
     }
 
-    private static string RewriteEmbeddedResources(
-        ZipArchive archive,
-        string chapterPath,
-        string html)
-    {
-        var chapterDirectory = GetDirectory(chapterPath);
-
-        foreach (var entry in archive.Entries)
-        {
-            var relative = MakeRelativePath(chapterDirectory, entry.FullName);
-            if (relative == null)
-            {
-                continue;
-            }
-
-            var contentType = GetImageContentType(entry.FullName);
-            if (contentType == null)
-            {
-                continue;
-            }
-
-            if (!html.Contains(relative, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            using var stream = entry.Open();
-            using var memory = new MemoryStream();
-            stream.CopyTo(memory);
-
-            var dataUri = "data:" + contentType + ";base64," +
-                          Convert.ToBase64String(memory.ToArray());
-
-            html = html.Replace(relative, dataUri, StringComparison.Ordinal);
-        }
-
-        return html;
-    }
 
     private static XDocument LoadXml(ZipArchive archive, string path)
     {
@@ -539,6 +517,7 @@ internal static class EpubDocumentReader
         int Index,
         string Path,
         string AnchorId,
+        XElement? Head,
         XElement Body);
 
     private sealed record ManifestItem(

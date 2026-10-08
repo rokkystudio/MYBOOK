@@ -309,6 +309,9 @@ internal static class Program
             directory,
             "regression.epub");
 
+        var pngBytes = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlQ2ioAAAAASUVORK5CYII=");
+
         using (var archive = ZipFile.Open(
                    path,
                    ZipArchiveMode.Create))
@@ -351,6 +354,15 @@ internal static class Program
                     <item id="chapter2"
                           href="Text/chapter2.xhtml"
                           media-type="application/xhtml+xml" />
+                    <item id="css"
+                          href="Styles/book.css"
+                          media-type="text/css" />
+                    <item id="png"
+                          href="Images/pixel.png"
+                          media-type="image/png" />
+                    <item id="svg"
+                          href="Images/icon.svg"
+                          media-type="image/svg+xml" />
                   </manifest>
                   <spine>
                     <itemref idref="chapter1" />
@@ -361,15 +373,57 @@ internal static class Program
 
             WriteZipEntry(
                 archive,
+                "OEBPS/Styles/book.css",
+                """
+                @import url("https://example.invalid/remote.css");
+                body { color: rgb(1, 2, 3); }
+                .illustrated {
+                    background-image: url("../Images/pixel.png");
+                    margin-top: 4px;
+                    position: fixed;
+                }
+                """);
+
+            WriteZipBytes(
+                archive,
+                "OEBPS/Images/pixel.png",
+                pngBytes);
+
+            WriteZipEntry(
+                archive,
+                "OEBPS/Images/icon.svg",
+                """
+                <svg xmlns="http://www.w3.org/2000/svg"
+                     width="10"
+                     height="10"
+                     viewBox="0 0 10 10">
+                  <rect x="0" y="0" width="10" height="10" fill="red" />
+                </svg>
+                """);
+
+            WriteZipEntry(
+                archive,
                 "OEBPS/Text/chapter1.xhtml",
                 """
                 <?xml version="1.0" encoding="utf-8"?>
-                <html xmlns="http://www.w3.org/1999/xhtml">
+                <html xmlns="http://www.w3.org/1999/xhtml"
+                      xmlns:svg="http://www.w3.org/2000/svg">
+                  <head>
+                    <link rel="stylesheet" href="../Styles/book.css" />
+                  </head>
                   <body>
                     <h1 id="start">Regression EPUB</h1>
-                    <p>EPUB marker</p>
+                    <p class="illustrated">EPUB marker</p>
+                    <img src="../Images/pixel.png"
+                         onerror="alert(1)" />
+                    <img src="../Images/icon.svg" />
+                    <svg:svg width="12" height="12" viewBox="0 0 12 12">
+                      <svg:image href="../Images/pixel.png"
+                                 x="0" y="0" width="12" height="12" />
+                    </svg:svg>
                     <p><a href="chapter2.xhtml#target">Next chapter</a></p>
                     <p><a href="javascript:alert(1)">Unsafe link</a></p>
+                    <script>window.__epubScriptExecuted = true;</script>
                   </body>
                 </html>
                 """);
@@ -432,6 +486,55 @@ internal static class Program
             combinedHtml,
             "href=\"#epub-chapter-1-start\"",
             "EPUB relative backward link");
+
+        AssertContains(
+            combinedHtml,
+            "#epub-chapter-1{color:rgb(1, 2, 3)}",
+            "EPUB scoped body CSS");
+
+        AssertContains(
+            combinedHtml,
+            "#epub-chapter-1 .illustrated{background-image:url(data:image/png;base64,",
+            "EPUB CSS image data URI");
+
+        AssertContains(
+            combinedHtml,
+            "src=\"data:image/png;base64,",
+            "EPUB PNG resource");
+
+        AssertContains(
+            combinedHtml,
+            "src=\"data:image/svg+xml;base64,",
+            "EPUB SVG resource");
+
+        AssertContains(
+            combinedHtml,
+            "href=\"data:image/png;base64,",
+            "EPUB inline SVG image resource");
+
+        Assert(
+            !combinedHtml.Contains(
+                "https://example.invalid",
+                StringComparison.OrdinalIgnoreCase),
+            "EPUB CSS не должен выполнять внешние загрузки.");
+
+        Assert(
+            !combinedHtml.Contains(
+                "position:fixed",
+                StringComparison.OrdinalIgnoreCase),
+            "Небезопасное CSS position:fixed не должно применяться.");
+
+        Assert(
+            !combinedHtml.Contains(
+                "onerror=",
+                StringComparison.OrdinalIgnoreCase),
+            "EPUB event attributes должны удаляться.");
+
+        Assert(
+            !combinedHtml.Contains(
+                "<script",
+                StringComparison.OrdinalIgnoreCase),
+            "EPUB script elements должны удаляться.");
 
         Assert(
             !combinedHtml.Contains(
@@ -632,6 +735,22 @@ internal static class Program
         }
 
         return result.ToString();
+    }
+
+    private static void WriteZipBytes(
+        ZipArchive archive,
+        string path,
+        byte[] data)
+    {
+        var entry = archive.CreateEntry(
+            path,
+            CompressionLevel.Optimal);
+
+        using var stream = entry.Open();
+        stream.Write(
+            data,
+            0,
+            data.Length);
     }
 
     private static void WriteZipEntry(
