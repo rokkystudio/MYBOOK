@@ -31,6 +31,7 @@ internal static class Program
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
+            ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),
@@ -354,6 +355,10 @@ internal static class Program
                     <item id="chapter2"
                           href="Text/chapter2.xhtml"
                           media-type="application/xhtml+xml" />
+                    <item id="nav"
+                          href="nav.xhtml"
+                          media-type="application/xhtml+xml"
+                          properties="nav" />
                     <item id="css"
                           href="Styles/book.css"
                           media-type="text/css" />
@@ -369,6 +374,29 @@ internal static class Program
                     <itemref idref="chapter2" />
                   </spine>
                 </package>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "OEBPS/nav.xhtml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml"
+                      xmlns:epub="http://www.idpf.org/2007/ops">
+                  <body>
+                    <nav epub:type="toc">
+                      <ol>
+                        <li>
+                          <a href="Text/chapter1.xhtml#start">Chapter One</a>
+                          <ol>
+                            <li><a href="Text/chapter1.xhtml#sub">Subsection</a></li>
+                          </ol>
+                        </li>
+                        <li><a href="Text/chapter2.xhtml#target">Chapter Two</a></li>
+                      </ol>
+                    </nav>
+                  </body>
+                </html>
                 """);
 
             WriteZipEntry(
@@ -413,6 +441,7 @@ internal static class Program
                   </head>
                   <body>
                     <h1 id="start">Regression EPUB</h1>
+                    <h2 id="sub">Subsection heading</h2>
                     <p class="illustrated">EPUB marker</p>
                     <img src="../Images/pixel.png"
                          onerror="alert(1)" />
@@ -453,6 +482,36 @@ internal static class Program
             FlattenText(model),
             "EPUB marker",
             "EPUB model");
+
+        AssertEqual(
+            2,
+            model.Outlines.Count,
+            "EPUB3 navigation root count");
+
+        AssertEqual(
+            "Chapter One",
+            model.Outlines[0].Title,
+            "EPUB3 first outline title");
+
+        AssertEqual(
+            "epub-chapter-1-start",
+            model.Outlines[0].TargetAnchorId!,
+            "EPUB3 first outline target");
+
+        AssertEqual(
+            1,
+            model.Outlines[0].Children.Count,
+            "EPUB3 nested outline count");
+
+        AssertEqual(
+            "epub-chapter-1-sub",
+            model.Outlines[0].Children[0].TargetAnchorId!,
+            "EPUB3 nested outline target");
+
+        AssertEqual(
+            "epub-chapter-2-target",
+            model.Outlines[1].TargetAnchorId!,
+            "EPUB3 second outline target");
 
         var htmlBlocks = model.Blocks
             .OfType<DocumentHtmlBlock>()
@@ -541,6 +600,132 @@ internal static class Program
                 "href=\"javascript:",
                 StringComparison.OrdinalIgnoreCase),
             "Опасная javascript: ссылка EPUB не должна попадать в HTML href.");
+    }
+
+    private static void TestEpubNcxReader(string directory)
+    {
+        var path = Path.Combine(
+            directory,
+            "regression-epub2.epub");
+
+        using (var archive = ZipFile.Open(
+                   path,
+                   ZipArchiveMode.Create))
+        {
+            WriteZipEntry(
+                archive,
+                "mimetype",
+                "application/epub+zip",
+                CompressionLevel.NoCompression);
+
+            WriteZipEntry(
+                archive,
+                "META-INF/container.xml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <container version="1.0"
+                           xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                  <rootfiles>
+                    <rootfile full-path="OPS/content.opf"
+                              media-type="application/oebps-package+xml" />
+                  </rootfiles>
+                </container>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "OPS/content.opf",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <package version="2.0"
+                         xmlns="http://www.idpf.org/2007/opf">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:title>Regression EPUB2</dc:title>
+                  </metadata>
+                  <manifest>
+                    <item id="c1"
+                          href="Text/one.xhtml"
+                          media-type="application/xhtml+xml" />
+                    <item id="c2"
+                          href="Text/two.xhtml"
+                          media-type="application/xhtml+xml" />
+                    <item id="ncx"
+                          href="toc.ncx"
+                          media-type="application/x-dtbncx+xml" />
+                  </manifest>
+                  <spine toc="ncx">
+                    <itemref idref="c1" />
+                    <itemref idref="c2" />
+                  </spine>
+                </package>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "OPS/toc.ncx",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/">
+                  <navMap>
+                    <navPoint id="p1" playOrder="1">
+                      <navLabel><text>One</text></navLabel>
+                      <content src="Text/one.xhtml#one" />
+                      <navPoint id="p1a" playOrder="2">
+                        <navLabel><text>One A</text></navLabel>
+                        <content src="Text/one.xhtml#one-a" />
+                      </navPoint>
+                    </navPoint>
+                    <navPoint id="p2" playOrder="3">
+                      <navLabel><text>Two</text></navLabel>
+                      <content src="Text/two.xhtml#two" />
+                    </navPoint>
+                  </navMap>
+                </ncx>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "OPS/Text/one.xhtml",
+                """
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                  <body>
+                    <h1 id="one">One</h1>
+                    <h2 id="one-a">One A</h2>
+                  </body>
+                </html>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "OPS/Text/two.xhtml",
+                """
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                  <body><h1 id="two">Two</h1></body>
+                </html>
+                """);
+        }
+
+        var model = SupportedFormatRegistry.ReadDocument(path);
+
+        AssertEqual(
+            2,
+            model.Outlines.Count,
+            "EPUB2 NCX root count");
+
+        AssertEqual(
+            "epub-chapter-1-one",
+            model.Outlines[0].TargetAnchorId!,
+            "EPUB2 first NCX target");
+
+        AssertEqual(
+            "epub-chapter-1-one-a",
+            model.Outlines[0].Children[0].TargetAnchorId!,
+            "EPUB2 nested NCX target");
+
+        AssertEqual(
+            "epub-chapter-2-two",
+            model.Outlines[1].TargetAnchorId!,
+            "EPUB2 second NCX target");
     }
 
     private static void TestDocxReader(string directory)

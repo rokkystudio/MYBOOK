@@ -80,12 +80,14 @@ internal sealed class DocumentFixedLink
 }
 
 /// <summary>
-/// Представляет элемент оглавления/outline документа.
+/// Представляет элемент оглавления/outline документа с целью на фиксированную страницу,
+/// внутренний DOM anchor или безопасный внешний URI.
 /// </summary>
 internal sealed class DocumentOutlineItem
 {
     public required string Title { get; init; }
     public int? TargetPageNumber { get; init; }
+    public string? TargetAnchorId { get; init; }
     public string? Uri { get; init; }
     public IReadOnlyList<DocumentOutlineItem> Children { get; init; } =
         Array.Empty<DocumentOutlineItem>();

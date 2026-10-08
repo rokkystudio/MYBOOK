@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -253,16 +254,6 @@ public partial class MainWindow : Window
             ShowOpenError(error);
         }
     }
-
-    /// <summary>
-    /// Выбирает собственный reader формата и возвращает нейтральную модель документа.
-    /// </summary>
-
-    /// <summary>
-    /// Открывает файл с расширением .doc по фактической сигнатуре содержимого.
-    /// Word Binary/CFB передаётся собственному DOC reader, а RTF с расширением .doc —
-    /// автономному RTF reader.
-    /// </summary>
 
     /// <summary>
     /// Возвращает путь локальной HTML-страницы,
@@ -792,6 +783,15 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(
+                    outline.TargetAnchorId))
+            {
+                await ScrollToAnchorAsync(
+                    outline.TargetAnchorId);
+
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(outline.Uri))
             {
                 OpenOutlineUri(outline.Uri);
@@ -801,6 +801,26 @@ public partial class MainWindow : Window
         {
             ShowOpenError(error);
         }
+    }
+
+    /// <summary>
+    /// Прокручивает сгенерированный потоковый документ к внутреннему DOM anchor.
+    /// </summary>
+    private async Task ScrollToAnchorAsync(string anchorId)
+    {
+        if (string.IsNullOrWhiteSpace(anchorId) ||
+            !generatedDocumentOpen_ ||
+            !readerInitialized_ ||
+            Reader.CoreWebView2 == null)
+        {
+            return;
+        }
+
+        var jsonId = JsonSerializer.Serialize(
+            anchorId);
+
+        await Reader.CoreWebView2.ExecuteScriptAsync(
+            $"document.getElementById({jsonId})?.scrollIntoView({{behavior:'smooth',block:'start'}});");
     }
 
     /// <summary>

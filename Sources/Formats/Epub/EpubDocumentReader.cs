@@ -9,8 +9,8 @@ namespace MYBOOK.Formats.Epub;
 
 /// <summary>
 /// Читает EPUB напрямую как ZIP-контейнер, разбирает container.xml, OPF manifest/spine,
-/// объединяет XHTML-главы, нормализует anchors/relative links и безопасно подключает
-/// scoped CSS и встроенные image/SVG resources без внешних загрузок.
+/// объединяет XHTML-главы, нормализует anchors/relative links, читает EPUB3 navigation/EPUB2 NCX
+/// и безопасно подключает scoped CSS и встроенные image/SVG resources без внешних загрузок.
 /// </summary>
 internal static class EpubDocumentReader
 {
@@ -120,6 +120,13 @@ internal static class EpubDocumentReader
 
         var spineItemCount = chapters.Count;
 
+        var outlines = ReadNavigationOutlines(
+            archive,
+            package,
+            items,
+            baseDirectory,
+            chapterAnchors);
+
         var metadata = package.Element(OpfNs + "metadata");
         var title = metadata?.Elements(DcNs + "title").FirstOrDefault()?.Value?.Trim();
         var author = string.Join(", ",
@@ -130,7 +137,7 @@ internal static class EpubDocumentReader
 
         ParserTrace.Write(
             "epub",
-            $"spine-xhtml={spineItemCount} blocks={blocks.Count} title={title ?? string.Empty}");
+            $"spine-xhtml={spineItemCount} blocks={blocks.Count} outlines={outlines.Count} title={title ?? string.Empty}");
 
         return new DocumentModel
         {
@@ -139,7 +146,8 @@ internal static class EpubDocumentReader
                 : title,
             Author = author,
             Cover = ReadCover(archive, package, items, baseDirectory),
-            Blocks = blocks
+            Blocks = blocks,
+            Outlines = outlines
         };
     }
 
@@ -365,6 +373,341 @@ internal static class EpubDocumentReader
         return index;
     }
 
+    private static IReadOnlyList<DocumentOutlineItem> ReadNavigationOutlines(
+        ZipArchive archive,
+        XElement package,
+        IReadOnlyDictionary<string, ManifestItem> items,
+        string baseDirectory,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        var navigationItem = items.Values.FirstOrDefault(item =>
+            item.Properties
+                .Split(
+                    ' ',
+                    StringSplitOptions.RemoveEmptyEntries)
+                .Contains(
+                    "nav",
+                    StringComparer.OrdinalIgnoreCase));
+
+        if (navigationItem != null)
+        {
+            var navPath = CombinePath(
+                baseDirectory,
+                navigationItem.Href);
+
+            var navigation = LoadXml(
+                archive,
+                navPath);
+
+            var toc = navigation
+                .Descendants()
+                .FirstOrDefault(element =>
+                    string.Equals(
+                        element.Name.LocalName,
+                        "nav",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    element.Attributes().Any(attribute =>
+                        string.Equals(
+                            attribute.Name.LocalName,
+                            "type",
+                            StringComparison.OrdinalIgnoreCase) &&
+                        attribute.Value
+                            .Split(
+                                ' ',
+                                StringSplitOptions.RemoveEmptyEntries)
+                            .Contains(
+                                "toc",
+                                StringComparer.OrdinalIgnoreCase)));
+
+            var list = toc?
+                .Elements()
+                .FirstOrDefault(element =>
+                    string.Equals(
+                        element.Name.LocalName,
+                        "ol",
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (list != null)
+            {
+                var outlines = ReadNavigationList(
+                    list,
+                    navPath,
+                    chapterAnchors);
+
+                if (outlines.Count > 0)
+                {
+                    ParserTrace.Write(
+                        "epub-nav",
+                        $"source=nav path={navPath} items={outlines.Count}");
+
+                    return outlines;
+                }
+            }
+        }
+
+        return ReadNcxOutlines(
+            archive,
+            package,
+            items,
+            baseDirectory,
+            chapterAnchors);
+    }
+
+    private static IReadOnlyList<DocumentOutlineItem> ReadNavigationList(
+        XElement list,
+        string ownerPath,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        var result = new List<DocumentOutlineItem>();
+
+        foreach (var item in list
+                     .Elements()
+                     .Where(element =>
+                         string.Equals(
+                             element.Name.LocalName,
+                             "li",
+                             StringComparison.OrdinalIgnoreCase)))
+        {
+            var labelElement = item
+                .Elements()
+                .FirstOrDefault(element =>
+                    element.Name.LocalName is "a" or "span");
+
+            var nestedList = item
+                .Elements()
+                .FirstOrDefault(element =>
+                    string.Equals(
+                        element.Name.LocalName,
+                        "ol",
+                        StringComparison.OrdinalIgnoreCase));
+
+            var children = nestedList == null
+                ? Array.Empty<DocumentOutlineItem>()
+                : ReadNavigationList(
+                    nestedList,
+                    ownerPath,
+                    chapterAnchors);
+
+            var title = NormalizeNavigationText(
+                labelElement?.Value);
+
+            if (title.Length == 0)
+            {
+                result.AddRange(children);
+                continue;
+            }
+
+            var href = labelElement != null &&
+                       string.Equals(
+                           labelElement.Name.LocalName,
+                           "a",
+                           StringComparison.OrdinalIgnoreCase)
+                ? labelElement.Attribute("href")?.Value
+                : null;
+
+            var target = ResolveNavigationTarget(
+                href,
+                ownerPath,
+                chapterAnchors);
+
+            result.Add(new DocumentOutlineItem
+            {
+                Title = title,
+                TargetAnchorId = target.AnchorId,
+                Uri = target.Uri,
+                Children = children
+            });
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<DocumentOutlineItem> ReadNcxOutlines(
+        ZipArchive archive,
+        XElement package,
+        IReadOnlyDictionary<string, ManifestItem> items,
+        string baseDirectory,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        ManifestItem? ncxItem = null;
+
+        var tocId = package
+            .Element(OpfNs + "spine")?
+            .Attribute("toc")?
+            .Value;
+
+        if (!string.IsNullOrWhiteSpace(tocId) &&
+            items.TryGetValue(
+                tocId,
+                out var referencedNcx))
+        {
+            ncxItem = referencedNcx;
+        }
+
+        ncxItem ??= items.Values.FirstOrDefault(item =>
+            item.MediaType.Contains(
+                "ncx",
+                StringComparison.OrdinalIgnoreCase));
+
+        if (ncxItem == null)
+        {
+            return Array.Empty<DocumentOutlineItem>();
+        }
+
+        var ncxPath = CombinePath(
+            baseDirectory,
+            ncxItem.Href);
+
+        var ncx = LoadXml(
+            archive,
+            ncxPath);
+
+        var navMap = ncx
+            .Descendants()
+            .FirstOrDefault(element =>
+                string.Equals(
+                    element.Name.LocalName,
+                    "navMap",
+                    StringComparison.OrdinalIgnoreCase));
+
+        if (navMap == null)
+        {
+            return Array.Empty<DocumentOutlineItem>();
+        }
+
+        var outlines = ReadNcxPoints(
+            navMap,
+            ncxPath,
+            chapterAnchors);
+
+        ParserTrace.Write(
+            "epub-nav",
+            $"source=ncx path={ncxPath} items={outlines.Count}");
+
+        return outlines;
+    }
+
+    private static IReadOnlyList<DocumentOutlineItem> ReadNcxPoints(
+        XElement parent,
+        string ownerPath,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        var result = new List<DocumentOutlineItem>();
+
+        foreach (var point in parent
+                     .Elements()
+                     .Where(element =>
+                         string.Equals(
+                             element.Name.LocalName,
+                             "navPoint",
+                             StringComparison.OrdinalIgnoreCase)))
+        {
+            var title = NormalizeNavigationText(
+                point
+                    .Elements()
+                    .FirstOrDefault(element =>
+                        string.Equals(
+                            element.Name.LocalName,
+                            "navLabel",
+                            StringComparison.OrdinalIgnoreCase))?
+                    .Descendants()
+                    .FirstOrDefault(element =>
+                        string.Equals(
+                            element.Name.LocalName,
+                            "text",
+                            StringComparison.OrdinalIgnoreCase))?
+                    .Value);
+
+            var href = point
+                .Elements()
+                .FirstOrDefault(element =>
+                    string.Equals(
+                        element.Name.LocalName,
+                        "content",
+                        StringComparison.OrdinalIgnoreCase))?
+                .Attribute("src")?
+                .Value;
+
+            var children = ReadNcxPoints(
+                point,
+                ownerPath,
+                chapterAnchors);
+
+            if (title.Length == 0)
+            {
+                result.AddRange(children);
+                continue;
+            }
+
+            var target = ResolveNavigationTarget(
+                href,
+                ownerPath,
+                chapterAnchors);
+
+            result.Add(new DocumentOutlineItem
+            {
+                Title = title,
+                TargetAnchorId = target.AnchorId,
+                Uri = target.Uri,
+                Children = children
+            });
+        }
+
+        return result;
+    }
+
+    private static NavigationTarget ResolveNavigationTarget(
+        string? href,
+        string ownerPath,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        if (string.IsNullOrWhiteSpace(href))
+        {
+            return new NavigationTarget(
+                null,
+                null);
+        }
+
+        var rewritten = RewriteChapterHref(
+            href,
+            ownerPath,
+            chapterAnchors);
+
+        if (string.IsNullOrWhiteSpace(rewritten))
+        {
+            return new NavigationTarget(
+                null,
+                null);
+        }
+
+        if (rewritten.StartsWith(
+                "#",
+                StringComparison.Ordinal))
+        {
+            return new NavigationTarget(
+                rewritten[1..],
+                null);
+        }
+
+        return new NavigationTarget(
+            null,
+            rewritten);
+    }
+
+    private static string NormalizeNavigationText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return string.Join(
+            " ",
+            value.Split(
+                [' ', '\t', '\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries));
+    }
+
     private static string ReadPackagePath(ZipArchive archive)
     {
         var container = LoadXml(archive, "META-INF/container.xml");
@@ -512,6 +855,10 @@ internal static class EpubDocumentReader
             _ => null
         };
     }
+
+    private sealed record NavigationTarget(
+        string? AnchorId,
+        string? Uri);
 
     private sealed record SpineChapter(
         int Index,
