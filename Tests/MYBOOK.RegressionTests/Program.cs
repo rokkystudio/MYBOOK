@@ -395,6 +395,18 @@ internal static class Program
                         <li><a href="Text/chapter2.xhtml#target">Chapter Two</a></li>
                       </ol>
                     </nav>
+                    <nav epub:type="landmarks">
+                      <h2>Landmarks</h2>
+                      <ol>
+                        <li><a href="Text/chapter1.xhtml#start">Start</a></li>
+                      </ol>
+                    </nav>
+                    <nav epub:type="page-list">
+                      <h2>Pages</h2>
+                      <ol>
+                        <li><a href="Text/chapter1.xhtml#p1">1</a></li>
+                      </ol>
+                    </nav>
                   </body>
                 </html>
                 """);
@@ -435,7 +447,8 @@ internal static class Program
                 """
                 <?xml version="1.0" encoding="utf-8"?>
                 <html xmlns="http://www.w3.org/1999/xhtml"
-                      xmlns:svg="http://www.w3.org/2000/svg">
+                      xmlns:svg="http://www.w3.org/2000/svg"
+                      xmlns:epub="http://www.idpf.org/2007/ops">
                   <head>
                     <link rel="stylesheet" href="../Styles/book.css" />
                   </head>
@@ -443,6 +456,12 @@ internal static class Program
                     <h1 id="start">Regression EPUB</h1>
                     <h2 id="sub">Subsection heading</h2>
                     <p class="illustrated">EPUB marker</p>
+                    <span id="p1" epub:type="pagebreak">1</span>
+                    <p>
+                      Text with note
+                      <a epub:type="noteref" href="#note-1">1</a>
+                    </p>
+                    <aside id="note-1" epub:type="footnote">Footnote text</aside>
                     <img src="../Images/pixel.png"
                          onerror="alert(1)" />
                     <img src="../Images/icon.svg" />
@@ -484,7 +503,7 @@ internal static class Program
             "EPUB model");
 
         AssertEqual(
-            2,
+            4,
             model.Outlines.Count,
             "EPUB3 navigation root count");
 
@@ -512,6 +531,26 @@ internal static class Program
             "epub-chapter-2-target",
             model.Outlines[1].TargetAnchorId!,
             "EPUB3 second outline target");
+
+        AssertEqual(
+            "Landmarks",
+            model.Outlines[2].Title,
+            "EPUB3 landmarks group");
+
+        AssertEqual(
+            "epub-chapter-1-start",
+            model.Outlines[2].Children[0].TargetAnchorId!,
+            "EPUB3 landmark target");
+
+        AssertEqual(
+            "Pages",
+            model.Outlines[3].Title,
+            "EPUB3 page-list group");
+
+        AssertEqual(
+            "epub-chapter-1-p1",
+            model.Outlines[3].Children[0].TargetAnchorId!,
+            "EPUB3 page-list target");
 
         var htmlBlocks = model.Blocks
             .OfType<DocumentHtmlBlock>()
@@ -545,6 +584,26 @@ internal static class Program
             combinedHtml,
             "href=\"#epub-chapter-1-start\"",
             "EPUB relative backward link");
+
+        AssertContains(
+            combinedHtml,
+            "id=\"epub-chapter-1-p1\"",
+            "EPUB pagebreak anchor");
+
+        AssertContains(
+            combinedHtml,
+            "epub-noteref",
+            "EPUB noteref class");
+
+        AssertContains(
+            combinedHtml,
+            "epub-note",
+            "EPUB footnote class");
+
+        AssertContains(
+            combinedHtml,
+            "href=\"#epub-chapter-1-note-1\"",
+            "EPUB footnote target");
 
         AssertContains(
             combinedHtml,
@@ -657,6 +716,11 @@ internal static class Program
                     <itemref idref="c1" />
                     <itemref idref="c2" />
                   </spine>
+                  <guide>
+                    <reference type="text"
+                               title="Start"
+                               href="Text/one.xhtml#one" />
+                  </guide>
                 </package>
                 """);
 
@@ -680,6 +744,13 @@ internal static class Program
                       <content src="Text/two.xhtml#two" />
                     </navPoint>
                   </navMap>
+                  <pageList>
+                    <navLabel><text>Pages</text></navLabel>
+                    <pageTarget id="pg1" value="1" type="normal" playOrder="4">
+                      <navLabel><text>1</text></navLabel>
+                      <content src="Text/one.xhtml#page-1" />
+                    </pageTarget>
+                  </pageList>
                 </ncx>
                 """);
 
@@ -690,6 +761,7 @@ internal static class Program
                 <html xmlns="http://www.w3.org/1999/xhtml">
                   <body>
                     <h1 id="one">One</h1>
+                    <span id="page-1">1</span>
                     <h2 id="one-a">One A</h2>
                   </body>
                 </html>
@@ -708,7 +780,7 @@ internal static class Program
         var model = SupportedFormatRegistry.ReadDocument(path);
 
         AssertEqual(
-            2,
+            4,
             model.Outlines.Count,
             "EPUB2 NCX root count");
 
@@ -726,6 +798,26 @@ internal static class Program
             "epub-chapter-2-two",
             model.Outlines[1].TargetAnchorId!,
             "EPUB2 second NCX target");
+
+        AssertEqual(
+            "Pages",
+            model.Outlines[2].Title,
+            "EPUB2 NCX page-list group");
+
+        AssertEqual(
+            "epub-chapter-1-page-1",
+            model.Outlines[2].Children[0].TargetAnchorId!,
+            "EPUB2 NCX page-list target");
+
+        AssertEqual(
+            "Landmarks",
+            model.Outlines[3].Title,
+            "EPUB2 guide landmarks group");
+
+        AssertEqual(
+            "epub-chapter-1-one",
+            model.Outlines[3].Children[0].TargetAnchorId!,
+            "EPUB2 guide landmark target");
     }
 
     private static void TestDocxReader(string directory)

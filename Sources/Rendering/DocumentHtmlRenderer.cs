@@ -90,6 +90,23 @@ p { margin: 0 0 0.72em; text-align: justify; }
     color: var(--muted);
     font-size: 0.92em;
 }
+.epub-noteref {
+    font-size: 0.78em;
+    vertical-align: super;
+    text-decoration: none;
+}
+.epub-note {
+    margin: 0.8em 0 1em;
+    padding: 0.55em 0.8em;
+    border-left: 3px solid var(--border);
+    color: var(--muted);
+    font-size: 0.92em;
+}
+.epub-pagebreak {
+    display: inline;
+    color: var(--muted);
+    font-size: 0.75em;
+}
 pre {
     margin: 0 0 1em;
     white-space: pre-wrap;

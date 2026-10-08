@@ -9,8 +9,9 @@ namespace MYBOOK.Formats.Epub;
 
 /// <summary>
 /// Читает EPUB напрямую как ZIP-контейнер, разбирает container.xml, OPF manifest/spine,
-/// объединяет XHTML-главы, нормализует anchors/relative links, читает EPUB3 navigation/EPUB2 NCX
-/// и безопасно подключает scoped CSS и встроенные image/SVG resources без внешних загрузок.
+/// объединяет XHTML-главы, нормализует anchors/relative links, читает EPUB3 navigation/EPUB2 NCX,
+/// landmarks/page-list и семантику сносок, а также безопасно подключает scoped CSS
+/// и встроенные image/SVG resources без внешних загрузок.
 /// </summary>
 internal static class EpubDocumentReader
 {
@@ -222,6 +223,49 @@ internal static class EpubDocumentReader
     {
         foreach (var element in body.DescendantsAndSelf())
         {
+            var semanticTypes = element
+                .Attributes()
+                .FirstOrDefault(attribute =>
+                    string.Equals(
+                        attribute.Name.LocalName,
+                        "type",
+                        StringComparison.OrdinalIgnoreCase))?
+                .Value
+                .Split(
+                    ' ',
+                    StringSplitOptions.RemoveEmptyEntries)
+                ?? Array.Empty<string>();
+
+            if (semanticTypes.Contains(
+                    "footnote",
+                    StringComparer.OrdinalIgnoreCase) ||
+                semanticTypes.Contains(
+                    "endnote",
+                    StringComparer.OrdinalIgnoreCase))
+            {
+                AddCssClass(
+                    element,
+                    "epub-note");
+            }
+
+            if (semanticTypes.Contains(
+                    "noteref",
+                    StringComparer.OrdinalIgnoreCase))
+            {
+                AddCssClass(
+                    element,
+                    "epub-noteref");
+            }
+
+            if (semanticTypes.Contains(
+                    "pagebreak",
+                    StringComparer.OrdinalIgnoreCase))
+            {
+                AddCssClass(
+                    element,
+                    "epub-pagebreak");
+            }
+
             var id = element.Attribute("id")?.Value;
 
             if (string.IsNullOrWhiteSpace(id) &&
@@ -273,6 +317,32 @@ internal static class EpubDocumentReader
                 hrefAttribute.Value = rewritten;
             }
         }
+    }
+
+    private static void AddCssClass(
+        XElement element,
+        string className)
+    {
+        var current = element.Attribute("class")?
+            .Value
+            .Split(
+                ' ',
+                StringSplitOptions.RemoveEmptyEntries)
+            .ToList()
+            ?? new List<string>();
+
+        if (!current.Contains(
+                className,
+                StringComparer.Ordinal))
+        {
+            current.Add(className);
+        }
+
+        element.SetAttributeValue(
+            "class",
+            string.Join(
+                " ",
+                current));
     }
 
     private static string? RewriteChapterHref(
@@ -380,6 +450,10 @@ internal static class EpubDocumentReader
         string baseDirectory,
         IReadOnlyDictionary<string, string> chapterAnchors)
     {
+        var tocOutlines = Array.Empty<DocumentOutlineItem>();
+        var supplemental = new List<DocumentOutlineItem>();
+        var hasNavigationLandmarks = false;
+
         var navigationItem = items.Values.FirstOrDefault(item =>
             item.Properties
                 .Split(
@@ -399,60 +473,224 @@ internal static class EpubDocumentReader
                 archive,
                 navPath);
 
-            var toc = navigation
+            var navigationElements = navigation
                 .Descendants()
-                .FirstOrDefault(element =>
+                .Where(element =>
                     string.Equals(
                         element.Name.LocalName,
                         "nav",
-                        StringComparison.OrdinalIgnoreCase) &&
-                    element.Attributes().Any(attribute =>
-                        string.Equals(
-                            attribute.Name.LocalName,
-                            "type",
-                            StringComparison.OrdinalIgnoreCase) &&
-                        attribute.Value
-                            .Split(
-                                ' ',
-                                StringSplitOptions.RemoveEmptyEntries)
-                            .Contains(
-                                "toc",
-                                StringComparer.OrdinalIgnoreCase)));
+                        StringComparison.OrdinalIgnoreCase))
+                .ToArray();
 
-            var list = toc?
-                .Elements()
-                .FirstOrDefault(element =>
-                    string.Equals(
-                        element.Name.LocalName,
-                        "ol",
-                        StringComparison.OrdinalIgnoreCase));
+            var toc = navigationElements.FirstOrDefault(element =>
+                HasNavigationType(
+                    element,
+                    "toc"));
 
-            if (list != null)
+            var tocList = GetNavigationList(
+                toc);
+
+            if (tocList != null)
             {
-                var outlines = ReadNavigationList(
-                    list,
-                    navPath,
-                    chapterAnchors);
+                tocOutlines = ReadNavigationList(
+                        tocList,
+                        navPath,
+                        chapterAnchors)
+                    .ToArray();
+            }
 
-                if (outlines.Count > 0)
-                {
-                    ParserTrace.Write(
-                        "epub-nav",
-                        $"source=nav path={navPath} items={outlines.Count}");
+            hasNavigationLandmarks = navigationElements.Any(element =>
+                HasNavigationType(
+                    element,
+                    "landmarks"));
 
-                    return outlines;
-                }
+            AddSupplementalNavigationGroup(
+                supplemental,
+                navigationElements,
+                "landmarks",
+                "Landmarks",
+                navPath,
+                chapterAnchors);
+
+            AddSupplementalNavigationGroup(
+                supplemental,
+                navigationElements,
+                "page-list",
+                "Pages",
+                navPath,
+                chapterAnchors);
+
+            ParserTrace.Write(
+                "epub-nav",
+                $"source=nav path={navPath} toc={tocOutlines.Length} supplemental={supplemental.Count}");
+        }
+
+        if (!hasNavigationLandmarks)
+        {
+            var guide = ReadOpfGuideGroup(
+                package,
+                baseDirectory,
+                chapterAnchors);
+
+            if (guide != null)
+            {
+                supplemental.Add(guide);
             }
         }
 
-        return ReadNcxOutlines(
-            archive,
-            package,
-            items,
-            baseDirectory,
-            chapterAnchors);
+        IReadOnlyList<DocumentOutlineItem> primary =
+            tocOutlines.Length > 0
+                ? tocOutlines
+                : ReadNcxOutlines(
+                    archive,
+                    package,
+                    items,
+                    baseDirectory,
+                    chapterAnchors);
+
+        if (supplemental.Count == 0)
+        {
+            return primary;
+        }
+
+        return primary
+            .Concat(supplemental)
+            .ToArray();
     }
 
+    private static bool HasNavigationType(
+        XElement navigation,
+        string type)
+    {
+        return navigation
+            .Attributes()
+            .Where(attribute =>
+                string.Equals(
+                    attribute.Name.LocalName,
+                    "type",
+                    StringComparison.OrdinalIgnoreCase))
+            .SelectMany(attribute =>
+                attribute.Value.Split(
+                    ' ',
+                    StringSplitOptions.RemoveEmptyEntries))
+            .Contains(
+                type,
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static XElement? GetNavigationList(
+        XElement? navigation)
+    {
+        return navigation?
+            .Elements()
+            .FirstOrDefault(element =>
+                string.Equals(
+                    element.Name.LocalName,
+                    "ol",
+                    StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void AddSupplementalNavigationGroup(
+        List<DocumentOutlineItem> result,
+        IReadOnlyList<XElement> navigationElements,
+        string type,
+        string fallbackTitle,
+        string ownerPath,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        var navigation = navigationElements.FirstOrDefault(element =>
+            HasNavigationType(
+                element,
+                type));
+
+        var list = GetNavigationList(
+            navigation);
+
+        if (navigation == null ||
+            list == null)
+        {
+            return;
+        }
+
+        var children = ReadNavigationList(
+            list,
+            ownerPath,
+            chapterAnchors);
+
+        if (children.Count == 0)
+        {
+            return;
+        }
+
+        var heading = navigation
+            .Elements()
+            .FirstOrDefault(element =>
+                element.Name.LocalName is
+                    "h1" or "h2" or "h3" or "h4" or "h5" or "h6");
+
+        var title = NormalizeNavigationText(
+            heading?.Value);
+
+        result.Add(new DocumentOutlineItem
+        {
+            Title = title.Length == 0
+                ? fallbackTitle
+                : title,
+            Children = children
+        });
+    }
+
+    private static DocumentOutlineItem? ReadOpfGuideGroup(
+        XElement package,
+        string baseDirectory,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        var guide = package.Element(OpfNs + "guide");
+
+        if (guide == null)
+        {
+            return null;
+        }
+
+        var ownerPath = CombinePath(baseDirectory, "_package.opf");
+        var children = new List<DocumentOutlineItem>();
+
+        foreach (var reference in guide.Elements(OpfNs + "reference"))
+        {
+            var href = reference.Attribute("href")?.Value;
+            var title = NormalizeNavigationText(reference.Attribute("title")?.Value);
+
+            if (title.Length == 0)
+            {
+                title = NormalizeNavigationText(reference.Attribute("type")?.Value);
+            }
+
+            if (title.Length == 0)
+            {
+                continue;
+            }
+
+            var target = ResolveNavigationTarget(href, ownerPath, chapterAnchors);
+
+            children.Add(new DocumentOutlineItem
+            {
+                Title = title,
+                TargetAnchorId = target.AnchorId,
+                Uri = target.Uri
+            });
+        }
+
+        if (children.Count == 0)
+        {
+            return null;
+        }
+
+        return new DocumentOutlineItem
+        {
+            Title = "Landmarks",
+            Children = children
+        };
+    }
     private static IReadOnlyList<DocumentOutlineItem> ReadNavigationList(
         XElement list,
         string ownerPath,
@@ -562,6 +800,8 @@ internal static class EpubDocumentReader
             archive,
             ncxPath);
 
+        var result = new List<DocumentOutlineItem>();
+
         var navMap = ncx
             .Descendants()
             .FirstOrDefault(element =>
@@ -570,21 +810,125 @@ internal static class EpubDocumentReader
                     "navMap",
                     StringComparison.OrdinalIgnoreCase));
 
-        if (navMap == null)
+        if (navMap != null)
         {
-            return Array.Empty<DocumentOutlineItem>();
+            result.AddRange(
+                ReadNcxPoints(
+                    navMap,
+                    ncxPath,
+                    chapterAnchors));
         }
 
-        var outlines = ReadNcxPoints(
-            navMap,
-            ncxPath,
-            chapterAnchors);
+        var pageList = ncx
+            .Descendants()
+            .FirstOrDefault(element =>
+                string.Equals(
+                    element.Name.LocalName,
+                    "pageList",
+                    StringComparison.OrdinalIgnoreCase));
+
+        if (pageList != null)
+        {
+            var pages = ReadNcxPageTargets(
+                pageList,
+                ncxPath,
+                chapterAnchors);
+
+            if (pages.Count > 0)
+            {
+                var heading = NormalizeNavigationText(
+                    pageList
+                        .Elements()
+                        .FirstOrDefault(element =>
+                            string.Equals(
+                                element.Name.LocalName,
+                                "navLabel",
+                                StringComparison.OrdinalIgnoreCase))?
+                        .Descendants()
+                        .FirstOrDefault(element =>
+                            string.Equals(
+                                element.Name.LocalName,
+                                "text",
+                                StringComparison.OrdinalIgnoreCase))?
+                        .Value);
+
+                result.Add(new DocumentOutlineItem
+                {
+                    Title = heading.Length == 0
+                        ? "Pages"
+                        : heading,
+                    Children = pages
+                });
+            }
+        }
 
         ParserTrace.Write(
             "epub-nav",
-            $"source=ncx path={ncxPath} items={outlines.Count}");
+            $"source=ncx path={ncxPath} items={result.Count}");
 
-        return outlines;
+        return result;
+    }
+
+    private static IReadOnlyList<DocumentOutlineItem> ReadNcxPageTargets(
+        XElement pageList,
+        string ownerPath,
+        IReadOnlyDictionary<string, string> chapterAnchors)
+    {
+        var result = new List<DocumentOutlineItem>();
+
+        foreach (var target in pageList
+                     .Elements()
+                     .Where(element =>
+                         string.Equals(
+                             element.Name.LocalName,
+                             "pageTarget",
+                             StringComparison.OrdinalIgnoreCase)))
+        {
+            var title = NormalizeNavigationText(
+                target
+                    .Elements()
+                    .FirstOrDefault(element =>
+                        string.Equals(
+                            element.Name.LocalName,
+                            "navLabel",
+                            StringComparison.OrdinalIgnoreCase))?
+                    .Descendants()
+                    .FirstOrDefault(element =>
+                        string.Equals(
+                            element.Name.LocalName,
+                            "text",
+                            StringComparison.OrdinalIgnoreCase))?
+                    .Value);
+
+            var href = target
+                .Elements()
+                .FirstOrDefault(element =>
+                    string.Equals(
+                        element.Name.LocalName,
+                        "content",
+                        StringComparison.OrdinalIgnoreCase))?
+                .Attribute("src")?
+                .Value;
+
+            if (title.Length == 0)
+            {
+                continue;
+            }
+
+            var resolved = ResolveNavigationTarget(
+                href,
+                ownerPath,
+                chapterAnchors);
+
+            result.Add(new DocumentOutlineItem
+            {
+                Title = title,
+                TargetAnchorId = resolved.AnchorId,
+                Uri = resolved.Uri
+            });
+        }
+
+        return result;
     }
 
     private static IReadOnlyList<DocumentOutlineItem> ReadNcxPoints(
