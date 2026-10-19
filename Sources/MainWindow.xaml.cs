@@ -29,11 +29,20 @@ public partial class MainWindow : Window
     private readonly AppSettingsStore settingsStore_;
     private readonly AppSettings settings_;
     private readonly string? startupDocumentPath_;
+    private const double MinimumZoomFactor = 0.5;
+    private const double MaximumZoomFactor = 2.0;
+    private const double ZoomStep = 0.1;
+    private const int MaximumRecentDocuments = 10;
+
     private bool readerInitialized_;
     private bool generatedDocumentOpen_;
     private bool navigationPanelOpen_;
     private bool synchronizingPageSelection_;
+    private bool fullScreen_;
+    private bool navigationPanelOpenBeforeFullScreen_;
+    private WindowState windowStateBeforeFullScreen_ = WindowState.Normal;
     private NavigationMode navigationMode_ = NavigationMode.Contents;
+    private double zoomFactor_ = 1.0;
 
     /// <summary>
     /// Инициализирует окно, загружает общую иконку приложения,
@@ -91,6 +100,7 @@ public partial class MainWindow : Window
 
         if (readerInitialized_)
         {
+            Reader.ZoomFactorChanged -= Reader_OnZoomFactorChanged;
             Reader.Dispose();
         }
 
@@ -112,12 +122,18 @@ public partial class MainWindow : Window
 
         OpenButtonText.Text = LocalizationService.Text("open");
         OpenButton.ToolTip = LocalizationService.Text("open");
+        RecentDocumentsButtonText.Text = LocalizationService.Text("recent_documents");
+        RecentDocumentsButton.ToolTip = LocalizationService.Text("recent_documents");
         NavigationButtonText.Text = LocalizationService.Text("navigation");
         NavigationButton.ToolTip = LocalizationService.Text("tooltip_navigation");
         ContentsModeButtonText.Text = LocalizationService.Text("contents");
         PagesModeButtonText.Text = LocalizationService.Text("pages");
         PageJumpLabelText.Text = LocalizationService.Text("page");
         GoToPageButtonText.Text = LocalizationService.Text("go");
+        FullScreenButton.ToolTip = LocalizationService.Text("tooltip_fullscreen");
+        ZoomOutButton.ToolTip = LocalizationService.Text("tooltip_zoom_out");
+        ZoomResetButton.ToolTip = LocalizationService.Text("tooltip_zoom_reset");
+        ZoomInButton.ToolTip = LocalizationService.Text("tooltip_zoom_in");
         SettingsButton.ToolTip = LocalizationService.Text("settings");
         LanguageToolButton.ToolTip = LocalizationService.Text("tooltip_language");
         ThemeToolButton.ToolTip = LocalizationService.Text("tooltip_theme");
@@ -163,7 +179,10 @@ public partial class MainWindow : Window
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsZoomControlEnabled = true;
 
+        Reader.ZoomFactorChanged += Reader_OnZoomFactorChanged;
+        Reader.ZoomFactor = zoomFactor_;
         readerInitialized_ = true;
+        UpdateZoomControls();
     }
 
     /// <summary>
@@ -243,8 +262,10 @@ public partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(directory))
             {
                 settings_.LastBookDirectory = directory;
-                settingsStore_.Save(settings_);
             }
+
+            AddRecentDocument(fullPath);
+            settingsStore_.Save(settings_);
 
             Reader.Visibility = Visibility.Visible;
             EmptyStateTextBlock.Visibility = Visibility.Collapsed;
@@ -877,11 +898,333 @@ public partial class MainWindow : Window
         await ShowOpenDocumentDialogAsync();
     }
 
+    /// <summary>
+    /// Открывает меню последних успешно открытых документов.
+    /// Недоступные файлы удаляются из сохранённой истории перед показом меню.
+    /// </summary>
+    private void RecentDocumentsButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        NeoContextMenu.Show(
+            CreateRecentDocumentsMenu(),
+            RecentDocumentsButton);
+    }
+
+    /// <summary>
+    /// Создаёт меню последних документов в порядке от самого нового к старому.
+    /// </summary>
+    private ContextMenu CreateRecentDocumentsMenu()
+    {
+        settings_.RecentDocuments ??= new List<string>();
+
+        var existingDocuments = settings_.RecentDocuments
+            .Where(File.Exists)
+            .Take(MaximumRecentDocuments)
+            .ToList();
+
+        if (existingDocuments.Count != settings_.RecentDocuments.Count ||
+            !existingDocuments.SequenceEqual(
+                settings_.RecentDocuments,
+                StringComparer.OrdinalIgnoreCase))
+        {
+            settings_.RecentDocuments = existingDocuments;
+            settingsStore_.Save(settings_);
+        }
+
+        var menu = new ContextMenu();
+
+        if (existingDocuments.Count == 0)
+        {
+            menu.Items.Add(new MenuItem
+            {
+                Header = LocalizationService.Text("recent_documents_empty"),
+                IsEnabled = false
+            });
+
+            return menu;
+        }
+
+        foreach (var path in existingDocuments)
+        {
+            var item = new MenuItem
+            {
+                Header = Path.GetFileName(path),
+                ToolTip = path,
+                Tag = path
+            };
+
+            item.Click += async (_, _) =>
+            {
+                await OpenDocumentAsync(path);
+            };
+
+            menu.Items.Add(item);
+        }
+
+        menu.Items.Add(new Separator());
+
+        var clearItem = new MenuItem
+        {
+            Header = LocalizationService.Text("clear_recent_documents")
+        };
+
+        clearItem.Click += (_, _) =>
+        {
+            settings_.RecentDocuments.Clear();
+            settingsStore_.Save(settings_);
+        };
+
+        menu.Items.Add(clearItem);
+        return menu;
+    }
+
+    /// <summary>
+    /// Помещает успешно открытый документ в начало истории,
+    /// удаляет предыдущее вхождение того же пути и ограничивает историю десятью файлами.
+    /// </summary>
+    private void AddRecentDocument(string path)
+    {
+        settings_.RecentDocuments ??= new List<string>();
+
+        settings_.RecentDocuments.RemoveAll(
+            item => string.Equals(
+                item,
+                path,
+                StringComparison.OrdinalIgnoreCase));
+
+        settings_.RecentDocuments.Insert(
+            0,
+            path);
+
+        if (settings_.RecentDocuments.Count > MaximumRecentDocuments)
+        {
+            settings_.RecentDocuments.RemoveRange(
+                MaximumRecentDocuments,
+                settings_.RecentDocuments.Count - MaximumRecentDocuments);
+        }
+    }
+
     private async void OpenCommand_OnExecuted(
         object sender,
         System.Windows.Input.ExecutedRoutedEventArgs e)
     {
         await ShowOpenDocumentDialogAsync();
+    }
+
+    /// <summary>
+    /// Переключает полноэкранный режим чтения из панели инструментов.
+    /// </summary>
+    private void FullScreenButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SetFullScreen(
+            !fullScreen_);
+    }
+
+    /// <summary>
+    /// Переключает полноэкранный режим чтения по F11, F, Ctrl+F или Enter.
+    /// </summary>
+    private void MainWindow_OnPreviewKeyDown(
+        object sender,
+        System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == System.Windows.Input.Key.System
+            ? e.SystemKey
+            : e.Key;
+
+        var toggleFullScreen =
+            key == System.Windows.Input.Key.F11 ||
+            key == System.Windows.Input.Key.F ||
+            key == System.Windows.Input.Key.Enter ||
+            key == System.Windows.Input.Key.Return;
+
+        if (!toggleFullScreen)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        SetFullScreen(
+            !fullScreen_);
+    }
+
+    /// <summary>
+    /// Переключает полноэкранный режим чтения по нажатию средней кнопки мыши.
+    /// </summary>
+    private void MainWindow_OnPreviewMouseDown(
+        object sender,
+        System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != System.Windows.Input.MouseButton.Middle)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        SetFullScreen(
+            !fullScreen_);
+    }
+
+    /// <summary>
+    /// Включает или выключает полноэкранный режим чтения.
+    /// В полноэкранном режиме скрываются шапка, панель инструментов и боковая навигация;
+    /// при выходе восстанавливаются состояние окна и видимость навигации.
+    /// </summary>
+    private void SetFullScreen(bool enabled)
+    {
+        if (fullScreen_ == enabled)
+        {
+            return;
+        }
+
+        fullScreen_ = enabled;
+
+        if (enabled)
+        {
+            windowStateBeforeFullScreen_ = WindowState;
+            navigationPanelOpenBeforeFullScreen_ = navigationPanelOpen_;
+
+            SetNavigationPanelVisibility(false);
+            TitleBar.Visibility = Visibility.Collapsed;
+            ToolBarPanel.Visibility = Visibility.Collapsed;
+            WindowState = WindowState.Maximized;
+            return;
+        }
+
+        TitleBar.Visibility = Visibility.Visible;
+        ToolBarPanel.Visibility = Visibility.Visible;
+        WindowState = windowStateBeforeFullScreen_;
+
+        if (navigationPanelOpenBeforeFullScreen_)
+        {
+            SetNavigationPanelVisibility(true);
+        }
+    }
+
+    /// <summary>
+    /// Уменьшает масштаб документа на один шаг до минимального значения 50%.
+    /// </summary>
+    private void ZoomOutButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SetZoomFactor(
+            zoomFactor_ - ZoomStep);
+    }
+
+    /// <summary>
+    /// Возвращает масштаб документа к 100%.
+    /// </summary>
+    private void ZoomResetButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SetZoomFactor(1.0);
+    }
+
+    /// <summary>
+    /// Увеличивает масштаб документа на один шаг до максимального значения 200%.
+    /// </summary>
+    private void ZoomInButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SetZoomFactor(
+            zoomFactor_ + ZoomStep);
+    }
+
+    /// <summary>
+    /// Обрабатывает Ctrl+- и уменьшает масштаб документа.
+    /// </summary>
+    private void DecreaseZoomCommand_OnExecuted(
+        object sender,
+        System.Windows.Input.ExecutedRoutedEventArgs e)
+    {
+        SetZoomFactor(
+            zoomFactor_ - ZoomStep);
+    }
+
+    /// <summary>
+    /// Обрабатывает Ctrl++ и увеличивает масштаб документа.
+    /// </summary>
+    private void IncreaseZoomCommand_OnExecuted(
+        object sender,
+        System.Windows.Input.ExecutedRoutedEventArgs e)
+    {
+        SetZoomFactor(
+            zoomFactor_ + ZoomStep);
+    }
+
+    /// <summary>
+    /// Обрабатывает Ctrl+0 и возвращает масштаб документа к 100%.
+    /// </summary>
+    private void ResetZoomCommand_OnExecuted(
+        object sender,
+        System.Windows.Input.ExecutedRoutedEventArgs e)
+    {
+        SetZoomFactor(1.0);
+    }
+
+    /// <summary>
+    /// Синхронизирует элементы управления масштабом после изменения ZoomFactor,
+    /// включая нативное изменение WebView2 через Ctrl + колесо мыши.
+    /// </summary>
+    private void Reader_OnZoomFactorChanged(
+        object? sender,
+        object e)
+    {
+        zoomFactor_ = Math.Clamp(
+            Reader.ZoomFactor,
+            MinimumZoomFactor,
+            MaximumZoomFactor);
+
+        if (Reader.ZoomFactor != zoomFactor_)
+        {
+            Reader.ZoomFactor = zoomFactor_;
+        }
+
+        UpdateZoomControls();
+    }
+
+    /// <summary>
+    /// Устанавливает масштаб WebView2 в диапазоне 50–200%,
+    /// сохраняет его для следующих документов текущего окна и обновляет элементы управления.
+    /// </summary>
+    private void SetZoomFactor(double value)
+    {
+        zoomFactor_ = Math.Clamp(
+            Math.Round(value, 1, MidpointRounding.AwayFromZero),
+            MinimumZoomFactor,
+            MaximumZoomFactor);
+
+        if (readerInitialized_)
+        {
+            Reader.ZoomFactor = zoomFactor_;
+        }
+
+        UpdateZoomControls();
+    }
+
+    /// <summary>
+    /// Отображает текущий масштаб и блокирует кнопки на границах допустимого диапазона.
+    /// </summary>
+    private void UpdateZoomControls()
+    {
+        ZoomValueText.Text =
+            Math.Round(
+                zoomFactor_ * 100,
+                MidpointRounding.AwayFromZero)
+            .ToString(
+                CultureInfo.InvariantCulture) +
+            "%";
+
+        ZoomOutButton.IsEnabled =
+            zoomFactor_ > MinimumZoomFactor;
+
+        ZoomInButton.IsEnabled =
+            zoomFactor_ < MaximumZoomFactor;
     }
 
     /// <summary>

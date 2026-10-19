@@ -12,7 +12,9 @@
         WindowStartupLocation="CenterScreen"
         Background="Transparent"
         Foreground="{DynamicResource TextBrush}"
-        Loaded="MainWindow_OnLoaded">
+        Loaded="MainWindow_OnLoaded"
+        PreviewKeyDown="MainWindow_OnPreviewKeyDown"
+        PreviewMouseDown="MainWindow_OnPreviewMouseDown">
     <Border BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="1"
             Background="{DynamicResource BackgroundBrush}">
@@ -38,7 +40,8 @@
                              EnableDoubleClickMaximize="True"
                              CloseClick="CloseButton_OnClick" />
 
-            <Border Grid.Row="1"
+            <Border x:Name="ToolBarPanel"
+                    Grid.Row="1"
                     Background="{DynamicResource SurfaceBrush}"
                     BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="0,0,0,1"
@@ -55,6 +58,21 @@
                                            VerticalAlignment="Center" />
                                 <TextBlock x:Name="OpenButtonText"
                                            Text="Открыть"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button x:Name="RecentDocumentsButton"
+                                Margin="6,0,0,0"
+                                Style="{StaticResource NeoToolBarButtonStyle}"
+                                Click="RecentDocumentsButton_OnClick">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="↶"
+                                           Margin="0,0,7,0"
+                                           VerticalAlignment="Center"
+                                           FontSize="16" />
+                                <TextBlock x:Name="RecentDocumentsButtonText"
+                                           Text="Недавние"
                                            VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
@@ -78,6 +96,48 @@
 
                     <StackPanel DockPanel.Dock="Right"
                                 Orientation="Horizontal">
+                        <Button x:Name="FullScreenButton"
+                                MinWidth="34"
+                                Style="{StaticResource NeoToolBarButtonStyle}"
+                                Click="FullScreenButton_OnClick">
+                            <TextBlock Text="⛶"
+                                       FontSize="17"
+                                       VerticalAlignment="Center" />
+                        </Button>
+
+                        <Separator Style="{StaticResource NeoToolBarSeparatorStyle}" />
+
+                        <Button x:Name="ZoomOutButton"
+                                MinWidth="34"
+                                Style="{StaticResource NeoToolBarButtonStyle}"
+                                Click="ZoomOutButton_OnClick">
+                            <TextBlock Text="−"
+                                       FontSize="18"
+                                       VerticalAlignment="Center" />
+                        </Button>
+
+                        <Button x:Name="ZoomResetButton"
+                                MinWidth="58"
+                                Margin="4,0,0,0"
+                                Style="{StaticResource NeoToolBarButtonStyle}"
+                                Click="ZoomResetButton_OnClick">
+                            <TextBlock x:Name="ZoomValueText"
+                                       Text="100%"
+                                       VerticalAlignment="Center" />
+                        </Button>
+
+                        <Button x:Name="ZoomInButton"
+                                MinWidth="34"
+                                Margin="4,0,0,0"
+                                Style="{StaticResource NeoToolBarButtonStyle}"
+                                Click="ZoomInButton_OnClick">
+                            <TextBlock Text="+"
+                                       FontSize="18"
+                                       VerticalAlignment="Center" />
+                        </Button>
+
+                        <Separator Style="{StaticResource NeoToolBarSeparatorStyle}" />
+
                         <Button x:Name="SettingsButton"
                                 Style="{StaticResource NeoToolBarIconButtonStyle}"
                                 Click="SettingsButton_OnClick">
@@ -287,7 +347,8 @@
                                TextWrapping="Wrap" />
 
                     <wv2:WebView2 x:Name="Reader"
-                                  Visibility="Collapsed" />
+                                  Visibility="Collapsed"
+                                  PreviewMouseDown="MainWindow_OnPreviewMouseDown" />
                 </Grid>
             </Grid>
         </Grid>
@@ -297,10 +358,27 @@
         <KeyBinding Key="O"
                     Modifiers="Control"
                     Command="{x:Static ApplicationCommands.Open}" />
+        <KeyBinding Key="OemMinus"
+                    Modifiers="Control"
+                    Command="{x:Static NavigationCommands.DecreaseZoom}" />
+        <KeyBinding Key="OemPlus"
+                    Modifiers="Control"
+                    Command="{x:Static NavigationCommands.IncreaseZoom}" />
+        <KeyBinding Key="D0"
+                    Modifiers="Control"
+                    Command="{x:Static NavigationCommands.Zoom}" />
     </Window.InputBindings>
 
     <Window.CommandBindings>
         <CommandBinding Command="{x:Static ApplicationCommands.Open}"
                         Executed="OpenCommand_OnExecuted" />
+        <CommandBinding Command="{x:Static NavigationCommands.DecreaseZoom}"
+                        Executed="DecreaseZoomCommand_OnExecuted" />
+        <CommandBinding Command="{x:Static NavigationCommands.IncreaseZoom}"
+                        Executed="IncreaseZoomCommand_OnExecuted" />
+        <CommandBinding Command="{x:Static NavigationCommands.Zoom}"
+                        Executed="ResetZoomCommand_OnExecuted" />
     </Window.CommandBindings>
+
+
 </Window>

@@ -27,6 +27,8 @@
                  Link="Shared\NeoUI\NeoContextMenu.cs" />
         <Compile Include="..\SHARED\NeoUI\NeoLanguageMenuBuilder.cs"
                  Link="Shared\NeoUI\NeoLanguageMenuBuilder.cs" />
+        <Compile Include="..\SHARED\NeoUI\NeoIconButton.cs"
+                 Link="Shared\NeoUI\NeoIconButton.cs" />
         <Compile Include="..\SHARED\NeoUI\NeoTitleBar.xaml.cs"
                  Link="Shared\NeoUI\NeoTitleBar.xaml.cs">
             <DependentUpon>NeoTitleBar.xaml</DependentUpon>

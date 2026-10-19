@@ -4,6 +4,7 @@
         <BaseOutputPath>$(MSBuildThisFileDirectory)Build\bin\</BaseOutputPath>
         <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)Build\obj\</BaseIntermediateOutputPath>
         <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(MSBuildProjectName)' == 'MYBOOK.RegressionTests'">
