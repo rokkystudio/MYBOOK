@@ -195,7 +195,7 @@ internal static class Program
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
-            \trowd\intbl Cell A\cell Cell B\cell\row
+            \trowd\trhdr\trkeep\trrh-480\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
             \trowd\clmgf\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
             \trowd\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
@@ -365,6 +365,28 @@ internal static class Program
                     "Cell B",
                     StringComparison.Ordinal)),
             "RTF table controls должны сохранять строки и ячейки.");
+
+        Assert(
+            table.Rows[0].RepeatAsHeader &&
+            table.Rows[0].PreventPageSplit &&
+            table.Rows[0].HeightPoints == 24 &&
+            table.Rows[0].HeightExact,
+            "RTF trhdr, trkeep и negative trrh должны сохранять свойства строки.");
+
+        Assert(
+            table.Rows[0].Cells[0].WidthPoints == 50 &&
+            table.Rows[0].Cells[0].PaddingLeftPoints == 5 &&
+            table.Rows[0].Cells[0].PaddingRightPoints == 6 &&
+            table.Rows[0].Cells[0].PaddingTopPoints == 4 &&
+            table.Rows[0].Cells[0].PaddingBottomPoints == 3 &&
+            table.Rows[0].Cells[0].VerticalAlignment ==
+                DocumentTableCellVerticalAlignment.Center &&
+            table.Rows[0].Cells[0].NoWrap &&
+            table.Rows[0].Cells[1].WidthPoints == 70 &&
+            table.Rows[0].Cells[1].VerticalAlignment ==
+                DocumentTableCellVerticalAlignment.Bottom &&
+            table.Rows[0].Cells[1].FitText,
+            "RTF cellx, clpad*, clvertal*, clNoWrap и clFitText должны сохранять свойства ячеек.");
 
         Assert(
             table.Rows[1].Cells.Count == 1 &&

@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.2.0
+Текущая версия: 1.2.1
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -35,7 +35,7 @@
 
 ## RTF
 
-- [ ] Таблицы: nested tables и дополнительные row/cell properties; horizontal `clmgf`/`clmrg` и vertical `clvmgf`/`clvmrg` merges уже сохраняются как `ColumnSpan`/`RowSpan`.
+- [ ] Таблицы: nested tables, borders/shading и остальные редкие row/cell properties; horizontal `clmgf`/`clmrg` и vertical `clvmgf`/`clvmrg` merges сохраняются как `ColumnSpan`/`RowSpan`; `cellx` задаёт фактическую ширину ячеек; `trhdr`, `trkeep`, `trrh`, `clvertal*`, twips-padding через `clpad*` + unit 3, `clNoWrap` и `clFitText` сохраняются в нейтральной модели.
 - [ ] Изображения: WMF/EMF и дополнительные варианты `pict`; стандартный BI_RGB `dibitmap` уже преобразуется в BMP, PNG/JPEG поддерживаются напрямую.
 - [ ] Стили абзацев: tab stops и редкие paragraph controls; alignment, indents, spacing, `slmult`, keep/keep-next, widow control и bidi direction уже поддерживаются.
 - [ ] Расширенные Unicode/codepage edge cases: Symbol/OEM charsets, редкие charset/codepage combinations и malformed fallback; известные `fcharset` mapping и DBCS hex sequences уже поддерживаются.
