@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.48
+Текущая версия: 1.0.49
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -37,13 +37,10 @@
 
 ## RTF
 
-- [ ] Заменить WPF RTF parser собственным tokenizer/parser.
-- [ ] Таблицы.
-- [ ] Изображения.
-- [ ] Цвета и размеры шрифтов.
-- [ ] Стили абзацев.
-- [ ] Hyperlinks.
-- [ ] Unicode/codepage edge cases.
+- [ ] Таблицы: merged cells, nested tables и дополнительные row/cell properties.
+- [ ] Изображения: WMF/EMF/DIB и дополнительные варианты `pict` помимо PNG/JPEG.
+- [ ] Стили абзацев: alignment, indents, spacing и line spacing.
+- [ ] Расширенные Unicode/codepage edge cases, включая DBCS и font charset switching.
 
 ## Markdown / TXT / HTML
 

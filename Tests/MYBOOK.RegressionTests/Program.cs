@@ -158,21 +158,211 @@ internal static class Program
 
     private static void TestRtfReader(string directory)
     {
+        Encoding.RegisterProvider(
+            CodePagesEncodingProvider.Instance);
+
         var path = Path.Combine(
             directory,
             "regression.rtf");
 
+        var rtf = """
+            {\rtf1\ansi\ansicpg1251\uc1
+            {\fonttbl{\f0 Arial;}{\f1 Times New Roman;}}
+            {\colortbl;\red255\green0\blue0;\red255\green255\blue0;}
+            {\*\bkmkstart bookmark}
+            \f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
+            Unicode \u1046?\par
+            \strike strike\strike0 \super sup\nosupersub \sub sub\nosupersub\par
+            {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
+            {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
+            {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
+            \trowd\intbl Cell A\cell Cell B\cell\row
+            \pard
+            {\pict\pngblip 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
+            }
+            """;
+
         File.WriteAllText(
             path,
-            @"{\rtf1\ansi RTF marker \b bold\b0\par}",
-            Encoding.ASCII);
+            rtf,
+            Encoding.GetEncoding(1251));
 
         var model = SupportedFormatRegistry.ReadDocument(path);
 
+        var text = FlattenText(model);
+
         AssertContains(
-            FlattenText(model),
-            "RTF marker",
-            "RTF model");
+            text,
+            "Styled Привет",
+            "RTF codepage text");
+
+        AssertContains(
+            text,
+            "Unicode Ж",
+            "RTF unicode escape");
+
+        var paragraphs = model.Blocks
+            .OfType<DocumentParagraph>()
+            .ToArray();
+
+        Assert(
+            paragraphs.Any(paragraph =>
+                string.Equals(
+                    paragraph.AnchorId,
+                    "bookmark",
+                    StringComparison.Ordinal)),
+            "RTF bookmark должен сохраняться как внутренний anchor.");
+
+        var inlines = paragraphs
+            .SelectMany(paragraph => paragraph.Inlines)
+            .ToArray();
+
+        var styled = inlines.FirstOrDefault(inline =>
+            inline.Text.Contains(
+                "Styled Привет",
+                StringComparison.Ordinal));
+
+        Assert(
+            styled != null &&
+            styled.Bold &&
+            styled.Italic &&
+            styled.Underline &&
+            string.Equals(
+                styled.FontFamily,
+                "Times New Roman",
+                StringComparison.Ordinal) &&
+            styled.FontSizePoints == 14 &&
+            string.Equals(
+                styled.TextColor,
+                "#FF0000",
+                StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(
+                styled.BackgroundColor,
+                "#FFFF00",
+                StringComparison.OrdinalIgnoreCase),
+            "RTF font table, size, foreground/background и базовые стили должны сохраняться.");
+
+        Assert(
+            inlines.Any(inline =>
+                inline.Strikethrough &&
+                inline.Text.Contains(
+                    "strike",
+                    StringComparison.Ordinal)),
+            "RTF strike должен сохраняться.");
+
+        Assert(
+            inlines.Any(inline =>
+                inline.Superscript &&
+                inline.Text.Contains(
+                    "sup",
+                    StringComparison.Ordinal)),
+            "RTF superscript должен сохраняться.");
+
+        Assert(
+            inlines.Any(inline =>
+                inline.Subscript &&
+                inline.Text.Contains(
+                    "sub",
+                    StringComparison.Ordinal)),
+            "RTF subscript должен сохраняться.");
+
+        Assert(
+            inlines.Any(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "https://example.com/rtf",
+                    StringComparison.Ordinal)),
+            "RTF external HYPERLINK должен сохраняться.");
+
+        Assert(
+            inlines.Any(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "#bookmark",
+                    StringComparison.Ordinal)),
+            "RTF internal HYPERLINK должен сохраняться.");
+
+        Assert(
+            !inlines.Any(inline =>
+                inline.LinkHref?.StartsWith(
+                    "file:",
+                    StringComparison.OrdinalIgnoreCase) == true),
+            "RTF unsafe file: hyperlink не должен попадать в модель.");
+
+        var table = model.Blocks
+            .OfType<DocumentTable>()
+            .SingleOrDefault();
+
+        Assert(
+            table != null &&
+            table.Rows.Count == 1 &&
+            table.Rows[0].Cells.Count == 2 &&
+            table.Rows[0].Cells[0].Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "Cell A",
+                    StringComparison.Ordinal)) &&
+            table.Rows[0].Cells[1].Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "Cell B",
+                    StringComparison.Ordinal)),
+            "RTF table controls должны сохранять строки и ячейки.");
+
+        Assert(
+            model.Blocks
+                .OfType<DocumentParagraph>()
+                .SelectMany(paragraph => paragraph.Inlines)
+                .Any(inline =>
+                    inline.Image != null &&
+                    string.Equals(
+                        inline.Image.ContentType,
+                        "image/png",
+                        StringComparison.Ordinal)),
+            "RTF pict pngblip должен сохранять встроенное PNG-изображение.");
+
+        var html = DocumentHtmlRenderer.Render(
+            model,
+            CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "font-size:14pt",
+            "RTF rendered font size");
+
+        AssertContains(
+            html,
+            "color:#FF0000",
+            "RTF rendered text color");
+
+        AssertContains(
+            html,
+            "background-color:#FFFF00",
+            "RTF rendered background color");
+
+        AssertContains(
+            html,
+            "<table class=\"flow-table\"",
+            "RTF rendered table");
+
+        AssertContains(
+            html,
+            "class=\"inline-image\"",
+            "RTF rendered image");
+
+        AssertContains(
+            html,
+            "href=\"https://example.com/rtf\"",
+            "RTF rendered external hyperlink");
+
+        AssertContains(
+            html,
+            "href=\"#anchor-bookmark\"",
+            "RTF rendered internal hyperlink");
+
+        Assert(
+            !html.Contains(
+                "href=\"file:",
+                StringComparison.OrdinalIgnoreCase),
+            "RTF renderer не должен выпускать unsafe file: hyperlink.");
     }
 
     private static void TestDocRtfDispatch(string directory)
