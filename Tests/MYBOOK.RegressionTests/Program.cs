@@ -1607,6 +1607,39 @@ internal static class Program
                 0,
                 3
             });
+        AddSprm(
+            0xD62C,
+            new byte[]
+            {
+                3,
+                1,
+                3,
+                2
+            });
+        AddSprm(
+            0xD634,
+            new byte[]
+            {
+                6,
+                0,
+                1,
+                0x05,
+                3,
+                0x78,
+                0x00
+            });
+        AddSprm(
+            0xD632,
+            new byte[]
+            {
+                6,
+                0,
+                2,
+                0x0A,
+                3,
+                0x68,
+                0x01
+            });
 
         var paragraphFormatting =
             new DocDocumentReader.DocParagraphFormatting();
@@ -1623,9 +1656,92 @@ internal static class Program
         Assert(
             overridden.Cells[0].HorizontalMerge == 0 &&
             overridden.Cells[0].VerticalMerge == 3 &&
+            overridden.Cells[0].PaddingTopPoints == 6 &&
+            overridden.Cells[0].PaddingBottomPoints == 6 &&
+            overridden.Cells[0].PaddingLeftPoints == 18 &&
+            overridden.Cells[0].PaddingRightPoints == 18 &&
             overridden.Cells[1].HorizontalMerge == 2 &&
-            overridden.Cells[2].HorizontalMerge == 1,
-            "DOC sprmTSplit/sprmTMerge/sprmTVertMerge должны переопределять TC80 merge flags.");
+            overridden.Cells[1].VerticalAlignment ==
+                DocumentTableCellVerticalAlignment.Bottom &&
+            overridden.Cells[1].PaddingLeftPoints == 18 &&
+            overridden.Cells[1].PaddingRightPoints == 18 &&
+            overridden.Cells[2].HorizontalMerge == 1 &&
+            overridden.Cells[2].VerticalAlignment ==
+                DocumentTableCellVerticalAlignment.Bottom &&
+            overridden.Cells[2].PaddingTopPoints == 6 &&
+            overridden.Cells[2].PaddingBottomPoints == 6 &&
+            overridden.Cells[2].PaddingLeftPoints == null &&
+            overridden.Cells[2].PaddingRightPoints == null,
+            "DOC table merge, vertical-align и cell padding SPRM должны переопределять TC80 properties.");
+
+        var structureGrpprl =
+            new List<byte>();
+
+        void AddStructureSprm(
+            ushort sprm,
+            ReadOnlySpan<byte> sprmOperand)
+        {
+            structureGrpprl.Add(
+                (byte)(sprm & 0xFF));
+            structureGrpprl.Add(
+                (byte)(sprm >> 8));
+            structureGrpprl.AddRange(
+                sprmOperand.ToArray());
+        }
+
+        AddStructureSprm(
+            0xD608,
+            operand);
+        AddStructureSprm(
+            0x7621,
+            new byte[]
+            {
+                1,
+                1,
+                0x20,
+                0x03
+            });
+        AddStructureSprm(
+            0x7623,
+            new byte[]
+            {
+                0,
+                2,
+                0xB0,
+                0x04
+            });
+        AddStructureSprm(
+            0x5622,
+            new byte[]
+            {
+                2,
+                3
+            });
+
+        var structureFormatting =
+            new DocDocumentReader.DocParagraphFormatting();
+
+        DocDocumentReader.ReadParagraphGrpprl(
+            structureGrpprl.ToArray(),
+            structureFormatting);
+
+        var restructured =
+            structureFormatting.TableDefinition
+            ?? throw new InvalidOperationException(
+                "DOC table structure SPRM должны сохранять TableDefinition.");
+
+        Assert(
+            restructured.Cells.Count == 3 &&
+            restructured.Cells[0].LeftTwips == 0 &&
+            restructured.Cells[0].RightTwips == 1200 &&
+            restructured.Cells[0].WidthPoints == 60 &&
+            restructured.Cells[1].LeftTwips == 1200 &&
+            restructured.Cells[1].RightTwips == 2400 &&
+            restructured.Cells[1].WidthPoints == 60 &&
+            restructured.Cells[2].LeftTwips == 2400 &&
+            restructured.Cells[2].RightTwips == 3800 &&
+            restructured.Cells[2].WidthPoints == 70,
+            "DOC sprmTInsert/sprmTDxaCol/sprmTDelete должны пересчитывать cells и boundaries по порядку применения.");
 
         static DocumentTableCell RawCell(
             string text)
@@ -1665,11 +1781,17 @@ internal static class Program
             firstRow.Cells.Count == 2 &&
             firstRow.Cells[0].RowSpan == 1 &&
             firstRow.Cells[0].WidthPoints == 50 &&
+            firstRow.Cells[0].PaddingLeftPoints == 18 &&
+            firstRow.Cells[0].PaddingRightPoints == 18 &&
             firstRow.Cells[1].ColumnSpan == 2 &&
             firstRow.Cells[1].WidthPoints == 130 &&
+            firstRow.Cells[1].PaddingLeftPoints == 18 &&
+            firstRow.Cells[1].PaddingRightPoints == 18 &&
+            firstRow.Cells[1].VerticalAlignment ==
+                DocumentTableCellVerticalAlignment.Bottom &&
             firstRow.Cells[1].Inlines.Any(inline =>
                 inline.Text == "B"),
-            "DOC table row conversion должен применять horizontal merge и суммировать widths.");
+            "DOC table row conversion должен применять merges, widths, padding и vertical alignment.");
 
         var secondDefinition =
             new DocDocumentReader.DocTableDefinition(
@@ -1738,7 +1860,11 @@ internal static class Program
                                             ],
                                             ColumnSpan = 2,
                                             RowSpan = 2,
-                                            WidthPoints = 110
+                                            WidthPoints = 110,
+                                            PaddingLeftPoints = 18,
+                                            PaddingRightPoints = 18,
+                                            VerticalAlignment =
+                                                DocumentTableCellVerticalAlignment.Bottom
                                         },
                                         new DocumentTableCell
                                         {
@@ -1769,8 +1895,20 @@ internal static class Program
             "DOC rendered table vertical merge");
         AssertContains(
             html,
-            "style=\"width:110pt\"",
+            "width:110pt",
             "DOC rendered merged table width");
+        AssertContains(
+            html,
+            "padding-right:18pt",
+            "DOC rendered table cell padding");
+        AssertContains(
+            html,
+            "padding-left:18pt",
+            "DOC rendered table cell padding");
+        AssertContains(
+            html,
+            "vertical-align:bottom",
+            "DOC rendered table cell vertical alignment");
     }
 
     private static void TestDocFootnoteTables()
