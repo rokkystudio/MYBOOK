@@ -40,6 +40,7 @@ internal static class Program
             ("DOC header story table", TestDocHeaderStoryTable),
             ("DOC section table", TestDocSectionTable),
             ("DOC paragraph properties", TestDocParagraphProperties),
+            ("DOC character style", TestDocCharacterStyle),
             ("DOC table definition", TestDocTableDefinition),
             ("DOC nested tables", TestDocNestedTables),
             ("DOC footnote tables", TestDocFootnoteTables),
@@ -1485,6 +1486,100 @@ internal static class Program
             html,
             "direction:rtl",
             "DOC rendered bidi paragraph");
+    }
+
+    private static void TestDocCharacterStyle()
+    {
+        var direct =
+            DocDocumentReader.ReadCharacterGrpprl(
+                new byte[]
+                {
+                    0x30, 0x4A,
+                    0x05, 0x00,
+                    0x36, 0x08,
+                    0x01
+                });
+
+        Assert(
+            direct.CharacterStyleIndex == 5 &&
+            direct.Italic == true,
+            "DOC sprmCIstd должен сохранять character style index рядом с direct CHPX.");
+
+        var paragraphStyleFormatting =
+            new DocDocumentReader.DocCharacterFormatting
+            {
+                Bold = false,
+                Italic = false,
+                FontSizePoints = 10,
+                TextColor = "#000000"
+            };
+        var characterStyleFormatting =
+            new DocDocumentReader.DocCharacterFormatting
+            {
+                Bold = true,
+                Italic = false,
+                FontSizePoints = 14,
+                TextColor = "#336699"
+            };
+
+        var characterStyle =
+            new DocDocumentReader.DocStyle(
+                StyleIndex: 5,
+                Sti: 0,
+                Kind: 2,
+                BaseStyleIndex: 0x0FFF,
+                Name: "Emphasis",
+                ParagraphFormatting:
+                    new DocDocumentReader.DocParagraphFormatting
+                    {
+                        StyleIndex = 5
+                    },
+                CharacterFormatting:
+                    characterStyleFormatting,
+                HeadingLevel: 0);
+
+        var styles =
+            new Dictionary<ushort, DocDocumentReader.DocStyle>
+            {
+                [5] = characterStyle
+            };
+
+        var resolved =
+            DocDocumentReader.ResolveCharacterFormatting(
+                paragraphStyleFormatting,
+                direct,
+                styles);
+
+        Assert(
+            resolved.Bold == true &&
+            resolved.Italic == true &&
+            resolved.FontSizePoints == 14 &&
+            resolved.TextColor == "#336699",
+            "DOC character style должен применяться между paragraph-style formatting и direct CHPX.");
+
+        var wrongKind =
+            characterStyle with
+            {
+                Kind = 1
+            };
+
+        try
+        {
+            _ =
+                DocDocumentReader.ResolveCharacterFormatting(
+                    paragraphStyleFormatting,
+                    direct,
+                    new Dictionary<ushort, DocDocumentReader.DocStyle>
+                    {
+                        [5] = wrongKind
+                    });
+
+            throw new InvalidOperationException(
+                "DOC sprmCIstd на non-character style должен быть отклонён.");
+        }
+        catch (InvalidDataException)
+        {
+        }
     }
 
     private static void TestDocTableDefinition()
