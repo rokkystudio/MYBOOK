@@ -32,6 +32,7 @@ internal static class Program
             ("RTF reader", () => TestRtfReader(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
+            ("DOC binary reader", () => TestDocBinaryReader(repositoryRoot)),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
@@ -484,6 +485,131 @@ internal static class Program
                 "href=\"file:",
                 StringComparison.OrdinalIgnoreCase),
             "DOC renderer не должен выпускать unsafe file: hyperlink.");
+    }
+
+    private static void TestDocBinaryReader(string repositoryRoot)
+    {
+        var path = Path.Combine(
+            repositoryRoot,
+            "Books",
+            "Regression_Word97_Binary.doc");
+
+        Assert(
+            File.Exists(path),
+            "Books должен содержать Regression_Word97_Binary.doc.");
+
+        var model = DocDocumentReader.Read(path);
+
+        AssertContains(
+            FlattenText(model),
+            "Binary DOC marker",
+            "DOC binary model");
+
+        var paragraph = model.Blocks
+            .OfType<DocumentParagraph>()
+            .Single(paragraph =>
+                paragraph.Inlines.Any(inline =>
+                    inline.Text.Contains(
+                        "Binary DOC marker",
+                        StringComparison.Ordinal)));
+
+        AssertEqual(
+            1,
+            paragraph.HeadingLevel,
+            "DOC binary inherited heading level");
+
+        AssertEqual(
+            DocumentParagraphAlignment.Justify,
+            paragraph.Alignment,
+            "DOC binary direct paragraph alignment");
+
+        AssertEqual(
+            36.0,
+            paragraph.LeftIndentPoints ?? double.NaN,
+            "DOC binary inherited left indent");
+
+        AssertEqual(
+            18.0,
+            paragraph.FirstLineIndentPoints ?? double.NaN,
+            "DOC binary direct first-line indent");
+
+        AssertEqual(
+            6.0,
+            paragraph.SpaceAfterPoints ?? double.NaN,
+            "DOC binary inherited paragraph spacing");
+
+        Assert(
+            paragraph.PageBreakBefore,
+            "DOC binary direct page-break-before должен сохраниться.");
+
+        Assert(
+            model.Blocks
+                .OfType<DocumentFlowBreak>()
+                .Any(flowBreak =>
+                    flowBreak.Kind == DocumentFlowBreakKind.Page),
+            "DOC binary page-break-before должен создавать flow break.");
+
+        var inline = paragraph.Inlines
+            .Single(inline =>
+                inline.Text.Contains(
+                    "Binary DOC marker",
+                    StringComparison.Ordinal));
+
+        Assert(
+            !inline.Bold,
+            "DOC ToggleOperand 0x81 должен инвертировать bold текущего style.");
+
+        Assert(
+            inline.Italic,
+            "DOC Heading 1 должен наследовать italic из character UPX.");
+
+        Assert(
+            inline.Underline,
+            "DOC direct CHPX underline должен сохраниться.");
+
+        AssertEqual(
+            14.0,
+            inline.FontSizePoints ?? double.NaN,
+            "DOC direct CHPX font size");
+
+        AssertEqual(
+            "#008000",
+            inline.TextColor!,
+            "DOC direct CHPX RGB color");
+
+        var html = DocumentHtmlRenderer.Render(
+            model,
+            CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "<h1",
+            "DOC binary rendered heading");
+
+        AssertContains(
+            html,
+            "text-align:justify",
+            "DOC binary rendered alignment");
+
+        AssertContains(
+            html,
+            "margin-left:36pt",
+            "DOC binary rendered inherited indent");
+
+        AssertContains(
+            html,
+            "text-indent:18pt",
+            "DOC binary rendered direct first-line indent");
+
+        AssertContains(
+            html,
+            "font-size:14pt",
+            "DOC binary rendered font size");
+
+        AssertContains(
+            html,
+            "color:#008000",
+            "DOC binary rendered color");
     }
 
     private static void TestFb2Reader(string directory)
@@ -2080,21 +2206,6 @@ internal static class Program
         Assert(
             !string.IsNullOrWhiteSpace(FlattenText(model)),
             ".doc corpus dispatch должен вернуть текст.");
-
-        Assert(
-            model.Blocks
-                .OfType<DocumentParagraph>()
-                .SelectMany(paragraph => paragraph.Inlines)
-                .Any(inline =>
-                    inline.Bold ||
-                    inline.Italic ||
-                    inline.Underline ||
-                    inline.Strikethrough ||
-                    inline.Superscript ||
-                    inline.Subscript ||
-                    inline.FontSizePoints != null ||
-                    inline.TextColor != null),
-            ".doc corpus должен содержать хотя бы один распознанный CHPX formatting run.");
     }
 
     private static string FlattenText(DocumentModel model)
