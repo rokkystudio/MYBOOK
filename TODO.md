@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.1.12
+Текущая версия: 1.1.13
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -37,8 +37,8 @@
 
 - [ ] Таблицы: nested tables и дополнительные row/cell properties; horizontal `clmgf`/`clmrg` и vertical `clvmgf`/`clvmrg` merges уже сохраняются как `ColumnSpan`/`RowSpan`.
 - [ ] Изображения: WMF/EMF и дополнительные варианты `pict`; стандартный BI_RGB `dibitmap` уже преобразуется в BMP, PNG/JPEG поддерживаются напрямую.
-- [ ] Стили абзацев: дополнительные RTF paragraph controls (line spacing multiplier, keep/widow, bidi, tabs); базовые alignment, indents и spacing поддерживаются.
-- [ ] Расширенные Unicode/codepage edge cases, включая DBCS и font charset switching.
+- [ ] Стили абзацев: tab stops и редкие paragraph controls; alignment, indents, spacing, `slmult`, keep/keep-next, widow control и bidi direction уже поддерживаются.
+- [ ] Расширенные Unicode/codepage edge cases: Symbol/OEM charsets, редкие charset/codepage combinations и malformed fallback; известные `fcharset` mapping и DBCS hex sequences уже поддерживаются.
 
 ## Markdown / TXT / HTML
 
@@ -51,7 +51,7 @@
 - [ ] ExtGState: blend modes, soft mask как graphics state и overprint.
 - [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
 - [ ] Image XObject: Indexed/JPEG + `/Matte`, нестандартный `/Decode` поверх DCT/JPEG и дополнительные ColorSpace.
-- [ ] Image filters: LZW, CCITT, JPX и JBIG2.
+- [ ] Image filters: CCITT, JPX и JBIG2; LZW с `EarlyChange` 0/1 и predictor parameters уже поддерживается для streams и Image XObject.
 - [ ] Шифрование/password-protected PDF.
 
 ## DjVu

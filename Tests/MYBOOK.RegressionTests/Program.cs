@@ -5,6 +5,7 @@ using System.Text;
 using Book.Diagnostics;
 using Book.Documents;
 using Book.Formats.Doc;
+using Book.Formats.Pdf;
 using Book.Rendering;
 using MYBOOK.Services;
 
@@ -42,6 +43,7 @@ internal static class Program
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
+            ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),
             (".doc corpus dispatch", () => TestDocCorpusDispatch(repositoryRoot))
@@ -173,13 +175,15 @@ internal static class Program
             "regression.rtf");
 
         var rtf = """
-            {\rtf1\ansi\ansicpg1251\uc1
-            {\fonttbl{\f0 Arial;}{\f1 Times New Roman;}}
+            {\rtf1\ansi\ansicpg1252\uc1
+            {\fonttbl{\f0 Arial;}{\f1\fcharset204 Times New Roman;}{\f2\fcharset128 MS Gothic;}}
             {\colortbl;\red255\green0\blue0;\red255\green255\blue0;}
             {\*\bkmkstart bookmark}
             \qc\li720\ri360\fi-180\sb240\sa120\sl360\f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
-            Unicode \u1046?\par
-            \strike strike\strike0 \super sup\nosupersub \sub sub\nosupersub\par
+            \pard\sl360\slmult1\keep\keepn\widctl\rtlpar Paragraph controls\par
+            \pard Unicode \u1046?\par
+            \f2 \'82\'a0\par
+            \f0 \strike strike\strike0 \super sup\nosupersub \sub sub\nosupersub\par
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
@@ -212,6 +216,11 @@ internal static class Program
             "Unicode Ж",
             "RTF unicode escape");
 
+        AssertContains(
+            text,
+            "あ",
+            "RTF DBCS font charset switching");
+
         var paragraphs = model.Blocks
             .OfType<DocumentParagraph>()
             .ToArray();
@@ -239,6 +248,20 @@ internal static class Program
             formattedParagraph.SpaceAfterPoints == 6 &&
             formattedParagraph.LineSpacingPoints == 18,
             "RTF paragraph alignment, indents и spacing должны сохраняться.");
+
+        var controlledParagraph = paragraphs.First(paragraph =>
+            paragraph.Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "Paragraph controls",
+                    StringComparison.Ordinal)));
+
+        Assert(
+            controlledParagraph.LineSpacingMultiple == 1.5 &&
+            controlledParagraph.KeepTogether &&
+            controlledParagraph.KeepWithNext &&
+            controlledParagraph.WidowControl &&
+            controlledParagraph.RightToLeft,
+            "RTF slmult, keep, keepn, widctl и rtlpar должны сохраняться.");
 
         var inlines = paragraphs
             .SelectMany(paragraph => paragraph.Inlines)
@@ -406,6 +429,31 @@ internal static class Program
             html,
             "background-color:#FFFF00",
             "RTF rendered background color");
+
+        AssertContains(
+            html,
+            "line-height:1.5",
+            "RTF rendered line spacing multiplier");
+
+        AssertContains(
+            html,
+            "break-inside:avoid",
+            "RTF rendered keep together");
+
+        AssertContains(
+            html,
+            "break-after:avoid",
+            "RTF rendered keep with next");
+
+        AssertContains(
+            html,
+            "orphans:2;widows:2",
+            "RTF rendered widow control");
+
+        AssertContains(
+            html,
+            "direction:rtl",
+            "RTF rendered right-to-left paragraph");
 
         AssertContains(
             html,
@@ -2643,6 +2691,37 @@ internal static class Program
             "DOCX renderer не должен выпускать file: hyperlink.");
     }
 
+    private static void TestPdfLzwDecoder()
+    {
+        var expected = Enumerable
+            .Range(
+                0,
+                260)
+            .Select(index =>
+                (byte)(index % 251))
+            .ToArray();
+
+        var earlyOne = Convert.FromBase64String(
+            "gAAAICAYEAoGA4IBIKBYMBoOB4QCISCYUCoWC4YDIaDYcDoeD4gEIiEYkEomE4oFIqFYsFouF4wGIyGY0Go2G44HI6HY8Ho+H5AIJCIZEIpGI5IJJKJZMJpOJ5QKJSKZUKpWK5YLJaLZcLpeL5gMJiMZkMpmM5oNJqNZsNpuN5wOJyOZ0Op2O54PJ6PZ8Pp+P6AQKCQaEQqGQ6IRKKRaMRqOR6QSKSSaUSqWS6YTKaTacTqeT6gUKiUakUqmU6oVKqVasVquV6wWKyWa0Wq2W64XK6Xa8Xq+X7AYLCYbEYrGY7IZLKZbMZrOZ7QaLSabUarWa7YbLabbcbreb7gcLicbkcrmc7odLqdbsdrud7weLyeb0er2e74fL6AABAQBgIAoDAOBCAg=");
+
+        var earlyZero = Convert.FromBase64String(
+            "gAAAICAYEAoGA4IBIKBYMBoOB4QCISCYUCoWC4YDIaDYcDoeD4gEIiEYkEomE4oFIqFYsFouF4wGIyGY0Go2G44HI6HY8Ho+H5AIJCIZEIpGI5IJJKJZMJpOJ5QKJSKZUKpWK5YLJaLZcLpeL5gMJiMZkMpmM5oNJqNZsNpuN5wOJyOZ0Op2O54PJ6PZ8Pp+P6AQKCQaEQqGQ6IRKKRaMRqOR6QSKSSaUSqWS6YTKaTacTqeT6gUKiUakUqmU6oVKqVasVquV6wWKyWa0Wq2W64XK6Xa8Xq+X7AYLCYbEYrGY7IZLKZbMZrOZ7QaLSabUarWa7YbLabbcbreb7gcLicbkcrmc7odLqdbsdrud7weLyeb0er2e74fL6AABAQDAQBQGAcCEBA=");
+
+        Assert(
+            PdfStreamFilterDecoder.DecodeLzw(
+                earlyOne,
+                earlyChange: 1)
+                .SequenceEqual(expected),
+            "PDF LZW EarlyChange=1 должен корректно переживать переход 9→10 bits.");
+
+        Assert(
+            PdfStreamFilterDecoder.DecodeLzw(
+                earlyZero,
+                earlyChange: 0)
+                .SequenceEqual(expected),
+            "PDF LZW EarlyChange=0 должен корректно переживать переход 9→10 bits.");
+    }
+
     private static void TestPdfReader(string directory)
     {
         var path = Path.Combine(
@@ -2667,6 +2746,26 @@ internal static class Program
             1,
             page.PageNumber,
             "PDF page number");
+
+        var lzwPath = Path.Combine(
+            directory,
+            "regression-lzw.pdf");
+
+        CreateLzwPdf(
+            lzwPath,
+            "PDF LZW marker");
+
+        var lzwModel =
+            SupportedFormatRegistry.ReadDocument(
+                lzwPath);
+        var lzwPage = lzwModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+
+        AssertContains(
+            lzwPage.Text,
+            "PDF LZW marker",
+            "PDF LZW content stream");
     }
 
     private static void TestParserTrace(string directory)
@@ -2913,6 +3012,156 @@ internal static class Program
         File.WriteAllBytes(
             path,
             memory.ToArray());
+    }
+
+    private static void CreateLzwPdf(
+        string path,
+        string text)
+    {
+        var encoding = Encoding.ASCII;
+        var content =
+            "BT\n" +
+            "/F1 12 Tf\n" +
+            "1 0 0 1 20 100 Tm\n" +
+            "(" + EscapePdfString(text) + ") Tj\n" +
+            "ET\n";
+        var compressed = EncodeLzwLiteralStream(
+            encoding.GetBytes(content));
+
+        using var memory = new MemoryStream();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        Write("%PDF-1.4\n");
+
+        var offsets = new List<long>();
+
+        void WriteObject(
+            int objectNumber,
+            string body)
+        {
+            offsets.Add(memory.Position);
+            Write(
+                $"{objectNumber} 0 obj\n" +
+                body +
+                "\nendobj\n");
+        }
+
+        WriteObject(
+            1,
+            "<< /Type /Catalog /Pages 2 0 R >>");
+        WriteObject(
+            2,
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 200] >>");
+        WriteObject(
+            3,
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>");
+
+        offsets.Add(memory.Position);
+        Write(
+            "4 0 obj\n" +
+            $"<< /Length {compressed.Length} /Filter /LZWDecode /DecodeParms << /EarlyChange 1 >> >>\n" +
+            "stream\n");
+        memory.Write(
+            compressed,
+            0,
+            compressed.Length);
+        Write(
+            "\nendstream\n" +
+            "endobj\n");
+
+        WriteObject(
+            5,
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+
+        var xref = memory.Position;
+
+        Write(
+            "xref\n" +
+            "0 6\n" +
+            "0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString("0000000000") +
+                " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n" +
+            "<< /Size 6 /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
+    }
+
+    private static byte[] EncodeLzwLiteralStream(
+        byte[] data)
+    {
+        if (data.Length > 250)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(data),
+                "Тестовый literal-only LZW encoder рассчитан на 9-bit stream без смены ширины.");
+        }
+
+        var codes = new List<int>(
+            data.Length +
+            2)
+        {
+            256
+        };
+
+        codes.AddRange(
+            data.Select(value =>
+                (int)value));
+        codes.Add(257);
+
+        var bitCount =
+            codes.Count *
+            9;
+        var output = new byte[
+            (bitCount + 7) /
+            8];
+        var bitPosition = 0;
+
+        foreach (var code in codes)
+        {
+            for (var shift = 8;
+                 shift >= 0;
+                 shift--)
+            {
+                if (((code >> shift) & 1) != 0)
+                {
+                    var byteIndex =
+                        bitPosition /
+                        8;
+                    var bitIndex =
+                        7 -
+                        bitPosition %
+                        8;
+
+                    output[byteIndex] |=
+                        (byte)(1 << bitIndex);
+                }
+
+                bitPosition++;
+            }
+        }
+
+        return output;
     }
 
     private static string EscapePdfString(string value)
