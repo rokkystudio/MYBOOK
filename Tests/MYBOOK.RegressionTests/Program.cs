@@ -177,7 +177,7 @@ internal static class Program
             {\fonttbl{\f0 Arial;}{\f1 Times New Roman;}}
             {\colortbl;\red255\green0\blue0;\red255\green255\blue0;}
             {\*\bkmkstart bookmark}
-            \f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
+            \qc\li720\ri360\fi-180\sb240\sa120\sl360\f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
             Unicode \u1046?\par
             \strike strike\strike0 \super sup\nosupersub \sub sub\nosupersub\par
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
@@ -219,6 +219,22 @@ internal static class Program
                     "bookmark",
                     StringComparison.Ordinal)),
             "RTF bookmark должен сохраняться как внутренний anchor.");
+
+        var formattedParagraph = paragraphs.First(paragraph =>
+            paragraph.Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "Styled Привет",
+                    StringComparison.Ordinal)));
+
+        Assert(
+            formattedParagraph.Alignment == DocumentParagraphAlignment.Center &&
+            formattedParagraph.LeftIndentPoints == 36 &&
+            formattedParagraph.RightIndentPoints == 18 &&
+            formattedParagraph.FirstLineIndentPoints == -9 &&
+            formattedParagraph.SpaceBeforePoints == 12 &&
+            formattedParagraph.SpaceAfterPoints == 6 &&
+            formattedParagraph.LineSpacingPoints == 18,
+            "RTF paragraph alignment, indents и spacing должны сохраняться.");
 
         var inlines = paragraphs
             .SelectMany(paragraph => paragraph.Inlines)

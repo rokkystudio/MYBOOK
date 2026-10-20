@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.55
+Текущая версия: 1.0.56
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -37,7 +37,7 @@
 
 - [ ] Таблицы: merged cells, nested tables и дополнительные row/cell properties.
 - [ ] Изображения: WMF/EMF/DIB и дополнительные варианты `pict` помимо PNG/JPEG.
-- [ ] Стили абзацев: alignment, indents, spacing и line spacing.
+- [ ] Стили абзацев: дополнительные RTF paragraph controls (line spacing multiplier, keep/widow, bidi, tabs); базовые alignment, indents и spacing поддерживаются.
 - [ ] Расширенные Unicode/codepage edge cases, включая DBCS и font charset switching.
 
 ## Markdown / TXT / HTML
