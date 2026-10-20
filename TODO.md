@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.49
+Текущая версия: 1.0.50
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -22,15 +22,14 @@
 
 ## DOC
 
-- [ ] CHP/PAP formatting runs.
-- [ ] Stylesheet.
+- [ ] Stylesheet и наследование style-dependent CHPX/PAP properties.
+- [ ] PAPX paragraph formatting runs: alignment, indents, spacing, list/table flags и прочие paragraph properties.
 - [ ] Таблицы.
 - [ ] Изображения и OfficeArt.
-- [ ] Hyperlinks.
 - [ ] Headers/footers.
 - [ ] Footnotes/endnotes.
 - [ ] Sections.
-- [ ] Поля Word.
+- [ ] Поля Word, кроме уже поддержанных безопасных HYPERLINK fields.
 - [ ] Дополнительные кодировки и charset/font mapping.
 - [ ] Старые версии Word Binary Format.
 - [ ] Реальная постраничная layout/pagination модель для превью страниц.

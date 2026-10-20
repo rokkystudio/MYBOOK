@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using Book.Diagnostics;
 using Book.Documents;
+using Book.Formats.Doc;
 using Book.Rendering;
 using MYBOOK.Services;
 
@@ -30,6 +31,7 @@ internal static class Program
             ("Markdown reader", () => TestMarkdownReader(temporaryDirectory)),
             ("RTF reader", () => TestRtfReader(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
+            ("DOC field model", TestDocFieldModel),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
@@ -382,6 +384,106 @@ internal static class Program
             FlattenText(model),
             "DOC dispatch marker",
             ".doc RTF dispatch model");
+    }
+
+    private static void TestDocFieldModel()
+    {
+        var text =
+            "Before " +
+            '\u0013' +
+            " HYPERLINK \"https://example.com/doc\" " +
+            '\u0014' +
+            "External DOC link" +
+            '\u0015' +
+            " / " +
+            '\u0013' +
+            " HYPERLINK \\l \"bookmark\" " +
+            '\u0014' +
+            "Internal DOC link" +
+            '\u0015' +
+            " / " +
+            '\u0013' +
+            " HYPERLINK \"file:///C:/secret.txt\" " +
+            '\u0014' +
+            "Unsafe DOC link" +
+            '\u0015' +
+            '\r' +
+            "Page one" +
+            '\u000C' +
+            "Page two";
+
+        var blocks = DocDocumentReader.BuildParagraphs(text);
+
+        var paragraphs = blocks
+            .OfType<DocumentParagraph>()
+            .ToArray();
+
+        var inlines = paragraphs
+            .SelectMany(paragraph => paragraph.Inlines)
+            .ToArray();
+
+        Assert(
+            inlines.Any(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "https://example.com/doc",
+                    StringComparison.Ordinal) &&
+                inline.Text.Contains(
+                    "External DOC link",
+                    StringComparison.Ordinal)),
+            "DOC HYPERLINK field должен создавать безопасную внешнюю ссылку.");
+
+        Assert(
+            inlines.Any(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "#bookmark",
+                    StringComparison.Ordinal) &&
+                inline.Text.Contains(
+                    "Internal DOC link",
+                    StringComparison.Ordinal)),
+            "DOC HYPERLINK \\l field должен создавать внутреннюю ссылку.");
+
+        Assert(
+            inlines.Any(inline =>
+                inline.LinkHref == null &&
+                inline.Text.Contains(
+                    "Unsafe DOC link",
+                    StringComparison.Ordinal)),
+            "DOC unsafe HYPERLINK должен сохранять result text без href.");
+
+        Assert(
+            blocks
+                .OfType<DocumentFlowBreak>()
+                .Any(flowBreak =>
+                    flowBreak.Kind == DocumentFlowBreakKind.Page),
+            "DOC form-feed должен сохраняться как page break.");
+
+        var model = new DocumentModel
+        {
+            Title = "DOC fields",
+            Blocks = blocks
+        };
+
+        var html = DocumentHtmlRenderer.Render(
+            model,
+            CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "href=\"https://example.com/doc\"",
+            "DOC rendered external hyperlink");
+
+        AssertContains(
+            html,
+            "href=\"#anchor-bookmark\"",
+            "DOC rendered internal hyperlink");
+
+        Assert(
+            !html.Contains(
+                "href=\"file:",
+                StringComparison.OrdinalIgnoreCase),
+            "DOC renderer не должен выпускать unsafe file: hyperlink.");
     }
 
     private static void TestFb2Reader(string directory)
@@ -1978,6 +2080,21 @@ internal static class Program
         Assert(
             !string.IsNullOrWhiteSpace(FlattenText(model)),
             ".doc corpus dispatch должен вернуть текст.");
+
+        Assert(
+            model.Blocks
+                .OfType<DocumentParagraph>()
+                .SelectMany(paragraph => paragraph.Inlines)
+                .Any(inline =>
+                    inline.Bold ||
+                    inline.Italic ||
+                    inline.Underline ||
+                    inline.Strikethrough ||
+                    inline.Superscript ||
+                    inline.Subscript ||
+                    inline.FontSizePoints != null ||
+                    inline.TextColor != null),
+            ".doc corpus должен содержать хотя бы один распознанный CHPX formatting run.");
     }
 
     private static string FlattenText(DocumentModel model)
