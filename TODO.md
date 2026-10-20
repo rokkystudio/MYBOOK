@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.1.20
+Текущая версия: 1.1.21
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -23,7 +23,7 @@
 
 - [ ] Character/list/table styles, включая `sprmCIstd`, и дополнительные style properties вне уже поддержанного paragraph style inheritance.
 - [ ] Расширить PAPX на list properties, nested-table depth, tabs, borders/shading и остальные paragraph SPRM; keep/keep-next, widow control, bidi, outline level и page-break-before уже поддерживаются.
-- [ ] Таблицы: `sprmTDefTable`, structural/grid-width overrides, TC80/BRC80 и modern cell borders, table-wide `sprmTTableBorders80`/`sprmTTableBorders` с insideH/insideV, `sprmTTableWidth`, `sprmTCellWidth`, `sprmTFAutofit`, shading, alignment/padding, row properties, no-wrap/fit-text поддерживаются. Preferred widths сохраняются отдельно от grid width с `auto`/percent/twips semantics. Остались patterned shading rendering, rotated text flow/`sprmTTextFlow`, table styles/advanced border conflict cases и nested tables.
+- [ ] Таблицы: `sprmTDefTable`, structural/grid-width overrides, TC80/BRC80 и modern cell borders, table-wide `sprmTTableBorders80`/`sprmTTableBorders` с insideH/insideV, preferred widths/autofit, `sprmTJc` logical alignment, `sprmTFBiDi`/`sprmTFBiDi90`, shading, padding/vertical alignment, row properties, no-wrap/fit-text поддерживаются. Preferred widths сохраняются отдельно от grid width. Остались patterned shading rendering, `sprmTTextFlow`, table styles/advanced border conflict cases и nested tables.
 - [ ] Изображения и OfficeArt: inline `U+0001` и floating `U+0008` raster PNG/JPEG читаются; floating path разрешает `PlcfSpa` → `OfficeArtFSP.spid` → `FOPT.pib` → BStore/FBSE/BLIP и показывает image в reflow. Остались `PlcSpaHdr`, точное floating positioning/wrap, complex/delayed/fill BLIP references, WMF/EMF/DIB/TIFF и полноценный shape rendering.
 - [ ] Headers/footers: text stories и Even/Odd/First variants по секциям читаются; остались `PlcSpaHdr` drawings, header/footer-specific fields и layout properties.
 - [ ] Footnotes/endnotes: PLC references и note text stories поддерживаются с anchors/links; остались точные custom-symbol glyphs через `sprmCSymbol`, note-specific fields и layout properties.

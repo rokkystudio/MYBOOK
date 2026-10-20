@@ -1685,6 +1685,27 @@ internal static class Program
                 0x09
             });
         AddSprm(
+            0x548A,
+            new byte[]
+            {
+                0x01,
+                0x00
+            });
+        AddSprm(
+            0x560B,
+            new byte[]
+            {
+                0x01,
+                0x00
+            });
+        AddSprm(
+            0x5664,
+            new byte[]
+            {
+                0x00,
+                0x00
+            });
+        AddSprm(
             0x3615,
             new byte[]
             {
@@ -1859,6 +1880,10 @@ internal static class Program
             paragraphFormatting.TableRowHeightPoints == 24 &&
             paragraphFormatting.TableRowHeightExact == true &&
             paragraphFormatting.TableAutoFit == true &&
+            paragraphFormatting.TableAlignment ==
+                DocumentTableAlignment.Center &&
+            paragraphFormatting.TableBiDi == true &&
+            paragraphFormatting.TableBiDi90 == false &&
             paragraphFormatting.TablePreferredWidth is
             {
                 Kind: DocumentPreferredWidthKind.Percent,
@@ -2106,6 +2131,9 @@ internal static class Program
                                     Value = 50
                                 },
                             AutoFit = true,
+                            Alignment =
+                                DocumentTableAlignment.Center,
+                            RightToLeft = true,
                             Rows =
                             [
                                 new DocumentTableRow
@@ -2227,6 +2255,18 @@ internal static class Program
             html,
             "data-autofit=\"true\"",
             "DOC rendered table autofit");
+        AssertContains(
+            html,
+            "data-table-alignment=\"center\"",
+            "DOC rendered table alignment");
+        AssertContains(
+            html,
+            "data-table-rtl=\"true\"",
+            "DOC rendered table direction");
+        AssertContains(
+            html,
+            "margin-left:auto;margin-right:auto",
+            "DOC rendered centered table margins");
         AssertContains(
             html,
             "data-preferred-width-kind=\"percent\"",
