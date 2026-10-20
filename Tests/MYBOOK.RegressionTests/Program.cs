@@ -1551,7 +1551,14 @@ internal static class Program
                 tc80Offset +
                 2 * tc80Size,
                 2),
-            0x0060);
+            0x0660);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            operand.AsSpan(
+                tc80Offset +
+                2 * tc80Size +
+                2,
+                2),
+            1400);
 
         var definition =
             DocDocumentReader.ReadTableDefinition(
@@ -1576,7 +1583,12 @@ internal static class Program
             definition.Cells[2].LeftTwips == 2200 &&
             definition.Cells[2].RightTwips == 3600 &&
             definition.Cells[2].WidthPoints == 70 &&
-            definition.Cells[2].VerticalMerge == 3,
+            definition.Cells[2].VerticalMerge == 3 &&
+            definition.Cells[2].PreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Points,
+                Value: 70
+            },
             "DOC sprmTDefTable должен сохранять cell boundaries, widths и TC80 merge flags.");
 
         var grpprl = new List<byte>();
@@ -1593,9 +1605,102 @@ internal static class Program
                 sprmOperand.ToArray());
         }
 
+        var legacyTableBorders =
+            Enumerable.Repeat(
+                    (byte)0xFF,
+                    25)
+                .ToArray();
+        legacyTableBorders[0] = 24;
+        legacyTableBorders[5] = 4;
+        legacyTableBorders[6] = 0x07;
+        legacyTableBorders[7] = 0x06;
+        legacyTableBorders[8] = 0;
+
+        var modernTableBorders =
+            Enumerable.Repeat(
+                    (byte)0xFF,
+                    49)
+                .ToArray();
+        modernTableBorders[0] = 48;
+
+        static void WriteModernBorder(
+            byte[] target,
+            int offset,
+            byte red,
+            byte green,
+            byte blue,
+            byte width,
+            byte type)
+        {
+            target[offset] = red;
+            target[offset + 1] = green;
+            target[offset + 2] = blue;
+            target[offset + 3] = 0;
+            target[offset + 4] = width;
+            target[offset + 5] = type;
+            target[offset + 6] = 0;
+            target[offset + 7] = 0;
+        }
+
+        WriteModernBorder(
+            modernTableBorders,
+            9,
+            0x00,
+            0x80,
+            0x00,
+            8,
+            0x01);
+        WriteModernBorder(
+            modernTableBorders,
+            33,
+            0x80,
+            0x00,
+            0x80,
+            4,
+            0x07);
+        WriteModernBorder(
+            modernTableBorders,
+            41,
+            0x00,
+            0x80,
+            0x80,
+            4,
+            0x06);
+
         AddSprm(
             0xD608,
             operand);
+        AddSprm(
+            0xD605,
+            legacyTableBorders);
+        AddSprm(
+            0xD613,
+            modernTableBorders);
+        AddSprm(
+            0xF614,
+            new byte[]
+            {
+                0x02,
+                0xC4,
+                0x09
+            });
+        AddSprm(
+            0x3615,
+            new byte[]
+            {
+                1
+            });
+        AddSprm(
+            0xD635,
+            new byte[]
+            {
+                5,
+                0,
+                2,
+                0x03,
+                0xA0,
+                0x0F
+            });
         AddSprm(
             0x5625,
             new byte[]
@@ -1752,8 +1857,20 @@ internal static class Program
             paragraphFormatting.TableRepeatHeader == true &&
             paragraphFormatting.TablePreventPageSplit == true &&
             paragraphFormatting.TableRowHeightPoints == 24 &&
-            paragraphFormatting.TableRowHeightExact == true,
-            "DOC row header/cant-split/exact-height SPRM должны сохраняться.");
+            paragraphFormatting.TableRowHeightExact == true &&
+            paragraphFormatting.TableAutoFit == true &&
+            paragraphFormatting.TablePreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Percent,
+                Value: 50
+            } &&
+            paragraphFormatting.TableBorders is
+            {
+                Left: { Color: "#008000" },
+                HorizontalInside: { Color: "#800080" },
+                VerticalInside: { Color: "#008080" }
+            },
+            "DOC row/table width, autofit и table-border SPRM должны сохраняться.");
 
         Assert(
             overridden.Cells[0].HorizontalMerge == 0 &&
@@ -1769,6 +1886,11 @@ internal static class Program
             overridden.Cells[0].PaddingRightPoints == 18 &&
             overridden.Cells[0].NoWrap &&
             overridden.Cells[0].FitText &&
+            overridden.Cells[0].PreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Points,
+                Value: 200
+            } &&
             overridden.Cells[0].BorderRight is
             {
                 WidthPoints: 1,
@@ -1782,6 +1904,11 @@ internal static class Program
             overridden.Cells[1].PaddingRightPoints == 18 &&
             overridden.Cells[1].NoWrap &&
             overridden.Cells[1].FitText &&
+            overridden.Cells[1].PreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Points,
+                Value: 200
+            } &&
             overridden.Cells[1].BorderBottom is
             {
                 WidthPoints: 0.5,
@@ -1971,6 +2098,14 @@ internal static class Program
                     [
                         new DocumentTable
                         {
+                            PreferredWidth =
+                                new DocumentPreferredWidth
+                                {
+                                    Kind =
+                                        DocumentPreferredWidthKind.Percent,
+                                    Value = 50
+                                },
+                            AutoFit = true,
                             Rows =
                             [
                                 new DocumentTableRow
@@ -1979,6 +2114,41 @@ internal static class Program
                                     PreventPageSplit = true,
                                     HeightPoints = 24,
                                     HeightExact = true,
+                                    BorderTop =
+                                        new DocumentBorder
+                                        {
+                                            WidthPoints = 1,
+                                            Type = 0x01,
+                                            Color = "#00FFFF"
+                                        },
+                                    BorderLeft =
+                                        new DocumentBorder
+                                        {
+                                            WidthPoints = 1,
+                                            Type = 0x01,
+                                            Color = "#008000"
+                                        },
+                                    BorderRight =
+                                        new DocumentBorder
+                                        {
+                                            WidthPoints = 1,
+                                            Type = 0x01,
+                                            Color = "#800000"
+                                        },
+                                    BorderBottom =
+                                        new DocumentBorder
+                                        {
+                                            WidthPoints = 1,
+                                            Type = 0x01,
+                                            Color = "#808000"
+                                        },
+                                    BorderVerticalInside =
+                                        new DocumentBorder
+                                        {
+                                            WidthPoints = 0.5,
+                                            Type = 0x06,
+                                            Color = "#008080"
+                                        },
                                     Cells =
                                     [
                                         new DocumentTableCell
@@ -1993,6 +2163,13 @@ internal static class Program
                                             ColumnSpan = 2,
                                             RowSpan = 2,
                                             WidthPoints = 110,
+                                            PreferredWidth =
+                                                new DocumentPreferredWidth
+                                                {
+                                                    Kind =
+                                                        DocumentPreferredWidthKind.Points,
+                                                    Value = 200
+                                                },
                                             PaddingLeftPoints = 18,
                                             PaddingRightPoints = 18,
                                             VerticalAlignment =
@@ -2048,6 +2225,30 @@ internal static class Program
 
         AssertContains(
             html,
+            "data-autofit=\"true\"",
+            "DOC rendered table autofit");
+        AssertContains(
+            html,
+            "data-preferred-width-kind=\"percent\"",
+            "DOC rendered table preferred width kind");
+        AssertContains(
+            html,
+            "data-preferred-width-value=\"50\"",
+            "DOC rendered table preferred width value");
+        AssertContains(
+            html,
+            "width:50%",
+            "DOC rendered preferred table width");
+        AssertContains(
+            html,
+            "data-preferred-width-kind=\"points\"",
+            "DOC rendered cell preferred width kind");
+        AssertContains(
+            html,
+            "data-preferred-width-value=\"200\"",
+            "DOC rendered cell preferred width value");
+        AssertContains(
+            html,
             "data-repeat-header=\"true\"",
             "DOC rendered repeating header row");
         AssertContains(
@@ -2094,6 +2295,18 @@ internal static class Program
             html,
             "border-right:1pt solid #123456",
             "DOC rendered sprmTSetBrc border");
+        AssertContains(
+            html,
+            "border-top:1pt solid #00FFFF",
+            "DOC rendered row outer top border fallback");
+        AssertContains(
+            html,
+            "border-left:0.5pt dotted #008080",
+            "DOC rendered row inside vertical border fallback");
+        AssertContains(
+            html,
+            "border-right:1pt solid #800000",
+            "DOC rendered row outer right border fallback");
         AssertContains(
             html,
             "background-color:#AABBCC",
