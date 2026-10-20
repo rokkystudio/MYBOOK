@@ -200,9 +200,12 @@ internal static class Program
             directory,
             "regression.fb2");
 
+        var pngBase64 =
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlQ2ioAAAAASUVORK5CYII=";
+
         File.WriteAllText(
             path,
-            """
+            $$"""
             <?xml version="1.0" encoding="utf-8"?>
             <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"
                          xmlns:xlink="http://www.w3.org/1999/xlink">
@@ -213,16 +216,44 @@ internal static class Program
                     <first-name>Test</first-name>
                     <last-name>Author</last-name>
                   </author>
+                  <coverpage>
+                    <image xlink:href="#cover-image"/>
+                  </coverpage>
                 </title-info>
               </description>
-              <body>
+              <body id="main-body">
                 <section id="chapter-1">
                   <title><p>Regression heading</p></title>
                   <p>
                     FB2 marker
+                    <strong>bold</strong>
+                    <emphasis>italic</emphasis>
+                    <strikethrough>strike</strikethrough>
+                    <sub>sub</sub>
+                    <sup>sup</sup>
+                    <image xlink:href="#inline-image" alt="inline pixel"/>
                     <a xlink:href="#note-1">note link</a>
                     <a xlink:href="javascript:alert(1)">unsafe link</a>
                   </p>
+                  <image id="standalone-image" xlink:href="#inline-image" alt="standalone pixel"/>
+                  <table id="table-1">
+                    <tr>
+                      <th colspan="2">Header</th>
+                    </tr>
+                    <tr>
+                      <td rowspan="2"><p>Cell A</p></td>
+                      <td><p>Cell B</p></td>
+                    </tr>
+                    <tr>
+                      <td><p>Cell C</p></td>
+                    </tr>
+                  </table>
+                </section>
+              </body>
+              <body id="appendix-body">
+                <section id="appendix">
+                  <title><p>Appendix heading</p></title>
+                  <p>Second body marker</p>
                 </section>
               </body>
               <body name="notes">
@@ -230,6 +261,8 @@ internal static class Program
                   <p>Note target</p>
                 </section>
               </body>
+              <binary id="cover-image" content-type="image/png">{{pngBase64}}</binary>
+              <binary id="inline-image" content-type="image/png">{{pngBase64}}</binary>
             </FictionBook>
             """,
             new UTF8Encoding(false));
@@ -241,10 +274,23 @@ internal static class Program
             model.Title,
             "FB2 title");
 
+        Assert(
+            model.Cover != null &&
+            string.Equals(
+                model.Cover.ContentType,
+                "image/png",
+                StringComparison.Ordinal),
+            "FB2 cover binary должен загружаться в DocumentImage.");
+
         AssertContains(
             FlattenText(model),
             "FB2 marker",
             "FB2 model");
+
+        AssertContains(
+            FlattenText(model),
+            "Second body marker",
+            "FB2 multiple body model");
 
         var paragraphs = model.Blocks
             .OfType<DocumentParagraph>()
@@ -262,9 +308,9 @@ internal static class Program
             paragraphs.Any(paragraph =>
                 string.Equals(
                     paragraph.AnchorId,
-                    "note-1",
+                    "appendix",
                     StringComparison.Ordinal)),
-            "FB2 notes section id note-1 должен стать внутренним якорем.");
+            "FB2 второй body должен сохранять section anchors.");
 
         Assert(
             paragraphs.Any(paragraph =>
@@ -275,15 +321,70 @@ internal static class Program
                     StringComparison.Ordinal)),
             "FB2 body name=notes должен помечать note-блоки в модели.");
 
+        var allInlines = paragraphs
+            .SelectMany(paragraph => paragraph.Inlines)
+            .ToArray();
+
         Assert(
-            paragraphs
-                .SelectMany(paragraph => paragraph.Inlines)
-                .Any(inline =>
-                    string.Equals(
-                        inline.LinkHref,
-                        "#note-1",
-                        StringComparison.Ordinal)),
+            allInlines.Any(inline =>
+                inline.Image != null &&
+                string.Equals(
+                    inline.ImageAlt,
+                    "inline pixel",
+                    StringComparison.Ordinal)),
+            "FB2 inline image должен сохраняться в нейтральной модели.");
+
+        Assert(
+            allInlines.Any(inline => inline.Bold && inline.Text.Contains("bold", StringComparison.Ordinal)),
+            "FB2 strong должен сохранять bold formatting.");
+
+        Assert(
+            allInlines.Any(inline => inline.Italic && inline.Text.Contains("italic", StringComparison.Ordinal)),
+            "FB2 emphasis должен сохранять italic formatting.");
+
+        Assert(
+            allInlines.Any(inline => inline.Strikethrough && inline.Text.Contains("strike", StringComparison.Ordinal)),
+            "FB2 strikethrough должен сохранять formatting.");
+
+        Assert(
+            allInlines.Any(inline => inline.Subscript && inline.Text.Contains("sub", StringComparison.Ordinal)),
+            "FB2 sub должен сохранять formatting.");
+
+        Assert(
+            allInlines.Any(inline => inline.Superscript && inline.Text.Contains("sup", StringComparison.Ordinal)),
+            "FB2 sup должен сохранять formatting.");
+
+        Assert(
+            allInlines.Any(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "#note-1",
+                    StringComparison.Ordinal)),
             "FB2 xlink:href должен сохраниться в DocumentInline.");
+
+        var imageBlock = model.Blocks
+            .OfType<DocumentImageBlock>()
+            .SingleOrDefault();
+
+        Assert(
+            imageBlock != null &&
+            string.Equals(
+                imageBlock.AnchorId,
+                "standalone-image",
+                StringComparison.Ordinal),
+            "FB2 standalone image должен сохраняться отдельным block.");
+
+        var table = model.Blocks
+            .OfType<DocumentTable>()
+            .SingleOrDefault();
+
+        Assert(
+            table != null &&
+            table.Rows.Count == 3 &&
+            table.Rows[0].Cells[0].Header &&
+            table.Rows[0].Cells[0].ColumnSpan == 2 &&
+            table.Rows[1].Cells[0].RowSpan == 2,
+            "FB2 table должен сохранять строки, header, colspan и rowspan.");
 
         var html = DocumentHtmlRenderer.Render(
             model,
@@ -298,6 +399,41 @@ internal static class Program
             html,
             "href=\"#anchor-note-1\"",
             "FB2 rendered internal link");
+
+        AssertContains(
+            html,
+            "class=\"inline-image\"",
+            "FB2 rendered inline image");
+
+        AssertContains(
+            html,
+            "class=\"flow-image\"",
+            "FB2 rendered standalone image");
+
+        AssertContains(
+            html,
+            "<table class=\"flow-table\"",
+            "FB2 rendered table");
+
+        AssertContains(
+            html,
+            "colspan=\"2\"",
+            "FB2 rendered colspan");
+
+        AssertContains(
+            html,
+            "rowspan=\"2\"",
+            "FB2 rendered rowspan");
+
+        AssertContains(
+            html,
+            "<s>strike</s>",
+            "FB2 rendered strikethrough");
+
+        AssertContains(
+            html,
+            "<sub>sub</sub>",
+            "FB2 rendered subscript");
 
         Assert(
             !html.Contains(
