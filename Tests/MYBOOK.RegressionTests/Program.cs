@@ -37,6 +37,10 @@ internal static class Program
             ("DOC inline picture", TestDocInlinePicture),
             ("DOC floating shape tables", TestDocFloatingShapeTables),
             ("DOC floating shape image", TestDocFloatingShapeImage),
+            ("DOC header story table", TestDocHeaderStoryTable),
+            ("DOC section table", TestDocSectionTable),
+            ("DOC footnote tables", TestDocFootnoteTables),
+            ("DOC endnote tables", TestDocEndnoteTables),
             ("DOC binary reader", () => TestDocBinaryReader(repositoryRoot)),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
@@ -1051,6 +1055,399 @@ internal static class Program
             html,
             "class=\"inline-image\"",
             "DOC floating shape rendered image");
+    }
+
+    private static void TestDocHeaderStoryTable()
+    {
+        var cps = new[]
+        {
+            0, 0, 0, 0, 0, 0, 0,
+            4, 4, 8, 8, 12, 16,
+            16, 20, 20, 24, 24, 28,
+            0
+        };
+        var plc = new byte[cps.Length * 4];
+
+        for (var index = 0;
+             index < cps.Length;
+             index++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(
+                plc.AsSpan(
+                    index * 4,
+                    4),
+                cps[index]);
+        }
+
+        var stories =
+            DocDocumentReader.ReadHeaderFooterStoryDescriptors(
+                plc,
+                ccpHdd: 29);
+
+        AssertEqual(
+            7,
+            stories.Count,
+            "DOC PlcfHdd non-empty header/footer stories");
+
+        Assert(
+            stories.Any(story =>
+                story.SectionIndex == 0 &&
+                story.Kind == DocumentFlowRegionKind.Header &&
+                story.Variant == DocumentFlowRegionVariant.Even &&
+                story.LocalStart == 0 &&
+                story.ContentLength == 3),
+            "DOC PlcfHdd even header должен исключать guard paragraph.");
+
+        Assert(
+            stories.Any(story =>
+                story.SectionIndex == 0 &&
+                story.Kind == DocumentFlowRegionKind.Footer &&
+                story.Variant == DocumentFlowRegionVariant.First &&
+                story.LocalStart == 12 &&
+                story.ContentLength == 3),
+            "DOC PlcfHdd first footer должен сохранять variant.");
+
+        Assert(
+            stories.Any(story =>
+                story.SectionIndex == 1 &&
+                story.Kind == DocumentFlowRegionKind.Header &&
+                story.Variant == DocumentFlowRegionVariant.Odd &&
+                story.LocalStart == 16 &&
+                story.ContentLength == 3),
+            "DOC PlcfHdd должен сохранять section index для odd header.");
+
+        Assert(
+            stories.Any(story =>
+                story.SectionIndex == 1 &&
+                story.Kind == DocumentFlowRegionKind.Footer &&
+                story.Variant == DocumentFlowRegionVariant.Odd &&
+                story.LocalStart == 20 &&
+                story.ContentLength == 3),
+            "DOC PlcfHdd должен сохранять odd footer второй секции.");
+    }
+
+    private static void TestDocSectionTable()
+    {
+        var cps = new[]
+        {
+            0,
+            5,
+            9
+        };
+        var plc = new byte[
+            cps.Length * 4 +
+            2 * 12];
+
+        for (var index = 0;
+             index < cps.Length;
+             index++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(
+                plc.AsSpan(
+                    index * 4,
+                    4),
+                cps[index]);
+        }
+
+        var sectionBreaks =
+            DocDocumentReader.ReadSectionBreakCps(
+                plc,
+                ccpText: 9);
+
+        Assert(
+            sectionBreaks.SetEquals(
+                new[]
+                {
+                    4
+                }),
+            "DOC PlcfSed должен возвращать CP завершающего 0x0C первой секции.");
+
+        var blocks = DocDocumentReader.BuildParagraphs(
+            "One\r\fTwo\r",
+            sectionBreakCps: sectionBreaks);
+
+        Assert(
+            blocks
+                .OfType<DocumentFlowBreak>()
+                .Count(flowBreak =>
+                    flowBreak.Kind ==
+                    DocumentFlowBreakKind.Section) == 1,
+            "DOC PlcfSed boundary должен превращать 0x0C в section break.");
+
+        Assert(
+            !blocks
+                .OfType<DocumentFlowBreak>()
+                .Any(flowBreak =>
+                    flowBreak.Kind ==
+                    DocumentFlowBreakKind.Page),
+            "DOC section-end 0x0C не должен одновременно считаться page break.");
+    }
+
+    private static void TestDocFootnoteTables()
+    {
+        var referencePlc = new byte[16];
+        var referenceCps = new[]
+        {
+            1,
+            3,
+            6
+        };
+
+        for (var index = 0;
+             index < referenceCps.Length;
+             index++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(
+                referencePlc.AsSpan(
+                    index * 4,
+                    4),
+                referenceCps[index]);
+        }
+
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            referencePlc.AsSpan(
+                12,
+                2),
+            1);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            referencePlc.AsSpan(
+                14,
+                2),
+            0);
+
+        var references =
+            DocDocumentReader.ReadFootnoteReferenceDescriptors(
+                referencePlc,
+                ccpText: 6);
+
+        Assert(
+            references.Count == 2 &&
+            references[0].Cp == 1 &&
+            references[0].NoteIndex == 1 &&
+            references[0].Automatic &&
+            references[1].Cp == 3 &&
+            references[1].NoteIndex == 2 &&
+            !references[1].Automatic,
+            "DOC PlcffndRef должен сохранять CP, ordinal и auto/custom numbering.");
+
+        var textPlc = new byte[16];
+        var textCps = new[]
+        {
+            0,
+            4,
+            8,
+            0
+        };
+
+        for (var index = 0;
+             index < textCps.Length;
+             index++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(
+                textPlc.AsSpan(
+                    index * 4,
+                    4),
+                textCps[index]);
+        }
+
+        var notes =
+            DocDocumentReader.ReadFootnoteTextDescriptors(
+                textPlc,
+                ccpFtn: 9);
+
+        Assert(
+            notes.Count == 2 &&
+            notes[0].NoteIndex == 1 &&
+            notes[0].LocalStart == 0 &&
+            notes[0].ContentLength == 4 &&
+            notes[1].NoteIndex == 2 &&
+            notes[1].LocalStart == 4 &&
+            notes[1].ContentLength == 4,
+            "DOC PlcffndTxt должен сохранять диапазоны footnote stories.");
+
+        var referenceByCp =
+            new Dictionary<int, DocDocumentReader.DocNoteReference>
+            {
+                [1] = references[0]
+            };
+
+        var blocks = DocDocumentReader.BuildParagraphs(
+            "A\u0002B\r",
+            noteReferences: referenceByCp);
+        var link = blocks
+            .OfType<DocumentParagraph>()
+            .SelectMany(paragraph => paragraph.Inlines)
+            .SingleOrDefault(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "#doc-footnote-1",
+                    StringComparison.Ordinal));
+
+        Assert(
+            link != null &&
+            link.Superscript &&
+            string.Equals(
+                link.Text,
+                "1",
+                StringComparison.Ordinal),
+            "DOC U+0002 footnote reference должен стать superscript-ссылкой.");
+
+        var html = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC footnote",
+                Blocks =
+                [
+                    .. blocks,
+                    new DocumentParagraph
+                    {
+                        AnchorId = "doc-footnote-1",
+                        IsNote = true,
+                        Inlines =
+                        [
+                            new DocumentInline
+                            {
+                                Text = "Footnote marker"
+                            }
+                        ]
+                    }
+                ]
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "href=\"#anchor-doc-footnote-1\"",
+            "DOC rendered footnote reference");
+
+        AssertContains(
+            html,
+            "id=\"anchor-doc-footnote-1\"",
+            "DOC rendered footnote anchor");
+    }
+
+    private static void TestDocEndnoteTables()
+    {
+        var referencePlc = new byte[10];
+        BinaryPrimitives.WriteInt32LittleEndian(
+            referencePlc.AsSpan(
+                0,
+                4),
+            2);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            referencePlc.AsSpan(
+                4,
+                4),
+            6);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            referencePlc.AsSpan(
+                8,
+                2),
+            1);
+
+        var references =
+            DocDocumentReader.ReadEndnoteReferenceDescriptors(
+                referencePlc,
+                ccpText: 6);
+
+        Assert(
+            references.Count == 1 &&
+            references[0].Cp == 2 &&
+            references[0].NoteIndex == 1 &&
+            references[0].Automatic &&
+            references[0].Endnote,
+            "DOC PlcfendRef должен сохранять endnote reference descriptor.");
+
+        var textPlc = new byte[12];
+        var textCps = new[]
+        {
+            0,
+            4,
+            0
+        };
+
+        for (var index = 0;
+             index < textCps.Length;
+             index++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(
+                textPlc.AsSpan(
+                    index * 4,
+                    4),
+                textCps[index]);
+        }
+
+        var notes =
+            DocDocumentReader.ReadEndnoteTextDescriptors(
+                textPlc,
+                ccpEdn: 5);
+
+        Assert(
+            notes.Count == 1 &&
+            notes[0].NoteIndex == 1 &&
+            notes[0].LocalStart == 0 &&
+            notes[0].ContentLength == 4,
+            "DOC PlcfendTxt должен сохранять диапазон endnote story.");
+
+        var referenceByCp =
+            new Dictionary<int, DocDocumentReader.DocNoteReference>
+            {
+                [2] = references[0]
+            };
+
+        var blocks = DocDocumentReader.BuildParagraphs(
+            "AB\u0002C\r",
+            noteReferences: referenceByCp);
+        var link = blocks
+            .OfType<DocumentParagraph>()
+            .SelectMany(paragraph => paragraph.Inlines)
+            .SingleOrDefault(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "#doc-endnote-1",
+                    StringComparison.Ordinal));
+
+        Assert(
+            link != null &&
+            link.Superscript &&
+            string.Equals(
+                link.Text,
+                "1",
+                StringComparison.Ordinal),
+            "DOC U+0002 endnote reference должен стать superscript-ссылкой.");
+
+        var html = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC endnote",
+                Blocks =
+                [
+                    .. blocks,
+                    new DocumentParagraph
+                    {
+                        AnchorId = "doc-endnote-1",
+                        IsNote = true,
+                        Inlines =
+                        [
+                            new DocumentInline
+                            {
+                                Text = "Endnote marker"
+                            }
+                        ]
+                    }
+                ]
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "href=\"#anchor-doc-endnote-1\"",
+            "DOC rendered endnote reference");
+
+        AssertContains(
+            html,
+            "id=\"anchor-doc-endnote-1\"",
+            "DOC rendered endnote anchor");
     }
 
     private static void TestDocBinaryReader(string repositoryRoot)
@@ -2305,7 +2702,9 @@ internal static class Program
                     </w:p>
                     <w:sectPr>
                       <w:headerReference w:type="default" r:id="rIdHeader"/>
+                      <w:headerReference w:type="even" r:id="rIdHeaderEven"/>
                       <w:footerReference w:type="default" r:id="rIdFooter"/>
+                      <w:footerReference w:type="first" r:id="rIdFooterFirst"/>
                     </w:sectPr>
                   </w:body>
                 </w:document>
@@ -2334,6 +2733,12 @@ internal static class Program
                   <Relationship Id="rIdFooter"
                                 Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"
                                 Target="footer1.xml" />
+                  <Relationship Id="rIdHeaderEven"
+                                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"
+                                Target="headerEven.xml" />
+                  <Relationship Id="rIdFooterFirst"
+                                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"
+                                Target="footerFirst.xml" />
                   <Relationship Id="rIdOle"
                                 Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject"
                                 Target="embeddings/oleObject1.bin" />
@@ -2401,6 +2806,26 @@ internal static class Program
                 <?xml version="1.0" encoding="utf-8"?>
                 <w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
                   <w:p><w:r><w:t>Footer marker</w:t></w:r></w:p>
+                </w:ftr>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "word/headerEven.xml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:p><w:r><w:t>Even header marker</w:t></w:r></w:p>
+                </w:hdr>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "word/footerFirst.xml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:p><w:r><w:t>First footer marker</w:t></w:r></w:p>
                 </w:ftr>
                 """);
 
@@ -2589,6 +3014,41 @@ internal static class Program
             "DOCX footer part должен сохраняться как footer region.");
 
         Assert(
+            regions.Any(region =>
+                region.Kind == DocumentFlowRegionKind.Header &&
+                region.Variant == DocumentFlowRegionVariant.Default &&
+                region.SectionIndex == 0),
+            "DOCX default header должен сохранять variant и section index.");
+
+        Assert(
+            regions.Any(region =>
+                region.Kind == DocumentFlowRegionKind.Header &&
+                region.Variant == DocumentFlowRegionVariant.Even &&
+                region.SectionIndex == 0 &&
+                region.Blocks
+                    .OfType<DocumentParagraph>()
+                    .SelectMany(paragraph => paragraph.Inlines)
+                    .Any(inline =>
+                        inline.Text.Contains(
+                            "Even header marker",
+                            StringComparison.Ordinal))),
+            "DOCX even header должен сохраняться как Even region.");
+
+        Assert(
+            regions.Any(region =>
+                region.Kind == DocumentFlowRegionKind.Footer &&
+                region.Variant == DocumentFlowRegionVariant.First &&
+                region.SectionIndex == 0 &&
+                region.Blocks
+                    .OfType<DocumentParagraph>()
+                    .SelectMany(paragraph => paragraph.Inlines)
+                    .Any(inline =>
+                        inline.Text.Contains(
+                            "First footer marker",
+                            StringComparison.Ordinal))),
+            "DOCX first footer должен сохраняться как First region.");
+
+        Assert(
             model.Blocks
                 .OfType<DocumentFlowBreak>()
                 .Count(flowBreak =>
@@ -2658,6 +3118,21 @@ internal static class Program
             html,
             "flow-region-footer",
             "DOCX rendered footer region");
+
+        AssertContains(
+            html,
+            "flow-region-even",
+            "DOCX rendered even region");
+
+        AssertContains(
+            html,
+            "flow-region-first",
+            "DOCX rendered first region");
+
+        AssertContains(
+            html,
+            "data-section-index=\"0\"",
+            "DOCX rendered region section index");
 
         AssertContains(
             html,
