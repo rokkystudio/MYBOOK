@@ -40,6 +40,7 @@ internal static class Program
             ("DOC header story table", TestDocHeaderStoryTable),
             ("DOC section table", TestDocSectionTable),
             ("DOC paragraph properties", TestDocParagraphProperties),
+            ("DOC table definition", TestDocTableDefinition),
             ("DOC footnote tables", TestDocFootnoteTables),
             ("DOC endnote tables", TestDocEndnoteTables),
             ("DOC binary reader", () => TestDocBinaryReader(repositoryRoot)),
@@ -1483,6 +1484,293 @@ internal static class Program
             html,
             "direction:rtl",
             "DOC rendered bidi paragraph");
+    }
+
+    private static void TestDocTableDefinition()
+    {
+        const int columnCount = 3;
+        const int tc80Size = 20;
+        var operand = new byte[
+            2 +
+            1 +
+            (columnCount + 1) * 2 +
+            columnCount * tc80Size];
+
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            operand.AsSpan(
+                0,
+                2),
+            checked((ushort)(
+                operand.Length -
+                1)));
+        operand[2] =
+            columnCount;
+
+        var boundaries = new short[]
+        {
+            0,
+            1000,
+            2200,
+            3600
+        };
+
+        for (var index = 0;
+             index < boundaries.Length;
+             index++)
+        {
+            BinaryPrimitives.WriteInt16LittleEndian(
+                operand.AsSpan(
+                    3 +
+                    index * 2,
+                    2),
+                boundaries[index]);
+        }
+
+        var tc80Offset =
+            3 +
+            boundaries.Length * 2;
+
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            operand.AsSpan(
+                tc80Offset,
+                2),
+            0x0002);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            operand.AsSpan(
+                tc80Offset +
+                tc80Size,
+                2),
+            0x0001);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            operand.AsSpan(
+                tc80Offset +
+                2 * tc80Size,
+                2),
+            0x0060);
+
+        var definition =
+            DocDocumentReader.ReadTableDefinition(
+                operand);
+
+        Assert(
+            definition.Cells.Count == 3 &&
+            definition.Cells[0].LeftTwips == 0 &&
+            definition.Cells[0].RightTwips == 1000 &&
+            definition.Cells[0].WidthPoints == 50 &&
+            definition.Cells[0].HorizontalMerge == 2 &&
+            definition.Cells[1].LeftTwips == 1000 &&
+            definition.Cells[1].RightTwips == 2200 &&
+            definition.Cells[1].WidthPoints == 60 &&
+            definition.Cells[1].HorizontalMerge == 1 &&
+            definition.Cells[2].LeftTwips == 2200 &&
+            definition.Cells[2].RightTwips == 3600 &&
+            definition.Cells[2].WidthPoints == 70 &&
+            definition.Cells[2].VerticalMerge == 3,
+            "DOC sprmTDefTable должен сохранять cell boundaries, widths и TC80 merge flags.");
+
+        var grpprl = new List<byte>();
+
+        void AddSprm(
+            ushort sprm,
+            ReadOnlySpan<byte> sprmOperand)
+        {
+            grpprl.Add(
+                (byte)(sprm & 0xFF));
+            grpprl.Add(
+                (byte)(sprm >> 8));
+            grpprl.AddRange(
+                sprmOperand.ToArray());
+        }
+
+        AddSprm(
+            0xD608,
+            operand);
+        AddSprm(
+            0x5625,
+            new byte[]
+            {
+                0,
+                2
+            });
+        AddSprm(
+            0x5624,
+            new byte[]
+            {
+                1,
+                3
+            });
+        AddSprm(
+            0xD62B,
+            new byte[]
+            {
+                2,
+                0,
+                3
+            });
+
+        var paragraphFormatting =
+            new DocDocumentReader.DocParagraphFormatting();
+
+        DocDocumentReader.ReadParagraphGrpprl(
+            grpprl.ToArray(),
+            paragraphFormatting);
+
+        var overridden =
+            paragraphFormatting.TableDefinition
+            ?? throw new InvalidOperationException(
+                "DOC table SPRM должны сохранять TableDefinition.");
+
+        Assert(
+            overridden.Cells[0].HorizontalMerge == 0 &&
+            overridden.Cells[0].VerticalMerge == 3 &&
+            overridden.Cells[1].HorizontalMerge == 2 &&
+            overridden.Cells[2].HorizontalMerge == 1,
+            "DOC sprmTSplit/sprmTMerge/sprmTVertMerge должны переопределять TC80 merge flags.");
+
+        static DocumentTableCell RawCell(
+            string text)
+        {
+            return new DocumentTableCell
+            {
+                Inlines =
+                [
+                    new DocumentInline
+                    {
+                        Text = text
+                    }
+                ]
+            };
+        }
+
+        var previousRows =
+            new List<DocumentTableRow>();
+        var verticalOrigins =
+            new Dictionary<int, DocDocumentReader.DocVerticalMergeOrigin>();
+
+        var firstRow =
+            DocDocumentReader.ApplyTableDefinitionToRow(
+                previousRows,
+                new[]
+                {
+                    RawCell("A"),
+                    RawCell("B"),
+                    RawCell("ignored")
+                },
+                overridden,
+                verticalOrigins);
+        previousRows.Add(
+            firstRow);
+
+        Assert(
+            firstRow.Cells.Count == 2 &&
+            firstRow.Cells[0].RowSpan == 1 &&
+            firstRow.Cells[0].WidthPoints == 50 &&
+            firstRow.Cells[1].ColumnSpan == 2 &&
+            firstRow.Cells[1].WidthPoints == 130 &&
+            firstRow.Cells[1].Inlines.Any(inline =>
+                inline.Text == "B"),
+            "DOC table row conversion должен применять horizontal merge и суммировать widths.");
+
+        var secondDefinition =
+            new DocDocumentReader.DocTableDefinition(
+                new[]
+                {
+                    overridden.Cells[0] with
+                    {
+                        VerticalMerge = 1
+                    },
+                    overridden.Cells[1] with
+                    {
+                        HorizontalMerge = 0
+                    },
+                    overridden.Cells[2] with
+                    {
+                        HorizontalMerge = 0
+                    }
+                });
+
+        var secondRow =
+            DocDocumentReader.ApplyTableDefinitionToRow(
+                previousRows,
+                new[]
+                {
+                    RawCell("ignored vertical"),
+                    RawCell("D"),
+                    RawCell("E")
+                },
+                secondDefinition,
+                verticalOrigins);
+        previousRows.Add(
+            secondRow);
+
+        Assert(
+            previousRows[0].Cells[0].RowSpan == 2 &&
+            secondRow.Cells.Count == 2 &&
+            secondRow.Cells.All(cell =>
+                cell.Inlines.All(inline =>
+                    inline.Text != "ignored vertical")),
+            "DOC vertical merge continuation должен увеличивать RowSpan и не рендерить собственное содержимое.");
+
+        var html =
+            DocumentHtmlRenderer.Render(
+                new DocumentModel
+                {
+                    Title =
+                        "DOC table definition",
+                    Blocks =
+                    [
+                        new DocumentTable
+                        {
+                            Rows =
+                            [
+                                new DocumentTableRow
+                                {
+                                    Cells =
+                                    [
+                                        new DocumentTableCell
+                                        {
+                                            Inlines =
+                                            [
+                                                new DocumentInline
+                                                {
+                                                    Text = "Merged cell"
+                                                }
+                                            ],
+                                            ColumnSpan = 2,
+                                            RowSpan = 2,
+                                            WidthPoints = 110
+                                        },
+                                        new DocumentTableCell
+                                        {
+                                            Inlines =
+                                            [
+                                                new DocumentInline
+                                                {
+                                                    Text = "Third cell"
+                                                }
+                                            ],
+                                            WidthPoints = 70
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "colspan=\"2\"",
+            "DOC rendered table horizontal merge");
+        AssertContains(
+            html,
+            "rowspan=\"2\"",
+            "DOC rendered table vertical merge");
+        AssertContains(
+            html,
+            "style=\"width:110pt\"",
+            "DOC rendered merged table width");
     }
 
     private static void TestDocFootnoteTables()
