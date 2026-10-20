@@ -8,10 +8,10 @@
         <UseWPF>true</UseWPF>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
         <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-        <Version>1.0.46</Version>
-        <AssemblyVersion>1.0.46.0</AssemblyVersion>
-        <FileVersion>1.0.46.0</FileVersion>
-        <InformationalVersion>1.0.46</InformationalVersion>
+        <Version>1.0.47</Version>
+        <AssemblyVersion>1.0.47.0</AssemblyVersion>
+        <FileVersion>1.0.47.0</FileVersion>
+        <InformationalVersion>1.0.47</InformationalVersion>
     </PropertyGroup>
 
     <ItemGroup>

@@ -1170,6 +1170,9 @@ internal static class Program
             directory,
             "regression.docx");
 
+        var pngBytes = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlQ2ioAAAAASUVORK5CYII=");
+
         using (var archive = ZipFile.Open(
                    path,
                    ZipArchiveMode.Create))
@@ -1180,7 +1183,8 @@ internal static class Program
                 """
                 <?xml version="1.0" encoding="utf-8"?>
                 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-                            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+                            xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
                   <w:body>
                     <w:p>
                       <w:bookmarkStart w:id="0" w:name="target" />
@@ -1202,6 +1206,42 @@ internal static class Program
                         <w:r><w:t>Unsafe link</w:t></w:r>
                       </w:hyperlink>
                     </w:p>
+                    <w:p>
+                      <w:pPr><w:pStyle w:val="DerivedStyle"/></w:pPr>
+                      <w:r><w:t>Styled text</w:t></w:r>
+                    </w:p>
+                    <w:p>
+                      <w:pPr>
+                        <w:numPr>
+                          <w:ilvl w:val="0"/>
+                          <w:numId w:val="7"/>
+                        </w:numPr>
+                      </w:pPr>
+                      <w:r><w:t>List item</w:t></w:r>
+                    </w:p>
+                    <w:p>
+                      <w:r>
+                        <w:drawing>
+                          <a:graphic>
+                            <a:graphicData>
+                              <a:blip r:embed="rIdImage"/>
+                            </a:graphicData>
+                          </a:graphic>
+                        </w:drawing>
+                      </w:r>
+                    </w:p>
+                    <w:tbl>
+                      <w:tr>
+                        <w:tc>
+                          <w:tcPr><w:gridSpan w:val="2"/></w:tcPr>
+                          <w:p><w:r><w:t>Table header</w:t></w:r></w:p>
+                        </w:tc>
+                      </w:tr>
+                      <w:tr>
+                        <w:tc><w:p><w:r><w:t>Cell A</w:t></w:r></w:p></w:tc>
+                        <w:tc><w:p><w:r><w:t>Cell B</w:t></w:r></w:p></w:tc>
+                      </w:tr>
+                    </w:tbl>
                   </w:body>
                 </w:document>
                 """);
@@ -1220,8 +1260,55 @@ internal static class Program
                                 Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
                                 Target="file:///C:/secret.txt"
                                 TargetMode="External" />
+                  <Relationship Id="rIdImage"
+                                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+                                Target="media/image1.png" />
                 </Relationships>
                 """);
+
+            WriteZipEntry(
+                archive,
+                "word/styles.xml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:style w:type="paragraph" w:styleId="BaseStyle">
+                    <w:rPr>
+                      <w:b/>
+                      <w:i/>
+                    </w:rPr>
+                  </w:style>
+                  <w:style w:type="paragraph" w:styleId="DerivedStyle">
+                    <w:basedOn w:val="BaseStyle"/>
+                    <w:rPr>
+                      <w:u w:val="single"/>
+                    </w:rPr>
+                  </w:style>
+                </w:styles>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "word/numbering.xml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:abstractNum w:abstractNumId="1">
+                    <w:lvl w:ilvl="0">
+                      <w:numFmt w:val="bullet"/>
+                      <w:lvlText w:val="•"/>
+                    </w:lvl>
+                  </w:abstractNum>
+                  <w:num w:numId="7">
+                    <w:abstractNumId w:val="1"/>
+                  </w:num>
+                </w:numbering>
+                """);
+
+            WriteZipBytes(
+                archive,
+                "word/media/image1.png",
+                pngBytes);
         }
 
         var model = SupportedFormatRegistry.ReadDocument(path);
@@ -1270,6 +1357,52 @@ internal static class Program
                     StringComparison.OrdinalIgnoreCase) == true),
             "DOCX file: hyperlink не должен попадать в нейтральную модель.");
 
+        var styledInline = paragraphs
+            .SelectMany(paragraph => paragraph.Inlines)
+            .FirstOrDefault(inline =>
+                inline.Text.Contains(
+                    "Styled text",
+                    StringComparison.Ordinal));
+
+        Assert(
+            styledInline != null &&
+            styledInline.Bold &&
+            styledInline.Italic &&
+            styledInline.Underline,
+            "DOCX style inheritance должен объединять basedOn и direct style formatting.");
+
+        Assert(
+            paragraphs
+                .SelectMany(paragraph => paragraph.Inlines)
+                .Any(inline =>
+                    inline.Text.Contains(
+                        "• List item",
+                        StringComparison.Ordinal)),
+            "DOCX numbering.xml bullet должен попасть в текстовую модель.");
+
+        Assert(
+            paragraphs
+                .SelectMany(paragraph => paragraph.Inlines)
+                .Any(inline =>
+                    inline.Image != null &&
+                    string.Equals(
+                        inline.Image.ContentType,
+                        "image/png",
+                        StringComparison.Ordinal)),
+            "DOCX image relationship должен загрузить встроенное изображение.");
+
+        var table = model.Blocks
+            .OfType<DocumentTable>()
+            .SingleOrDefault();
+
+        Assert(
+            table != null &&
+            table.Rows.Count == 2 &&
+            table.Rows[0].Cells.Count == 1 &&
+            table.Rows[0].Cells[0].ColumnSpan == 2 &&
+            table.Rows[1].Cells.Count == 2,
+            "DOCX table должен сохранять строки, ячейки и gridSpan.");
+
         var html = DocumentHtmlRenderer.Render(
             model,
             CreateRenderTheme());
@@ -1288,6 +1421,21 @@ internal static class Program
             html,
             "href=\"https://example.com/docx\"",
             "DOCX external rendered link");
+
+        AssertContains(
+            html,
+            "class=\"inline-image\"",
+            "DOCX rendered image");
+
+        AssertContains(
+            html,
+            "<table class=\"flow-table\"",
+            "DOCX rendered table");
+
+        AssertContains(
+            html,
+            "colspan=\"2\"",
+            "DOCX rendered table span");
 
         Assert(
             !html.Contains(
