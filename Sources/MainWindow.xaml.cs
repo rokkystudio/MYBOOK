@@ -245,7 +245,9 @@ public partial class MainWindow : Window
 
                 UpdateNavigationPanel(document);
 
-                var html = DocumentHtmlRenderer.Render(document, settings_.Theme);
+                var html = DocumentHtmlRenderer.Render(
+                    document,
+                    ThemeService.CreateDocumentRenderTheme(settings_.Theme));
                 var htmlPath = GetReaderHtmlPath();
 
                 File.WriteAllText(
@@ -339,7 +341,8 @@ public partial class MainWindow : Window
         if (generatedDocumentOpen_ && readerInitialized_ && Reader.CoreWebView2 != null)
         {
             await Reader.CoreWebView2.ExecuteScriptAsync(
-                DocumentHtmlRenderer.CreateThemeScript(settings_.Theme));
+                DocumentHtmlRenderer.CreateThemeScript(
+                    ThemeService.CreateDocumentRenderTheme(settings_.Theme)));
         }
     }
 

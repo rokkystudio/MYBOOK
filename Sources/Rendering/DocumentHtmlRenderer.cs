@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using MYBOOK.Documents;
-using NeoUI;
 
 namespace MYBOOK.Rendering;
 
@@ -14,12 +13,11 @@ namespace MYBOOK.Rendering;
 internal static class DocumentHtmlRenderer
 {
     /// <summary>
-    /// Создаёт HTML-документ с общей типографикой, темой NeoUI,
+    /// Создаёт HTML-документ с общей типографикой, нейтральной цветовой палитрой,
     /// обложкой, потоковыми блоками и фиксированными страницами.
     /// </summary>
-    public static string Render(DocumentModel document, string theme)
+    public static string Render(DocumentModel document, DocumentRenderTheme palette)
     {
-        var palette = NeoThemePalettes.Get(theme);
         var html = new StringBuilder(Math.Max(4096, document.Blocks.Count * 128));
 
         html.Append("""
@@ -210,12 +208,11 @@ a { color: var(--primary); }
     }
 
     /// <summary>
-    /// Создаёт JavaScript для обновления цветов уже открытой сгенерированной страницы.
+    /// Создаёт JavaScript для обновления нейтральной цветовой палитры
+    /// уже открытой сгенерированной страницы.
     /// </summary>
-    public static string CreateThemeScript(string theme)
+    public static string CreateThemeScript(DocumentRenderTheme palette)
     {
-        var palette = NeoThemePalettes.Get(theme);
-
         return "document.documentElement.style.setProperty('--background','" + palette.Background + "');" +
                "document.documentElement.style.setProperty('--surface','" + palette.Surface + "');" +
                "document.documentElement.style.setProperty('--text','" + palette.Text + "');" +

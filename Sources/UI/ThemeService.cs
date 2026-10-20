@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
+using MYBOOK.Rendering;
 using NeoUI;
 
 namespace MYBOOK.UI;
@@ -30,6 +31,24 @@ internal static class ThemeService
         Set(application, "TitleBarBorderBrush", palette.TitleBarBorder);
         Set(application, "ButtonHoverBrush", WithAlpha(palette.Primary, 0x14));
         Set(application, "ButtonPressedBrush", WithAlpha(palette.Primary, 0x26));
+    }
+
+    /// <summary>
+    /// Создаёт нейтральную палитру рендера документа из выбранной палитры оболочки приложения.
+    /// </summary>
+    public static DocumentRenderTheme CreateDocumentRenderTheme(string theme)
+    {
+        var palette = NeoThemePalettes.Get(theme);
+
+        return new DocumentRenderTheme
+        {
+            Background = palette.Background,
+            Surface = palette.Surface,
+            Text = palette.Text,
+            MutedText = palette.MutedText,
+            Border = palette.Border,
+            Primary = palette.Primary
+        };
     }
 
     private static void Set(Application application, string key, string value)

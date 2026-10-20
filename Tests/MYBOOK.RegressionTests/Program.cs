@@ -286,7 +286,7 @@ internal static class Program
 
         var html = DocumentHtmlRenderer.Render(
             model,
-            "Light");
+            CreateRenderTheme());
 
         AssertContains(
             html,
@@ -1135,7 +1135,7 @@ internal static class Program
 
         var html = DocumentHtmlRenderer.Render(
             model,
-            "Light");
+            CreateRenderTheme());
 
         AssertContains(
             html,
@@ -1474,6 +1474,19 @@ internal static class Program
 
         throw new DirectoryNotFoundException(
             "Не удалось найти корень репозитория MYBOOK.");
+    }
+
+    private static DocumentRenderTheme CreateRenderTheme()
+    {
+        return new DocumentRenderTheme
+        {
+            Background = "#FFFFFF",
+            Surface = "#F7F7F7",
+            Text = "#111111",
+            MutedText = "#666666",
+            Border = "#DADADA",
+            Primary = "#3367D6"
+        };
     }
 
     private static void AssertContains(
