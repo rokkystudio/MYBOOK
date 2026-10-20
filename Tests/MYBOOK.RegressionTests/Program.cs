@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -32,6 +33,7 @@ internal static class Program
             ("RTF reader", () => TestRtfReader(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
+            ("DOC inline picture", TestDocInlinePicture),
             ("DOC binary reader", () => TestDocBinaryReader(repositoryRoot)),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
@@ -485,6 +487,73 @@ internal static class Program
                 "href=\"file:",
                 StringComparison.OrdinalIgnoreCase),
             "DOC renderer не должен выпускать unsafe file: hyperlink.");
+    }
+
+    private static void TestDocInlinePicture()
+    {
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlQ2ioAAAAASUVORK5CYII=");
+
+        var recordLength =
+            17 +
+            png.Length;
+        var totalLength =
+            68 +
+            8 +
+            recordLength;
+        var data = new byte[totalLength];
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            data.AsSpan(
+                0,
+                4),
+            totalLength);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(
+                4,
+                2),
+            0x44);
+
+        var recordOffset = 68;
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(
+                recordOffset,
+                2),
+            0x6E00);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(
+                recordOffset + 2,
+                2),
+            0xF01E);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(
+                recordOffset + 4,
+                4),
+            (uint)recordLength);
+
+        var payloadOffset =
+            recordOffset +
+            8;
+        data[payloadOffset + 16] =
+            0xFF;
+        png.CopyTo(
+            data,
+            payloadOffset + 17);
+
+        var image = DocDocumentReader.ReadInlinePicture(
+            data,
+            0)
+            ?? throw new InvalidOperationException(
+                "DOC inline picture parser должен вернуть PNG image.");
+
+        AssertEqual(
+            "image/png",
+            image.ContentType,
+            "DOC inline picture content type");
+
+        Assert(
+            image.Data.SequenceEqual(png),
+            "DOC inline picture parser должен вернуть исходные PNG bytes.");
     }
 
     private static void TestDocBinaryReader(string repositoryRoot)
