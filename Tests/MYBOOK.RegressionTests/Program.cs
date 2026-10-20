@@ -184,6 +184,7 @@ internal static class Program
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
             \trowd\intbl Cell A\cell Cell B\cell\row
+            \trowd\clmgf\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
             \pard
             {\pict\pngblip 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
             }
@@ -314,11 +315,12 @@ internal static class Program
 
         var table = model.Blocks
             .OfType<DocumentTable>()
-            .SingleOrDefault();
+            .SingleOrDefault()
+            ?? throw new InvalidOperationException(
+                "RTF table controls должны создавать DocumentTable.");
 
         Assert(
-            table != null &&
-            table.Rows.Count == 1 &&
+            table.Rows.Count == 2 &&
             table.Rows[0].Cells.Count == 2 &&
             table.Rows[0].Cells[0].Inlines.Any(inline =>
                 inline.Text.Contains(
@@ -329,6 +331,15 @@ internal static class Program
                     "Cell B",
                     StringComparison.Ordinal)),
             "RTF table controls должны сохранять строки и ячейки.");
+
+        Assert(
+            table.Rows[1].Cells.Count == 1 &&
+            table.Rows[1].Cells[0].ColumnSpan == 2 &&
+            table.Rows[1].Cells[0].Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "Merged RTF cell",
+                    StringComparison.Ordinal)),
+            "RTF clmgf/clmrg должны сохраняться как ColumnSpan.");
 
         Assert(
             model.Blocks
