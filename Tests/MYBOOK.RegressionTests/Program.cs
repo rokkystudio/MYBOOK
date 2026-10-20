@@ -35,6 +35,7 @@ internal static class Program
             ("DOC field model", TestDocFieldModel),
             ("DOC inline picture", TestDocInlinePicture),
             ("DOC floating shape tables", TestDocFloatingShapeTables),
+            ("DOC floating shape image", TestDocFloatingShapeImage),
             ("DOC binary reader", () => TestDocBinaryReader(repositoryRoot)),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
@@ -695,6 +696,241 @@ internal static class Program
             shapeIds.SetEquals(
                 [shapeId]),
             "DOC DggInfo parser должен находить OfficeArtFSP.spid.");
+    }
+
+    private static void TestDocFloatingShapeImage()
+    {
+        const int shapeId = 2048;
+
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlQ2ioAAAAASUVORK5CYII=");
+
+        var blipPayloadLength =
+            17 +
+            png.Length;
+        var blipRecord = new byte[
+            8 +
+            blipPayloadLength];
+
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            blipRecord.AsSpan(
+                0,
+                2),
+            0x6E00);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            blipRecord.AsSpan(
+                2,
+                2),
+            0xF01E);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            blipRecord.AsSpan(
+                4,
+                4),
+            (uint)blipPayloadLength);
+        blipRecord[8 + 16] =
+            0xFF;
+        png.CopyTo(
+            blipRecord,
+            8 + 17);
+
+        var fbsePayload = new byte[
+            36 +
+            blipRecord.Length];
+        blipRecord.CopyTo(
+            fbsePayload,
+            36);
+
+        var fbseRecord = new byte[
+            8 +
+            fbsePayload.Length];
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            fbseRecord.AsSpan(
+                0,
+                2),
+            0x0062);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            fbseRecord.AsSpan(
+                2,
+                2),
+            0xF007);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            fbseRecord.AsSpan(
+                4,
+                4),
+            (uint)fbsePayload.Length);
+        fbsePayload.CopyTo(
+            fbseRecord,
+            8);
+
+        var bstore = new byte[
+            8 +
+            fbseRecord.Length];
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            bstore.AsSpan(
+                0,
+                2),
+            0x001F);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            bstore.AsSpan(
+                2,
+                2),
+            0xF001);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            bstore.AsSpan(
+                4,
+                4),
+            (uint)fbseRecord.Length);
+        fbseRecord.CopyTo(
+            bstore,
+            8);
+
+        var fsp = new byte[16];
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            fsp.AsSpan(
+                0,
+                2),
+            0x0012);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            fsp.AsSpan(
+                2,
+                2),
+            0xF00A);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            fsp.AsSpan(
+                4,
+                4),
+            8);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            fsp.AsSpan(
+                8,
+                4),
+            shapeId);
+
+        var fopt = new byte[14];
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            fopt.AsSpan(
+                0,
+                2),
+            0x0013);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            fopt.AsSpan(
+                2,
+                2),
+            0xF00B);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            fopt.AsSpan(
+                4,
+                4),
+            6);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            fopt.AsSpan(
+                8,
+                2),
+            0x4104);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            fopt.AsSpan(
+                10,
+                4),
+            1);
+
+        var spContainer = new byte[
+            8 +
+            fsp.Length +
+            fopt.Length];
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            spContainer.AsSpan(
+                0,
+                2),
+            0x000F);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            spContainer.AsSpan(
+                2,
+                2),
+            0xF004);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            spContainer.AsSpan(
+                4,
+                4),
+            (uint)(fsp.Length + fopt.Length));
+        fsp.CopyTo(
+            spContainer,
+            8);
+        fopt.CopyTo(
+            spContainer,
+            8 + fsp.Length);
+
+        var dgg = new byte[
+            bstore.Length +
+            spContainer.Length];
+        bstore.CopyTo(
+            dgg,
+            0);
+        spContainer.CopyTo(
+            dgg,
+            bstore.Length);
+
+        var images = DocDocumentReader.ReadOfficeArtShapeImages(
+            dgg,
+            0,
+            dgg.Length);
+
+        Assert(
+            images.TryGetValue(
+                shapeId,
+                out var image),
+            "DOC floating shape FOPT.pib должен разрешаться через BStore.");
+
+        AssertEqual(
+            "image/png",
+            image!.ContentType,
+            "DOC floating shape image content type");
+
+        Assert(
+            image.Data.SequenceEqual(png),
+            "DOC floating shape должен возвращать исходные PNG bytes из FBSE/BLIP.");
+
+        var blocks = DocDocumentReader.BuildParagraphs(
+            "\u0008\r",
+            [
+                new DocDocumentReader.DocFloatingShapeAnchor(
+                    0,
+                    shapeId,
+                    0,
+                    0,
+                    1440,
+                    1440,
+                    0,
+                    0,
+                    2,
+                    0,
+                    false,
+                    false)
+            ],
+            images);
+
+        var floatingInline = blocks
+            .OfType<DocumentParagraph>()
+            .SelectMany(paragraph => paragraph.Inlines)
+            .SingleOrDefault(inline =>
+                inline.Image != null);
+
+        Assert(
+            floatingInline?.Image != null &&
+            floatingInline.Image.Data.SequenceEqual(png),
+            "DOC U+0008 anchor должен вставлять разрешённый floating raster image в reflow model.");
+
+        var html = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC floating shape",
+                Blocks = blocks
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "class=\"inline-image\"",
+            "DOC floating shape rendered image");
     }
 
     private static void TestDocBinaryReader(string repositoryRoot)
