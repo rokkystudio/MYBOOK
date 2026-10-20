@@ -34,6 +34,7 @@ internal static class Program
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
             ("DOC inline picture", TestDocInlinePicture),
+            ("DOC floating shape tables", TestDocFloatingShapeTables),
             ("DOC binary reader", () => TestDocBinaryReader(repositoryRoot)),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
@@ -554,6 +555,146 @@ internal static class Program
         Assert(
             image.Data.SequenceEqual(png),
             "DOC inline picture parser должен вернуть исходные PNG bytes.");
+    }
+
+    private static void TestDocFloatingShapeTables()
+    {
+        const int shapeId = 1024;
+        const int ccpText = 10;
+
+        var plc = new byte[34];
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            plc.AsSpan(
+                0,
+                4),
+            2);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            plc.AsSpan(
+                4,
+                4),
+            3);
+
+        var spaOffset = 8;
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            plc.AsSpan(
+                spaOffset,
+                4),
+            shapeId);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            plc.AsSpan(
+                spaOffset + 4,
+                4),
+            720);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            plc.AsSpan(
+                spaOffset + 8,
+                4),
+            1440);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            plc.AsSpan(
+                spaOffset + 12,
+                4),
+            2160);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            plc.AsSpan(
+                spaOffset + 16,
+                4),
+            2880);
+
+        const ushort flags =
+            (1 << 1) |
+            (2 << 3) |
+            (2 << 5) |
+            (1 << 9) |
+            0x4000 |
+            0x8000;
+
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            plc.AsSpan(
+                spaOffset + 20,
+                2),
+            flags);
+
+        var shapes = DocDocumentReader.ReadMainDocumentShapeAnchors(
+            plc,
+            0,
+            plc.Length,
+            ccpText);
+
+        var shape = shapes.Single();
+
+        AssertEqual(
+            2,
+            shape.Cp,
+            "DOC PlcfSpa CP");
+        AssertEqual(
+            shapeId,
+            shape.ShapeId,
+            "DOC PlcfSpa shape id");
+        AssertEqual(
+            720,
+            shape.LeftTwips,
+            "DOC Spa left");
+        AssertEqual(
+            2880,
+            shape.BottomTwips,
+            "DOC Spa bottom");
+        AssertEqual(
+            1,
+            shape.HorizontalOrigin,
+            "DOC Spa horizontal origin");
+        AssertEqual(
+            2,
+            shape.VerticalOrigin,
+            "DOC Spa vertical origin");
+        AssertEqual(
+            2,
+            shape.WrapStyle,
+            "DOC Spa wrap style");
+        AssertEqual(
+            1,
+            shape.WrapSide,
+            "DOC Spa wrap side");
+
+        Assert(
+            shape.BelowText &&
+            shape.AnchorLocked,
+            "DOC Spa below-text и anchor-lock flags должны сохраняться.");
+
+        var dgg = new byte[16];
+
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            dgg.AsSpan(
+                0,
+                2),
+            0x0012);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            dgg.AsSpan(
+                2,
+                2),
+            0xF00A);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            dgg.AsSpan(
+                4,
+                4),
+            8);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            dgg.AsSpan(
+                8,
+                4),
+            shapeId);
+
+        var shapeIds = DocDocumentReader.ReadOfficeArtShapeIds(
+            dgg,
+            0,
+            dgg.Length);
+
+        Assert(
+            shapeIds.SetEquals(
+                [shapeId]),
+            "DOC DggInfo parser должен находить OfficeArtFSP.spid.");
     }
 
     private static void TestDocBinaryReader(string repositoryRoot)
