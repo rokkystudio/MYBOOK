@@ -1184,7 +1184,8 @@ internal static class Program
                 <?xml version="1.0" encoding="utf-8"?>
                 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
                             xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-                            xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+                            xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+                            xmlns:o="urn:schemas-microsoft-com:office:office">
                   <w:body>
                     <w:p>
                       <w:bookmarkStart w:id="0" w:name="target" />
@@ -1242,6 +1243,36 @@ internal static class Program
                         <w:tc><w:p><w:r><w:t>Cell B</w:t></w:r></w:p></w:tc>
                       </w:tr>
                     </w:tbl>
+                    <w:p>
+                      <w:r>
+                        <w:t>Footnote ref </w:t>
+                        <w:footnoteReference w:id="1"/>
+                        <w:t> Endnote ref </w:t>
+                        <w:endnoteReference w:id="2"/>
+                      </w:r>
+                    </w:p>
+                    <w:p>
+                      <w:pPr><w:pageBreakBefore/></w:pPr>
+                      <w:r><w:t>Page break before marker</w:t></w:r>
+                    </w:p>
+                    <w:p>
+                      <w:r>
+                        <w:t>Before explicit break</w:t>
+                        <w:br w:type="page"/>
+                        <w:t>After explicit break</w:t>
+                      </w:r>
+                    </w:p>
+                    <w:p>
+                      <w:r>
+                        <w:object>
+                          <o:OLEObject ProgID="Package" r:id="rIdOle"/>
+                        </w:object>
+                      </w:r>
+                    </w:p>
+                    <w:sectPr>
+                      <w:headerReference w:type="default" r:id="rIdHeader"/>
+                      <w:footerReference w:type="default" r:id="rIdFooter"/>
+                    </w:sectPr>
                   </w:body>
                 </w:document>
                 """);
@@ -1263,6 +1294,15 @@ internal static class Program
                   <Relationship Id="rIdImage"
                                 Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
                                 Target="media/image1.png" />
+                  <Relationship Id="rIdHeader"
+                                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"
+                                Target="header1.xml" />
+                  <Relationship Id="rIdFooter"
+                                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"
+                                Target="footer1.xml" />
+                  <Relationship Id="rIdOle"
+                                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject"
+                                Target="embeddings/oleObject1.bin" />
                 </Relationships>
                 """);
 
@@ -1309,6 +1349,55 @@ internal static class Program
                 archive,
                 "word/media/image1.png",
                 pngBytes);
+
+            WriteZipEntry(
+                archive,
+                "word/header1.xml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:p><w:r><w:t>Header marker</w:t></w:r></w:p>
+                </w:hdr>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "word/footer1.xml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:p><w:r><w:t>Footer marker</w:t></w:r></w:p>
+                </w:ftr>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "word/footnotes.xml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:footnote w:id="1">
+                    <w:p><w:r><w:t>Footnote body marker</w:t></w:r></w:p>
+                  </w:footnote>
+                </w:footnotes>
+                """);
+
+            WriteZipEntry(
+                archive,
+                "word/endnotes.xml",
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:endnote w:id="2">
+                    <w:p><w:r><w:t>Endnote body marker</w:t></w:r></w:p>
+                  </w:endnote>
+                </w:endnotes>
+                """);
+
+            WriteZipBytes(
+                archive,
+                "word/embeddings/oleObject1.bin",
+                Encoding.UTF8.GetBytes("embedded-object-marker"));
         }
 
         var model = SupportedFormatRegistry.ReadDocument(path);
@@ -1403,6 +1492,95 @@ internal static class Program
             table.Rows[1].Cells.Count == 2,
             "DOCX table должен сохранять строки, ячейки и gridSpan.");
 
+        Assert(
+            links.Any(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "#docx-footnote-1",
+                    StringComparison.Ordinal)),
+            "DOCX footnoteReference должен стать внутренней ссылкой.");
+
+        Assert(
+            links.Any(inline =>
+                string.Equals(
+                    inline.LinkHref,
+                    "#docx-endnote-2",
+                    StringComparison.Ordinal)),
+            "DOCX endnoteReference должен стать внутренней ссылкой.");
+
+        Assert(
+            paragraphs.Any(paragraph =>
+                paragraph.IsNote &&
+                string.Equals(
+                    paragraph.AnchorId,
+                    "docx-footnote-1",
+                    StringComparison.Ordinal)),
+            "DOCX footnotes.xml должен создавать note anchor.");
+
+        Assert(
+            paragraphs.Any(paragraph =>
+                paragraph.IsNote &&
+                string.Equals(
+                    paragraph.AnchorId,
+                    "docx-endnote-2",
+                    StringComparison.Ordinal)),
+            "DOCX endnotes.xml должен создавать note anchor.");
+
+        var regions = model.Blocks
+            .OfType<DocumentFlowRegion>()
+            .ToArray();
+
+        Assert(
+            regions.Any(region =>
+                region.Kind == DocumentFlowRegionKind.Header &&
+                region.Blocks
+                    .OfType<DocumentParagraph>()
+                    .SelectMany(paragraph => paragraph.Inlines)
+                    .Any(inline =>
+                        inline.Text.Contains(
+                            "Header marker",
+                            StringComparison.Ordinal))),
+            "DOCX header part должен сохраняться как header region.");
+
+        Assert(
+            regions.Any(region =>
+                region.Kind == DocumentFlowRegionKind.Footer &&
+                region.Blocks
+                    .OfType<DocumentParagraph>()
+                    .SelectMany(paragraph => paragraph.Inlines)
+                    .Any(inline =>
+                        inline.Text.Contains(
+                            "Footer marker",
+                            StringComparison.Ordinal))),
+            "DOCX footer part должен сохраняться как footer region.");
+
+        Assert(
+            model.Blocks
+                .OfType<DocumentFlowBreak>()
+                .Count(flowBreak =>
+                    flowBreak.Kind == DocumentFlowBreakKind.Page) >= 2,
+            "DOCX pageBreakBefore и explicit page break должны сохраняться в модели.");
+
+        Assert(
+            model.Blocks
+                .OfType<DocumentFlowBreak>()
+                .Any(flowBreak =>
+                    flowBreak.Kind == DocumentFlowBreakKind.Section),
+            "DOCX sectPr должен сохранять section break.");
+
+        var embeddedObject = model.Blocks
+            .OfType<DocumentEmbeddedObjectBlock>()
+            .SingleOrDefault();
+
+        Assert(
+            embeddedObject != null &&
+            embeddedObject.Data.Length > 0 &&
+            string.Equals(
+                embeddedObject.FileName,
+                "oleObject1.bin",
+                StringComparison.Ordinal),
+            "DOCX embedded OLE relationship должен сохраняться безопасным бинарным блоком.");
+
         var html = DocumentHtmlRenderer.Render(
             model,
             CreateRenderTheme());
@@ -1436,6 +1614,41 @@ internal static class Program
             html,
             "colspan=\"2\"",
             "DOCX rendered table span");
+
+        AssertContains(
+            html,
+            "flow-region-header",
+            "DOCX rendered header region");
+
+        AssertContains(
+            html,
+            "flow-region-footer",
+            "DOCX rendered footer region");
+
+        AssertContains(
+            html,
+            "href=\"#anchor-docx-footnote-1\"",
+            "DOCX rendered footnote reference");
+
+        AssertContains(
+            html,
+            "href=\"#anchor-docx-endnote-2\"",
+            "DOCX rendered endnote reference");
+
+        AssertContains(
+            html,
+            "flow-break-page",
+            "DOCX rendered page break");
+
+        AssertContains(
+            html,
+            "flow-break-section",
+            "DOCX rendered section break");
+
+        AssertContains(
+            html,
+            "class=\"embedded-object\"",
+            "DOCX rendered embedded object");
 
         Assert(
             !html.Contains(
