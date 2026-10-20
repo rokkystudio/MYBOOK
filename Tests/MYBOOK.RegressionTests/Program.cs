@@ -41,6 +41,7 @@ internal static class Program
             ("DOC section table", TestDocSectionTable),
             ("DOC paragraph properties", TestDocParagraphProperties),
             ("DOC table definition", TestDocTableDefinition),
+            ("DOC nested tables", TestDocNestedTables),
             ("DOC footnote tables", TestDocFootnoteTables),
             ("DOC endnote tables", TestDocEndnoteTables),
             ("DOC binary reader", () => TestDocBinaryReader(repositoryRoot)),
@@ -2386,6 +2387,232 @@ internal static class Program
             html,
             "data-shading-foreground=\"#AABBCC\"",
             "DOC rendered shading foreground metadata");
+    }
+
+    private static void TestDocNestedTables()
+    {
+        var paragraphGrpprl =
+            new List<byte>();
+
+        void AddParagraphSprm(
+            ushort sprm,
+            ReadOnlySpan<byte> operand)
+        {
+            paragraphGrpprl.Add(
+                (byte)(sprm & 0xFF));
+            paragraphGrpprl.Add(
+                (byte)(sprm >> 8));
+            paragraphGrpprl.AddRange(
+                operand.ToArray());
+        }
+
+        AddParagraphSprm(
+            0x6649,
+            new byte[]
+            {
+                1, 0, 0, 0
+            });
+        AddParagraphSprm(
+            0x664A,
+            new byte[]
+            {
+                1, 0, 0, 0
+            });
+        AddParagraphSprm(
+            0x244B,
+            new byte[]
+            {
+                1
+            });
+        AddParagraphSprm(
+            0x244C,
+            new byte[]
+            {
+                1
+            });
+
+        var nestedFormatting =
+            new DocDocumentReader.DocParagraphFormatting();
+
+        DocDocumentReader.ReadParagraphGrpprl(
+            paragraphGrpprl.ToArray(),
+            nestedFormatting);
+
+        Assert(
+            nestedFormatting.InTable == true &&
+            nestedFormatting.TableDepth == 2 &&
+            nestedFormatting.InnerTableCell == true &&
+            nestedFormatting.InnerTableRowEnd == true,
+            "DOC nested-table PAPX должен применять PItap/PDtap и inner cell/row flags.");
+
+        var outerDefinition =
+            new DocDocumentReader.DocTableDefinition(
+                new[]
+                {
+                    new DocDocumentReader.DocTableCellDefinition(
+                        LeftTwips: 0,
+                        RightTwips: 3000,
+                        WidthPoints: 150,
+                        HorizontalMerge: 0,
+                        VerticalMerge: 0)
+                });
+        var innerDefinition =
+            new DocDocumentReader.DocTableDefinition(
+                new[]
+                {
+                    new DocDocumentReader.DocTableCellDefinition(
+                        LeftTwips: 0,
+                        RightTwips: 1800,
+                        WidthPoints: 90,
+                        HorizontalMerge: 0,
+                        VerticalMerge: 0)
+                });
+
+        var text =
+            "before\r" +
+            "inner\r" +
+            "\r" +
+            "after\u0007" +
+            "\u0007";
+
+        var spans =
+            new[]
+            {
+                new DocDocumentReader.DocParagraphFormattingSpan(
+                    0,
+                    7,
+                    new DocDocumentReader.DocParagraphFormatting
+                    {
+                        InTable = true,
+                        TableDepth = 1
+                    }),
+                new DocDocumentReader.DocParagraphFormattingSpan(
+                    7,
+                    13,
+                    new DocDocumentReader.DocParagraphFormatting
+                    {
+                        InTable = true,
+                        TableDepth = 2,
+                        InnerTableCell = true
+                    }),
+                new DocDocumentReader.DocParagraphFormattingSpan(
+                    13,
+                    14,
+                    new DocDocumentReader.DocParagraphFormatting
+                    {
+                        InTable = true,
+                        TableDepth = 2,
+                        InnerTableRowEnd = true,
+                        TableDefinition = innerDefinition
+                    }),
+                new DocDocumentReader.DocParagraphFormattingSpan(
+                    14,
+                    20,
+                    new DocDocumentReader.DocParagraphFormatting
+                    {
+                        InTable = true,
+                        TableDepth = 1
+                    }),
+                new DocDocumentReader.DocParagraphFormattingSpan(
+                    20,
+                    21,
+                    new DocDocumentReader.DocParagraphFormatting
+                    {
+                        InTable = true,
+                        TableDepth = 1,
+                        TableRowEnd = true,
+                        TableDefinition = outerDefinition
+                    })
+            };
+
+        var blocks =
+            DocDocumentReader.BuildParagraphs(
+                text,
+                spans);
+
+        var outerTable =
+            blocks
+                .OfType<DocumentTable>()
+                .Single();
+
+        Assert(
+            outerTable.Rows.Count == 1 &&
+            outerTable.Rows[0].Cells.Count == 1,
+            "DOC nested-table fixture должен создавать одну outer cell.");
+
+        var outerCell =
+            outerTable.Rows[0].Cells[0];
+
+        Assert(
+            outerCell.Inlines.Count == 0 &&
+            outerCell.Blocks.Count == 3,
+            "DOC outer cell с nested table должен сохранять ordered block content.");
+
+        Assert(
+            outerCell.Blocks[0] is DocumentParagraph before &&
+            before.Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "before",
+                    StringComparison.Ordinal)),
+            "DOC nested table должен сохранять outer text до таблицы.");
+
+        var innerTable =
+            outerCell.Blocks[1] as DocumentTable
+            ?? throw new InvalidOperationException(
+                "DOC nested table должен быть отдельным block внутри outer cell.");
+
+        Assert(
+            innerTable.Rows.Count == 1 &&
+            innerTable.Rows[0].Cells.Count == 1 &&
+            innerTable.Rows[0].Cells[0].Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "inner",
+                    StringComparison.Ordinal)),
+            "DOC nested table должен сохранять содержимое inner cell.");
+
+        Assert(
+            outerCell.Blocks[2] is DocumentParagraph after &&
+            after.Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "after",
+                    StringComparison.Ordinal)),
+            "DOC nested table должен сохранять outer text после таблицы.");
+
+        var html =
+            DocumentHtmlRenderer.Render(
+                new DocumentModel
+                {
+                    Title = "DOC nested table",
+                    Blocks =
+                    [
+                        outerTable
+                    ]
+                },
+                CreateRenderTheme());
+
+        Assert(
+            html.IndexOf(
+                "before",
+                StringComparison.Ordinal) <
+            html.IndexOf(
+                "inner",
+                StringComparison.Ordinal) &&
+            html.IndexOf(
+                "inner",
+                StringComparison.Ordinal) <
+            html.IndexOf(
+                "after",
+                StringComparison.Ordinal),
+            "DOC nested table renderer должен сохранять порядок outer/inner/outer content.");
+
+        Assert(
+            html.Split(
+                    "<table",
+                    StringSplitOptions.None)
+                .Length -
+            1 ==
+            2,
+            "DOC nested table renderer должен создавать вложенный HTML table.");
     }
 
     private static void TestDocFootnoteTables()
