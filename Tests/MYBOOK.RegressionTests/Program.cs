@@ -1821,6 +1821,15 @@ internal static class Program
                 0x00
             });
         AddSprm(
+            0x7629,
+            new byte[]
+            {
+                0,
+                2,
+                0x01,
+                0x00
+            });
+        AddSprm(
             0xF636,
             new byte[]
             {
@@ -1911,6 +1920,8 @@ internal static class Program
             overridden.Cells[0].PaddingRightPoints == 18 &&
             overridden.Cells[0].NoWrap &&
             overridden.Cells[0].FitText &&
+            overridden.Cells[0].TextFlow ==
+                DocumentTableCellTextFlow.TopToBottomRightToLeft &&
             overridden.Cells[0].PreferredWidth is
             {
                 Kind: DocumentPreferredWidthKind.Points,
@@ -1929,6 +1940,8 @@ internal static class Program
             overridden.Cells[1].PaddingRightPoints == 18 &&
             overridden.Cells[1].NoWrap &&
             overridden.Cells[1].FitText &&
+            overridden.Cells[1].TextFlow ==
+                DocumentTableCellTextFlow.TopToBottomRightToLeft &&
             overridden.Cells[1].PreferredWidth is
             {
                 Kind: DocumentPreferredWidthKind.Points,
@@ -2230,7 +2243,9 @@ internal static class Program
                                                     Pattern = 0x0001
                                                 },
                                             NoWrap = true,
-                                            FitText = true
+                                            FitText = true,
+                                            TextFlow =
+                                                DocumentTableCellTextFlow.TopToBottomRightToLeft
                                         },
                                         new DocumentTableCell
                                         {
@@ -2359,6 +2374,18 @@ internal static class Program
             html,
             "data-fit-text=\"true\"",
             "DOC rendered fit-text metadata");
+        AssertContains(
+            html,
+            "data-text-flow=\"tbrl\"",
+            "DOC rendered text-flow metadata");
+        AssertContains(
+            html,
+            "data-shading-pattern=\"1\"",
+            "DOC rendered shading pattern metadata");
+        AssertContains(
+            html,
+            "data-shading-foreground=\"#AABBCC\"",
+            "DOC rendered shading foreground metadata");
     }
 
     private static void TestDocFootnoteTables()
