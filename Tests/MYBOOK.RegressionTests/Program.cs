@@ -577,6 +577,41 @@ internal static class Program
             inline.TextColor!,
             "DOC direct CHPX RGB color");
 
+        var table = model.Blocks
+            .OfType<DocumentTable>()
+            .SingleOrDefault()
+            ?? throw new InvalidOperationException(
+                "DOC binary table markers должны создавать DocumentTable.");
+
+        Assert(
+            table.Rows.Count == 1 &&
+            table.Rows[0].Cells.Count == 2,
+            "DOC binary table markers должны создавать строку с двумя ячейками.");
+
+        Assert(
+            table.Rows[0].Cells[0].Inlines.Any(cellInline =>
+                cellInline.Text.Contains(
+                    "Cell A",
+                    StringComparison.Ordinal)),
+            "DOC binary первая table cell должна содержать Cell A.");
+
+        Assert(
+            table.Rows[0].Cells[1].Inlines.Any(cellInline =>
+                cellInline.Text.Contains(
+                    "Cell B",
+                    StringComparison.Ordinal)),
+            "DOC binary вторая table cell должна содержать Cell B.");
+
+        Assert(
+            model.Blocks
+                .OfType<DocumentParagraph>()
+                .Any(candidate =>
+                    candidate.Inlines.Any(candidateInline =>
+                        candidateInline.Text.Contains(
+                            "After table",
+                            StringComparison.Ordinal))),
+            "DOC binary обычный абзац после таблицы должен остаться потоковым абзацем.");
+
         var html = DocumentHtmlRenderer.Render(
             model,
             CreateRenderTheme());
@@ -610,6 +645,21 @@ internal static class Program
             html,
             "color:#008000",
             "DOC binary rendered color");
+
+        AssertContains(
+            html,
+            "<table class=\"flow-table\"",
+            "DOC binary rendered table");
+
+        AssertContains(
+            html,
+            "Cell A",
+            "DOC binary rendered first cell");
+
+        AssertContains(
+            html,
+            "Cell B",
+            "DOC binary rendered second cell");
     }
 
     private static void TestFb2Reader(string directory)

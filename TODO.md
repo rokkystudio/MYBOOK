@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.0.51
+Текущая версия: 1.0.52
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -22,8 +22,8 @@
 ## DOC
 
 - [ ] Character/list/table styles, включая `sprmCIstd`, и дополнительные style properties вне уже поддержанного paragraph style inheritance.
-- [ ] Расширить PAPX на list/table properties, bidi/outline/keep/widow controls и остальные paragraph SPRM.
-- [ ] Таблицы.
+- [ ] Расширить PAPX на list properties, nested-table depth, bidi/outline/keep/widow controls и остальные paragraph SPRM.
+- [ ] Таблицы: `sprmTDefTable`/cell definitions, widths, merges, borders/shading и nested tables.
 - [ ] Изображения и OfficeArt.
 - [ ] Headers/footers.
 - [ ] Footnotes/endnotes.
