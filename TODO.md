@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.1.11
+Текущая версия: 1.1.12
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -36,7 +36,7 @@
 ## RTF
 
 - [ ] Таблицы: nested tables и дополнительные row/cell properties; horizontal `clmgf`/`clmrg` и vertical `clvmgf`/`clvmrg` merges уже сохраняются как `ColumnSpan`/`RowSpan`.
-- [ ] Изображения: WMF/EMF/DIB и дополнительные варианты `pict` помимо PNG/JPEG.
+- [ ] Изображения: WMF/EMF и дополнительные варианты `pict`; стандартный BI_RGB `dibitmap` уже преобразуется в BMP, PNG/JPEG поддерживаются напрямую.
 - [ ] Стили абзацев: дополнительные RTF paragraph controls (line spacing multiplier, keep/widow, bidi, tabs); базовые alignment, indents и spacing поддерживаются.
 - [ ] Расширенные Unicode/codepage edge cases, включая DBCS и font charset switching.
 
