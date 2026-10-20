@@ -39,6 +39,7 @@ internal static class Program
             ("DOC floating shape image", TestDocFloatingShapeImage),
             ("DOC header story table", TestDocHeaderStoryTable),
             ("DOC section table", TestDocSectionTable),
+            ("DOC paragraph properties", TestDocParagraphProperties),
             ("DOC footnote tables", TestDocFootnoteTables),
             ("DOC endnote tables", TestDocEndnoteTables),
             ("DOC binary reader", () => TestDocBinaryReader(repositoryRoot)),
@@ -1149,6 +1150,38 @@ internal static class Program
                 cps[index]);
         }
 
+        const int firstSepxOffset = 64;
+        const int secondSepxOffset = 160;
+        var sedOffset = cps.Length * 4;
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            plc.AsSpan(
+                sedOffset + 2,
+                4),
+            firstSepxOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            plc.AsSpan(
+                sedOffset + 12 + 2,
+                4),
+            secondSepxOffset);
+
+        var sections =
+            DocDocumentReader.ReadSectionDescriptors(
+                plc,
+                ccpText: 9);
+
+        Assert(
+            sections.Count == 2 &&
+            sections[0].SectionIndex == 0 &&
+            sections[0].CpStart == 0 &&
+            sections[0].CpEnd == 5 &&
+            sections[0].FcSepx == firstSepxOffset &&
+            sections[1].SectionIndex == 1 &&
+            sections[1].CpStart == 5 &&
+            sections[1].CpEnd == 9 &&
+            sections[1].FcSepx == secondSepxOffset,
+            "DOC PlcfSed должен сохранять CP ranges и Sed.fcSepx.");
+
         var sectionBreaks =
             DocDocumentReader.ReadSectionBreakCps(
                 plc,
@@ -1161,6 +1194,133 @@ internal static class Program
                     4
                 }),
             "DOC PlcfSed должен возвращать CP завершающего 0x0C первой секции.");
+
+        var word = new byte[256];
+        var grpprl = new List<byte>();
+
+        void AddByteSprm(
+            ushort sprm,
+            byte value)
+        {
+            grpprl.Add(
+                (byte)(sprm & 0xFF));
+            grpprl.Add(
+                (byte)(sprm >> 8));
+            grpprl.Add(value);
+        }
+
+        void AddUInt16Sprm(
+            ushort sprm,
+            ushort value)
+        {
+            grpprl.Add(
+                (byte)(sprm & 0xFF));
+            grpprl.Add(
+                (byte)(sprm >> 8));
+
+            Span<byte> operand =
+                stackalloc byte[2];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                operand,
+                value);
+            grpprl.AddRange(
+                operand.ToArray());
+        }
+
+        void AddInt16Sprm(
+            ushort sprm,
+            short value)
+        {
+            grpprl.Add(
+                (byte)(sprm & 0xFF));
+            grpprl.Add(
+                (byte)(sprm >> 8));
+
+            Span<byte> operand =
+                stackalloc byte[2];
+            BinaryPrimitives.WriteInt16LittleEndian(
+                operand,
+                value);
+            grpprl.AddRange(
+                operand.ToArray());
+        }
+
+        AddByteSprm(
+            0x3009,
+            4);
+        AddByteSprm(
+            0x300A,
+            1);
+        AddByteSprm(
+            0x301D,
+            2);
+        AddUInt16Sprm(
+            0xB01F,
+            15840);
+        AddUInt16Sprm(
+            0xB020,
+            12240);
+        AddUInt16Sprm(
+            0xB021,
+            1440);
+        AddUInt16Sprm(
+            0xB022,
+            1080);
+        AddInt16Sprm(
+            0x9023,
+            -720);
+        AddInt16Sprm(
+            0x9024,
+            1440);
+        AddUInt16Sprm(
+            0xB025,
+            360);
+        AddUInt16Sprm(
+            0xB017,
+            720);
+        AddUInt16Sprm(
+            0xB018,
+            720);
+        AddByteSprm(
+            0x3228,
+            1);
+
+        BinaryPrimitives.WriteInt16LittleEndian(
+            word.AsSpan(
+                firstSepxOffset,
+                2),
+            checked((short)grpprl.Count));
+        grpprl.CopyTo(
+            word,
+            firstSepxOffset + 2);
+
+        BinaryPrimitives.WriteInt16LittleEndian(
+            word.AsSpan(
+                secondSepxOffset,
+                2),
+            0);
+
+        var properties =
+            DocDocumentReader.ReadSectionProperties(
+                word,
+                sections[0]);
+
+        Assert(
+            properties.SectionIndex == 0 &&
+            properties.BreakKind == DocumentSectionBreakKind.OddPage &&
+            properties.Orientation == DocumentPageOrientation.Landscape &&
+            properties.PageWidthPoints == 792 &&
+            properties.PageHeightPoints == 612 &&
+            properties.MarginLeftPoints == 72 &&
+            properties.MarginRightPoints == 54 &&
+            properties.MarginTopPoints == -36 &&
+            properties.MarginBottomPoints == 72 &&
+            properties.GutterPoints == 18 &&
+            properties.HeaderDistancePoints == 36 &&
+            properties.FooterDistancePoints == 36 &&
+            properties.DifferentFirstPage == true &&
+            properties.RightToLeft == true,
+            "DOC SEPX должен сохранять page setup и section flags.");
 
         var blocks = DocDocumentReader.BuildParagraphs(
             "One\r\fTwo\r",
@@ -1181,6 +1341,148 @@ internal static class Program
                     flowBreak.Kind ==
                     DocumentFlowBreakKind.Page),
             "DOC section-end 0x0C не должен одновременно считаться page break.");
+
+        var html = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC SEPX",
+                Blocks =
+                [
+                    properties,
+                    .. blocks
+                ]
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "class=\"section-properties\"",
+            "DOC rendered section properties");
+        AssertContains(
+            html,
+            "data-break-kind=\"OddPage\"",
+            "DOC rendered section break kind");
+        AssertContains(
+            html,
+            "data-orientation=\"Landscape\"",
+            "DOC rendered section orientation");
+        AssertContains(
+            html,
+            "data-page-width-pt=\"792\"",
+            "DOC rendered section page width");
+        AssertContains(
+            html,
+            "data-margin-top-pt=\"-36\"",
+            "DOC rendered section top margin");
+        AssertContains(
+            html,
+            "data-different-first-page=\"true\"",
+            "DOC rendered title page flag");
+        AssertContains(
+            html,
+            "data-right-to-left=\"true\"",
+            "DOC rendered bidi section flag");
+    }
+
+    private static void TestDocParagraphProperties()
+    {
+        var grpprl = new List<byte>();
+
+        void AddByteSprm(
+            ushort sprm,
+            byte value)
+        {
+            grpprl.Add(
+                (byte)(sprm & 0xFF));
+            grpprl.Add(
+                (byte)(sprm >> 8));
+            grpprl.Add(value);
+        }
+
+        AddByteSprm(
+            0x2405,
+            1);
+        AddByteSprm(
+            0x2406,
+            1);
+        AddByteSprm(
+            0x2431,
+            1);
+        AddByteSprm(
+            0x2441,
+            1);
+        AddByteSprm(
+            0x2640,
+            3);
+        AddByteSprm(
+            0x2407,
+            1);
+
+        var formatting =
+            new DocDocumentReader.DocParagraphFormatting();
+
+        DocDocumentReader.ReadParagraphGrpprl(
+            grpprl.ToArray(),
+            formatting);
+
+        Assert(
+            formatting.KeepTogether == true &&
+            formatting.KeepWithNext == true &&
+            formatting.WidowControl == true &&
+            formatting.RightToLeft == true &&
+            formatting.OutlineLevel == 3 &&
+            formatting.PageBreakBefore == true,
+            "DOC PAPX keep/keep-next/widow/bidi/outline/page-break SPRM должны сохраняться.");
+
+        var html = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC paragraph properties",
+                Blocks =
+                [
+                    new DocumentParagraph
+                    {
+                        Inlines =
+                        [
+                            new DocumentInline
+                            {
+                                Text = "Paragraph marker"
+                            }
+                        ],
+                        OutlineLevel = formatting.OutlineLevel,
+                        KeepTogether =
+                            formatting.KeepTogether ?? false,
+                        KeepWithNext =
+                            formatting.KeepWithNext ?? false,
+                        WidowControl =
+                            formatting.WidowControl ?? false,
+                        RightToLeft =
+                            formatting.RightToLeft ?? false
+                    }
+                ]
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "data-outline-level=\"3\"",
+            "DOC rendered outline level");
+        AssertContains(
+            html,
+            "break-inside:avoid",
+            "DOC rendered keep together");
+        AssertContains(
+            html,
+            "break-after:avoid",
+            "DOC rendered keep with next");
+        AssertContains(
+            html,
+            "orphans:2;widows:2",
+            "DOC rendered widow control");
+        AssertContains(
+            html,
+            "direction:rtl",
+            "DOC rendered bidi paragraph");
     }
 
     private static void TestDocFootnoteTables()
@@ -2705,6 +3007,12 @@ internal static class Program
                       <w:headerReference w:type="even" r:id="rIdHeaderEven"/>
                       <w:footerReference w:type="default" r:id="rIdFooter"/>
                       <w:footerReference w:type="first" r:id="rIdFooterFirst"/>
+                      <w:type w:val="oddPage"/>
+                      <w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>
+                      <w:pgMar w:top="-720" w:right="1080" w:bottom="1440" w:left="1440"
+                               w:header="720" w:footer="720" w:gutter="360"/>
+                      <w:titlePg/>
+                      <w:bidi/>
                     </w:sectPr>
                   </w:body>
                 </w:document>
@@ -2985,6 +3293,33 @@ internal static class Program
                     StringComparison.Ordinal)),
             "DOCX endnotes.xml должен создавать note anchor.");
 
+        var sectionProperties = model.Blocks
+            .OfType<DocumentSectionProperties>()
+            .Single();
+
+        Assert(
+            sectionProperties.SectionIndex == 0 &&
+            sectionProperties.BreakKind == DocumentSectionBreakKind.OddPage &&
+            sectionProperties.Orientation == DocumentPageOrientation.Landscape &&
+            sectionProperties.PageWidthPoints == 792 &&
+            sectionProperties.PageHeightPoints == 612 &&
+            sectionProperties.MarginLeftPoints == 72 &&
+            sectionProperties.MarginRightPoints == 54 &&
+            sectionProperties.MarginTopPoints == -36 &&
+            sectionProperties.MarginBottomPoints == 72 &&
+            sectionProperties.GutterPoints == 18 &&
+            sectionProperties.HeaderDistancePoints == 36 &&
+            sectionProperties.FooterDistancePoints == 36 &&
+            sectionProperties.DifferentFirstPage == true &&
+            sectionProperties.RightToLeft == true,
+            "DOCX sectPr должен сохранять page setup в нейтральной модели.");
+
+        Assert(
+            ReferenceEquals(
+                model.Blocks[0],
+                sectionProperties),
+            "DOCX section properties должны стоять в начале соответствующей секции.");
+
         var regions = model.Blocks
             .OfType<DocumentFlowRegion>()
             .ToArray();
@@ -3108,6 +3443,26 @@ internal static class Program
             html,
             "colspan=\"2\"",
             "DOCX rendered table span");
+
+        AssertContains(
+            html,
+            "class=\"section-properties\"",
+            "DOCX rendered section properties");
+
+        AssertContains(
+            html,
+            "data-break-kind=\"OddPage\"",
+            "DOCX rendered section break kind");
+
+        AssertContains(
+            html,
+            "data-page-width-pt=\"792\"",
+            "DOCX rendered section page width");
+
+        AssertContains(
+            html,
+            "data-margin-top-pt=\"-36\"",
+            "DOCX rendered section top margin");
 
         AssertContains(
             html,

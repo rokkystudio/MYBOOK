@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.1.14
+Текущая версия: 1.1.15
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -22,12 +22,12 @@
 ## DOC
 
 - [ ] Character/list/table styles, включая `sprmCIstd`, и дополнительные style properties вне уже поддержанного paragraph style inheritance.
-- [ ] Расширить PAPX на list properties, nested-table depth, bidi/outline/keep/widow controls и остальные paragraph SPRM.
+- [ ] Расширить PAPX на list properties, nested-table depth, tabs, borders/shading и остальные paragraph SPRM; keep/keep-next, widow control, bidi, outline level и page-break-before уже поддерживаются.
 - [ ] Таблицы: `sprmTDefTable`/cell definitions, widths, merges, borders/shading и nested tables.
 - [ ] Изображения и OfficeArt: inline `U+0001` и floating `U+0008` raster PNG/JPEG читаются; floating path разрешает `PlcfSpa` → `OfficeArtFSP.spid` → `FOPT.pib` → BStore/FBSE/BLIP и показывает image в reflow. Остались `PlcSpaHdr`, точное floating positioning/wrap, complex/delayed/fill BLIP references, WMF/EMF/DIB/TIFF и полноценный shape rendering.
 - [ ] Headers/footers: text stories и Even/Odd/First variants по секциям читаются; остались `PlcSpaHdr` drawings, header/footer-specific fields и layout properties.
 - [ ] Footnotes/endnotes: PLC references и note text stories поддерживаются с anchors/links; остались точные custom-symbol glyphs через `sprmCSymbol`, note-specific fields и layout properties.
-- [ ] Sections: границы `PlcfSed` и section breaks поддерживаются; остались SEPX section properties, page setup и их влияние на layout/pagination.
+- [ ] Sections: `PlcfSed`/SEPX, section break kind, orientation, page size, margins, gutter, header/footer distances, title-page и bidi поддерживаются; остались columns, page numbering, page borders/document grid и применение этих свойств в реальном pagination/layout engine.
 - [ ] Поля Word, кроме уже поддержанных безопасных HYPERLINK fields.
 - [ ] Дополнительные кодировки и charset/font mapping.
 - [ ] Старые версии Word Binary Format.
