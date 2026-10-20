@@ -185,6 +185,8 @@ internal static class Program
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
             \trowd\intbl Cell A\cell Cell B\cell\row
             \trowd\clmgf\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
+            \trowd\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
+            \trowd\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
             \pard
             {\pict\pngblip 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
             }
@@ -320,7 +322,7 @@ internal static class Program
                 "RTF table controls должны создавать DocumentTable.");
 
         Assert(
-            table.Rows.Count == 2 &&
+            table.Rows.Count == 4 &&
             table.Rows[0].Cells.Count == 2 &&
             table.Rows[0].Cells[0].Inlines.Any(inline =>
                 inline.Text.Contains(
@@ -340,6 +342,20 @@ internal static class Program
                     "Merged RTF cell",
                     StringComparison.Ordinal)),
             "RTF clmgf/clmrg должны сохраняться как ColumnSpan.");
+
+        Assert(
+            table.Rows[2].Cells.Count == 2 &&
+            table.Rows[2].Cells[0].RowSpan == 2 &&
+            table.Rows[2].Cells[0].Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "Vertical RTF cell",
+                    StringComparison.Ordinal)) &&
+            table.Rows[3].Cells.Count == 1 &&
+            table.Rows[3].Cells[0].Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "Row 4 B",
+                    StringComparison.Ordinal)),
+            "RTF clvmgf/clvmrg должны сохраняться как RowSpan.");
 
         Assert(
             model.Blocks
@@ -376,6 +392,16 @@ internal static class Program
             html,
             "<table class=\"flow-table\"",
             "RTF rendered table");
+
+        AssertContains(
+            html,
+            "colspan=\"2\"",
+            "RTF rendered horizontal merge");
+
+        AssertContains(
+            html,
+            "rowspan=\"2\"",
+            "RTF rendered vertical merge");
 
         AssertContains(
             html,
