@@ -1,13 +1,14 @@
 using System.IO;
-using MYBOOK.Documents;
-using MYBOOK.Formats.Doc;
-using MYBOOK.Formats.Docx;
-using MYBOOK.Formats.Epub;
-using MYBOOK.Formats.Fb2;
-using MYBOOK.Formats.Markdown;
-using MYBOOK.Formats.Pdf;
-using MYBOOK.Formats.Rtf;
-using MYBOOK.Formats.Text;
+using Book.Diagnostics;
+using Book.Documents;
+using Book.Formats.Doc;
+using Book.Formats.Docx;
+using Book.Formats.Epub;
+using Book.Formats.Fb2;
+using Book.Formats.Markdown;
+using Book.Formats.Pdf;
+using Book.Formats.Rtf;
+using Book.Formats.Text;
 
 namespace MYBOOK.Services;
 
@@ -82,7 +83,7 @@ internal static class SupportedFormatRegistry
 
         using var trace = ParserTrace.BeginDocument(
             path,
-            format);
+            format.Extension);
 
         ParserTrace.Write(
             "registry",

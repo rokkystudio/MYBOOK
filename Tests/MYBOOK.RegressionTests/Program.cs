@@ -1,8 +1,9 @@
 using System.IO;
 using System.IO.Compression;
 using System.Text;
-using MYBOOK.Documents;
-using MYBOOK.Rendering;
+using Book.Diagnostics;
+using Book.Documents;
+using Book.Rendering;
 using MYBOOK.Services;
 
 namespace MYBOOK.RegressionTests;
@@ -1205,7 +1206,9 @@ internal static class Program
             "MYBOOK",
             "Logs");
 
-        ParserTrace.Configure(true);
+        ParserTrace.Configure(
+            true,
+            "MYBOOK");
 
         try
         {
@@ -1217,7 +1220,9 @@ internal static class Program
         }
         finally
         {
-            ParserTrace.Configure(false);
+            ParserTrace.Configure(
+                false,
+                "MYBOOK");
         }
 
         var logPath = Directory

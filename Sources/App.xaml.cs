@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Windows;
+using Book.Diagnostics;
 using MYBOOK.Services;
 using MYBOOK.UI;
 
@@ -36,7 +37,8 @@ public partial class App : Application
                     StringComparison.OrdinalIgnoreCase));
 
             ParserTrace.Configure(
-                parserTraceEnabled);
+                parserTraceEnabled,
+                "MYBOOK");
 
             var documentArgument = e.Args.FirstOrDefault(argument =>
                 !string.Equals(

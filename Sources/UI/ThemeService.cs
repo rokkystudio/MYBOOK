@@ -1,7 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
-using MYBOOK.Rendering;
+using Book.Rendering;
 using NeoUI;
 
 namespace MYBOOK.UI;
