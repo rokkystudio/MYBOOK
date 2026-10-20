@@ -1660,6 +1660,58 @@ internal static class Program
                 0xFE
             });
         AddSprm(
+            0xD62F,
+            new byte[]
+            {
+                11,
+                0,
+                1,
+                0x08,
+                0x12,
+                0x34,
+                0x56,
+                0x00,
+                0x08,
+                0x01,
+                0x02,
+                0x00
+            });
+        AddSprm(
+            0xD62D,
+            new byte[]
+            {
+                12,
+                1,
+                3,
+                0xAA,
+                0xBB,
+                0xCC,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0xFF,
+                0x01,
+                0x00
+            });
+        AddSprm(
+            0xF636,
+            new byte[]
+            {
+                0,
+                2,
+                1
+            });
+        AddSprm(
+            0xD639,
+            new byte[]
+            {
+                3,
+                0,
+                2,
+                1
+            });
+        AddSprm(
             0xD634,
             new byte[]
             {
@@ -1715,16 +1767,31 @@ internal static class Program
             overridden.Cells[0].PaddingBottomPoints == 6 &&
             overridden.Cells[0].PaddingLeftPoints == 18 &&
             overridden.Cells[0].PaddingRightPoints == 18 &&
+            overridden.Cells[0].NoWrap &&
+            overridden.Cells[0].FitText &&
+            overridden.Cells[0].BorderRight is
+            {
+                WidthPoints: 1,
+                Type: 0x01,
+                Color: "#123456"
+            } &&
             overridden.Cells[1].HorizontalMerge == 2 &&
             overridden.Cells[1].VerticalAlignment ==
                 DocumentTableCellVerticalAlignment.Bottom &&
             overridden.Cells[1].PaddingLeftPoints == 18 &&
             overridden.Cells[1].PaddingRightPoints == 18 &&
+            overridden.Cells[1].NoWrap &&
+            overridden.Cells[1].FitText &&
             overridden.Cells[1].BorderBottom is
             {
                 WidthPoints: 0.5,
                 Type: 0x07,
                 ColorIndex: 0x02
+            } &&
+            overridden.Cells[1].Shading is
+            {
+                ForegroundColor: "#AABBCC",
+                Pattern: 0x0001
             } &&
             overridden.Cells[2].HorizontalMerge == 1 &&
             overridden.Cells[2].VerticalAlignment ==
@@ -1943,7 +2010,22 @@ internal static class Program
                                                     WidthPoints = 0.5,
                                                     Type = 0x07,
                                                     ColorIndex = 0x02
-                                                }
+                                                },
+                                            BorderRight =
+                                                new DocumentBorder
+                                                {
+                                                    WidthPoints = 1,
+                                                    Type = 0x01,
+                                                    Color = "#123456"
+                                                },
+                                            Shading =
+                                                new DocumentShading
+                                                {
+                                                    ForegroundColor = "#AABBCC",
+                                                    Pattern = 0x0001
+                                                },
+                                            NoWrap = true,
+                                            FitText = true
                                         },
                                         new DocumentTableCell
                                         {
@@ -2008,6 +2090,22 @@ internal static class Program
             html,
             "border-bottom:0.5pt dashed #0000FF",
             "DOC rendered sprmTSetBrc80 border");
+        AssertContains(
+            html,
+            "border-right:1pt solid #123456",
+            "DOC rendered sprmTSetBrc border");
+        AssertContains(
+            html,
+            "background-color:#AABBCC",
+            "DOC rendered solid table shading");
+        AssertContains(
+            html,
+            "white-space:nowrap",
+            "DOC rendered cell no-wrap");
+        AssertContains(
+            html,
+            "data-fit-text=\"true\"",
+            "DOC rendered fit-text metadata");
     }
 
     private static void TestDocFootnoteTables()
