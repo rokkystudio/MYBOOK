@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.1.17
+Текущая версия: 1.1.18
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -23,7 +23,7 @@
 
 - [ ] Character/list/table styles, включая `sprmCIstd`, и дополнительные style properties вне уже поддержанного paragraph style inheritance.
 - [ ] Расширить PAPX на list properties, nested-table depth, tabs, borders/shading и остальные paragraph SPRM; keep/keep-next, widow control, bidi, outline level и page-break-before уже поддерживаются.
-- [ ] Таблицы: `sprmTDefTable`, `sprmTInsert`/`sprmTDelete`/`sprmTDxaCol`, TC80 merges, `sprmTMerge`/`sprmTSplit`/`sprmTVertMerge`, `sprmTVertAlign`, direct/default cell padding и cell widths поддерживаются; остались borders/shading, preferred-width variants, row properties, text flow/no-wrap/fit-text и nested tables.
+- [ ] Таблицы: `sprmTDefTable`, insert/delete/width overrides, TC80 merges и BRC80 borders, `sprmTSetBrc80`, vertical alignment, direct/default padding, repeating header row, cant-split и exact/at-least row height поддерживаются; остались shading, preferred-width variants, advanced borders (`BRC`/table borders), text flow/no-wrap/fit-text и nested tables.
 - [ ] Изображения и OfficeArt: inline `U+0001` и floating `U+0008` raster PNG/JPEG читаются; floating path разрешает `PlcfSpa` → `OfficeArtFSP.spid` → `FOPT.pib` → BStore/FBSE/BLIP и показывает image в reflow. Остались `PlcSpaHdr`, точное floating positioning/wrap, complex/delayed/fill BLIP references, WMF/EMF/DIB/TIFF и полноценный shape rendering.
 - [ ] Headers/footers: text stories и Even/Odd/First variants по секциям читаются; остались `PlcSpaHdr` drawings, header/footer-specific fields и layout properties.
 - [ ] Footnotes/endnotes: PLC references и note text stories поддерживаются с anchors/links; остались точные custom-symbol glyphs через `sprmCSymbol`, note-specific fields и layout properties.

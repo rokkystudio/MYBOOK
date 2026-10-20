@@ -1535,6 +1535,11 @@ internal static class Program
                 tc80Offset,
                 2),
             0x0002);
+
+        operand[tc80Offset + 4] = 8;
+        operand[tc80Offset + 5] = 0x01;
+        operand[tc80Offset + 6] = 0x06;
+        operand[tc80Offset + 7] = 0;
         BinaryPrimitives.WriteUInt16LittleEndian(
             operand.AsSpan(
                 tc80Offset +
@@ -1558,6 +1563,12 @@ internal static class Program
             definition.Cells[0].RightTwips == 1000 &&
             definition.Cells[0].WidthPoints == 50 &&
             definition.Cells[0].HorizontalMerge == 2 &&
+            definition.Cells[0].BorderTop is
+            {
+                WidthPoints: 1,
+                Type: 0x01,
+                ColorIndex: 0x06
+            } &&
             definition.Cells[1].LeftTwips == 1000 &&
             definition.Cells[1].RightTwips == 2200 &&
             definition.Cells[1].WidthPoints == 60 &&
@@ -1600,6 +1611,19 @@ internal static class Program
                 3
             });
         AddSprm(
+            0xD620,
+            new byte[]
+            {
+                7,
+                1,
+                3,
+                0x04,
+                4,
+                0x07,
+                0x02,
+                0
+            });
+        AddSprm(
             0xD62B,
             new byte[]
             {
@@ -1615,6 +1639,25 @@ internal static class Program
                 1,
                 3,
                 2
+            });
+        AddSprm(
+            0x3404,
+            new byte[]
+            {
+                1
+            });
+        AddSprm(
+            0x3466,
+            new byte[]
+            {
+                1
+            });
+        AddSprm(
+            0x9407,
+            new byte[]
+            {
+                0x20,
+                0xFE
             });
         AddSprm(
             0xD634,
@@ -1654,8 +1697,20 @@ internal static class Program
                 "DOC table SPRM должны сохранять TableDefinition.");
 
         Assert(
+            paragraphFormatting.TableRepeatHeader == true &&
+            paragraphFormatting.TablePreventPageSplit == true &&
+            paragraphFormatting.TableRowHeightPoints == 24 &&
+            paragraphFormatting.TableRowHeightExact == true,
+            "DOC row header/cant-split/exact-height SPRM должны сохраняться.");
+
+        Assert(
             overridden.Cells[0].HorizontalMerge == 0 &&
             overridden.Cells[0].VerticalMerge == 3 &&
+            overridden.Cells[0].BorderTop is
+            {
+                Type: 0x01,
+                ColorIndex: 0x06
+            } &&
             overridden.Cells[0].PaddingTopPoints == 6 &&
             overridden.Cells[0].PaddingBottomPoints == 6 &&
             overridden.Cells[0].PaddingLeftPoints == 18 &&
@@ -1665,6 +1720,12 @@ internal static class Program
                 DocumentTableCellVerticalAlignment.Bottom &&
             overridden.Cells[1].PaddingLeftPoints == 18 &&
             overridden.Cells[1].PaddingRightPoints == 18 &&
+            overridden.Cells[1].BorderBottom is
+            {
+                WidthPoints: 0.5,
+                Type: 0x07,
+                ColorIndex: 0x02
+            } &&
             overridden.Cells[2].HorizontalMerge == 1 &&
             overridden.Cells[2].VerticalAlignment ==
                 DocumentTableCellVerticalAlignment.Bottom &&
@@ -1847,6 +1908,10 @@ internal static class Program
                             [
                                 new DocumentTableRow
                                 {
+                                    RepeatAsHeader = true,
+                                    PreventPageSplit = true,
+                                    HeightPoints = 24,
+                                    HeightExact = true,
                                     Cells =
                                     [
                                         new DocumentTableCell
@@ -1864,7 +1929,21 @@ internal static class Program
                                             PaddingLeftPoints = 18,
                                             PaddingRightPoints = 18,
                                             VerticalAlignment =
-                                                DocumentTableCellVerticalAlignment.Bottom
+                                                DocumentTableCellVerticalAlignment.Bottom,
+                                            BorderTop =
+                                                new DocumentBorder
+                                                {
+                                                    WidthPoints = 1,
+                                                    Type = 0x01,
+                                                    ColorIndex = 0x06
+                                                },
+                                            BorderBottom =
+                                                new DocumentBorder
+                                                {
+                                                    WidthPoints = 0.5,
+                                                    Type = 0x07,
+                                                    ColorIndex = 0x02
+                                                }
                                         },
                                         new DocumentTableCell
                                         {
@@ -1885,6 +1964,18 @@ internal static class Program
                 },
                 CreateRenderTheme());
 
+        AssertContains(
+            html,
+            "data-repeat-header=\"true\"",
+            "DOC rendered repeating header row");
+        AssertContains(
+            html,
+            "break-inside:avoid",
+            "DOC rendered cant-split row");
+        AssertContains(
+            html,
+            "height:24pt",
+            "DOC rendered exact row height");
         AssertContains(
             html,
             "colspan=\"2\"",
@@ -1909,6 +2000,14 @@ internal static class Program
             html,
             "vertical-align:bottom",
             "DOC rendered table cell vertical alignment");
+        AssertContains(
+            html,
+            "border-top:1pt solid #FF0000",
+            "DOC rendered TC80 top border");
+        AssertContains(
+            html,
+            "border-bottom:0.5pt dashed #0000FF",
+            "DOC rendered sprmTSetBrc80 border");
     }
 
     private static void TestDocFootnoteTables()
