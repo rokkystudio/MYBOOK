@@ -2328,6 +2328,22 @@ internal static class Program
             BuildSimpleListMarkers(0x30, "\0", 2, 29)
                 .SequenceEqual(["\u200Cأأ", "\u200Cبب"]),
             "DOC arabicAbjad должен повторять выбранный символ после 28 значений.");
+        Assert(
+            BuildSimpleListMarkers(0x31, "\0", 2)
+                .SequenceEqual(["क", "ख"]),
+            "DOC hindiVowels должен следовать Word-compatible consonant Unicode sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x31, "\0", 2, 37)
+                .SequenceEqual(["ह", null]),
+            "DOC hindiVowels не должен синтезировать rollover после U+0939.");
+        Assert(
+            BuildSimpleListMarkers(0x32, "\0", 2)
+                .SequenceEqual(["अ", "आ"]),
+            "DOC hindiConsonants должен следовать Word-compatible vowel Unicode sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x32, "\0", 2, 16)
+                .SequenceEqual(["औ", null]),
+            "DOC hindiConsonants не должен синтезировать rollover после U+0914.");
 
         Assert(
             formatting.KeepTogether == true &&
