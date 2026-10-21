@@ -9,7 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Rectangle = System.Windows.Shapes.Rectangle;
-using FlagsPack;
+using FlagCatalog = Flags.Flags;
 using Microsoft.Win32;
 using Book.Documents;
 using Book.Rendering;
@@ -149,7 +149,7 @@ public partial class MainWindow : Window
     private void UpdateToolBarButtons()
     {
         LanguageIcon.Source =
-            CountryFlags.Load(WpfLanguageMenuService.GetCurrentLanguageFlagCountryCode());
+            FlagCatalog.Load(WpfLanguageMenuService.GetCurrentLanguageFlagCountryCode());
 
         var themePath = NeoThemePalettes.IsDarkTheme(settings_.Theme)
             ? NeoAssetPaths.ThemeDark

@@ -6,7 +6,7 @@ using NeoUI;
 namespace MYBOOK.UI;
 
 /// <summary>
-/// Создаёт меню выбора языка через общий NeoUI и каталог флагов FlagsPack.
+/// Создаёт меню выбора языка через общий NeoUI и каталог флагов Flags.
 /// </summary>
 internal static class WpfLanguageMenuService
 {
