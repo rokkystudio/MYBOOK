@@ -1728,6 +1728,34 @@ internal static class Program
             grpprl.ToArray(),
             formatting);
 
+        var legacyShadingFormatting =
+            new DocDocumentReader.DocParagraphFormatting();
+        DocDocumentReader.ReadParagraphGrpprl(
+            new byte[] { 0x2D, 0x44, 0xE6, 0x04 },
+            legacyShadingFormatting);
+
+        Assert(
+            legacyShadingFormatting.Shading is
+            {
+                ForegroundColor: "#FF0000",
+                BackgroundColor: "#FFFF00",
+                Pattern: 1
+            },
+            "DOC sprmPShd80 должен декодировать legacy Ico colors и pattern.");
+
+        var nilLegacyShadingFormatting =
+            new DocDocumentReader.DocParagraphFormatting
+            {
+                Shading = legacyShadingFormatting.Shading
+            };
+        DocDocumentReader.ReadParagraphGrpprl(
+            new byte[] { 0x2D, 0x44, 0xFF, 0xFF },
+            nilLegacyShadingFormatting);
+
+        Assert(
+            nilLegacyShadingFormatting.Shading == null,
+            "DOC Shd80Nil должен сбрасывать paragraph shading.");
+
         Assert(
             formatting.KeepTogether == true &&
             formatting.KeepWithNext == true &&
