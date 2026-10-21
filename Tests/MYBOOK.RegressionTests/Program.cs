@@ -201,7 +201,7 @@ internal static class Program
             \trowd\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
             \pard
-            {\pict\pngblip\picw1\pich1\picwgoal1440\pichgoal720\picscalex50\picscaley200 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
+            {\pict\pngblip\picw1\pich1\picwgoal1440\pichgoal720\picscalex50\picscaley200\piccropl120\piccropt-40\piccropr60\piccropb20 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
             {\pict\dibitmap0 280000000100000001000000010018000000000004000000000000000000000000000000000000000000FF00}\par
             }
             """;
@@ -544,9 +544,13 @@ internal static class Program
                 WidthPoints: 36,
                 HeightPoints: 72,
                 ScaleXPercent: 50,
-                ScaleYPercent: 200
+                ScaleYPercent: 200,
+                CropLeftPoints: 6,
+                CropTopPoints: -2,
+                CropRightPoints: 3,
+                CropBottomPoints: 1
             },
-            "RTF pict должен сохранять picw/pich и применять picwgoal/pichgoal вместе с picscalex/picscaley.");
+            "RTF pict должен сохранять picw/pich, goal/scale geometry и signed piccrop* offsets.");
 
         var bmpImage = model.Blocks
             .OfType<DocumentParagraph>()
@@ -672,8 +676,8 @@ internal static class Program
 
         AssertContains(
             html,
-            "data-pixel-width=\"1\" data-pixel-height=\"1\" data-scale-x-percent=\"50\" data-scale-y-percent=\"200\" style=\"width:36pt;height:72pt;\"",
-            "RTF rendered picture geometry");
+            "data-pixel-width=\"1\" data-pixel-height=\"1\" data-scale-x-percent=\"50\" data-scale-y-percent=\"200\" data-crop-left-pt=\"6\" data-crop-top-pt=\"-2\" data-crop-right-pt=\"3\" data-crop-bottom-pt=\"1\" style=\"width:36pt;height:72pt;\"",
+            "RTF rendered picture geometry and crop metadata");
 
         AssertContains(
             html,
