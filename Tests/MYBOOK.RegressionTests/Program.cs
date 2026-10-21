@@ -1769,6 +1769,34 @@ internal static class Program
             },
             legacyBorderFormatting);
 
+        var word95BorderFormatting =
+            new DocDocumentReader.DocParagraphFormatting();
+        DocDocumentReader.ReadParagraphGrpprl(
+            new byte[]
+            {
+                0x24, 0x44, 0xA8, 0x11,
+                0x25, 0x44, 0xCE, 0x02,
+                0x26, 0x44, 0x9A, 0x00,
+                0x27, 0x44, 0x0F, 0x03,
+                0x28, 0x44, 0x93, 0x02
+            },
+            word95BorderFormatting);
+
+        Assert(
+            word95BorderFormatting.BorderTop is
+            {
+                Type: 0x01,
+                WidthPoints: 0.75,
+                ColorIndex: 0x06,
+                SpacingPoints: 2,
+                Shadow: true
+            } &&
+            word95BorderFormatting.BorderLeft is { Type: 0x06, WidthPoints: 0.75, ColorIndex: 0x0B } &&
+            word95BorderFormatting.BorderBottom is { Type: 0x03, WidthPoints: 2.25, ColorIndex: 0x02 } &&
+            word95BorderFormatting.BorderRight is { Type: 0x07, WidthPoints: 0.75, ColorIndex: 0x0C } &&
+            word95BorderFormatting.BorderBetween is { Type: 0x02, WidthPoints: 3, ColorIndex: 0x0A },
+            "DOC sprmPBrc*70 должны декодировать Word 95 BRC70 bit fields.");
+
         Assert(
             legacyBorderFormatting.BorderTop is { Type: 0x01, WidthPoints: 1, ColorIndex: 0x06 } &&
             legacyBorderFormatting.BorderLeft is { Type: 0x06, WidthPoints: 2, ColorIndex: 0x0B } &&
