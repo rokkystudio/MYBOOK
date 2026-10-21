@@ -201,6 +201,7 @@ internal static class Program
             \trowd\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
             \trowd\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
+            \trowd\clbrdrt\brdrhair\brdrw10\brdrcf1\cellx600\clbrdrt\brdrdashd\brdrw20\brdrcf1\cellx1200\clbrdrt\brdrdashdd\brdrw20\brdrcf1\cellx1800\clbrdrt\brdrtriple\brdrw30\brdrcf1\cellx2400\intbl Hair\cell DotDash\cell DotDotDash\cell Triple\cell\row
             \pard
             {\pict\pngblip\picw1\pich1\picwgoal1440\pichgoal720\picscalex50\picscaley200\piccropl120\piccropt-40\piccropr60\piccropb20 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
             {\pict\dibitmap0 280000000100000001000000010018000000000004000000000000000000000000000000000000000000FF00}\par
@@ -390,7 +391,7 @@ internal static class Program
                 "RTF table controls должны создавать DocumentTable.");
 
         Assert(
-            table.Rows.Count == 4 &&
+            table.Rows.Count == 5 &&
             table.Rows[0].Cells.Count == 2 &&
             table.Rows[0].Cells[0].Inlines.Any(inline =>
                 inline.Text.Contains(
@@ -536,6 +537,14 @@ internal static class Program
                     "Row 4 B",
                     StringComparison.Ordinal)),
             "RTF clvmgf/clvmrg должны сохраняться как RowSpan.");
+
+        Assert(
+            table.Rows[4].Cells.Count == 4 &&
+            table.Rows[4].Cells[0].BorderTop?.Type == 0x05 &&
+            table.Rows[4].Cells[1].BorderTop?.Type == 0x08 &&
+            table.Rows[4].Cells[2].BorderTop?.Type == 0x09 &&
+            table.Rows[4].Cells[3].BorderTop?.Type == 0x0A,
+            "RTF brdrhair, brdrdashd, brdrdashdd и brdrtriple должны сохранять точные border type codes.");
 
         var pngImage = model.Blocks
             .OfType<DocumentParagraph>()
@@ -685,6 +694,21 @@ internal static class Program
             html,
             "background-color:#FFFF00",
             "RTF rendered exact solid cell shading");
+
+        AssertContains(
+            html,
+            "border-top:0.5pt solid #FF0000",
+            "RTF rendered hairline border fallback");
+
+        AssertContains(
+            html,
+            "border-top:1pt dashed #FF0000",
+            "RTF rendered dot-dash border fallback");
+
+        AssertContains(
+            html,
+            "border-top:1.5pt double #FF0000",
+            "RTF rendered triple border fallback");
 
         AssertContains(
             html,
