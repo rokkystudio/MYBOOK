@@ -1663,8 +1663,32 @@ internal static class Program
             0x2407,
             1);
 
+        grpprl.Add(0x0D);
+        grpprl.Add(0xC6);
+        grpprl.Add(13);
+        grpprl.Add(1);
+        grpprl.AddRange(BitConverter.GetBytes((short)720));
+        grpprl.Add(3);
+        grpprl.AddRange(BitConverter.GetBytes((short)1440));
+        grpprl.AddRange(BitConverter.GetBytes((short)2880));
+        grpprl.AddRange(BitConverter.GetBytes((short)4320));
+        grpprl.Add(0x0A);
+        grpprl.Add(0x11);
+        grpprl.Add(0x1B);
+
         var formatting =
-            new DocDocumentReader.DocParagraphFormatting();
+            new DocDocumentReader.DocParagraphFormatting
+            {
+                TabStops =
+                [
+                    new DocumentTabStop
+                    {
+                        PositionPoints = 36,
+                        Alignment = DocumentTabAlignment.Left,
+                        Leader = DocumentTabLeader.None
+                    }
+                ]
+            };
 
         DocDocumentReader.ReadParagraphGrpprl(
             grpprl.ToArray(),
@@ -1676,8 +1700,19 @@ internal static class Program
             formatting.WidowControl == true &&
             formatting.RightToLeft == true &&
             formatting.OutlineLevel == 3 &&
-            formatting.PageBreakBefore == true,
-            "DOC PAPX keep/keep-next/widow/bidi/outline/page-break SPRM должны сохраняться.");
+            formatting.PageBreakBefore == true &&
+            formatting.TabStops.Count == 3 &&
+            formatting.TabStops[0].PositionPoints == 72 &&
+            formatting.TabStops[0].Alignment == DocumentTabAlignment.Right &&
+            formatting.TabStops[0].Leader == DocumentTabLeader.Dots &&
+            formatting.TabStops[1].PositionPoints == 144 &&
+            formatting.TabStops[1].Alignment == DocumentTabAlignment.Center &&
+            formatting.TabStops[1].Leader == DocumentTabLeader.Hyphens &&
+            formatting.TabStops[2].PositionPoints == 216 &&
+            formatting.TabStops[2].Alignment == DocumentTabAlignment.Decimal &&
+            formatting.TabStops[2].Leader == DocumentTabLeader.Underline &&
+            formatting.DeletedTabStopPositionsPoints.SequenceEqual([36.0]),
+            "DOC PAPX keep/keep-next/widow/bidi/outline/page-break и custom tabs должны сохраняться.");
 
         var html = DocumentHtmlRenderer.Render(
             new DocumentModel
@@ -1702,7 +1737,8 @@ internal static class Program
                         WidowControl =
                             formatting.WidowControl ?? false,
                         RightToLeft =
-                            formatting.RightToLeft ?? false
+                            formatting.RightToLeft ?? false,
+                        TabStops = formatting.TabStops
                     }
                 ]
             },
@@ -1728,6 +1764,10 @@ internal static class Program
             html,
             "direction:rtl",
             "DOC rendered bidi paragraph");
+        AssertContains(
+            html,
+            "data-tab-stops=\"72:right:dots;144:center:hyphens;216:decimal:underline\"",
+            "DOC rendered custom tab metadata");
     }
 
     private static void TestDocCharacterStyle()

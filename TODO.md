@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.2.8
+Текущая версия: 1.2.9
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -22,7 +22,7 @@
 ## DOC
 
 - [ ] Character/list/table styles: paragraph `basedOn` и character styles через `sprmCIstd` уже поддерживаются; `sprmCIstd` применяется между paragraph-style character properties и direct CHPX с проверкой style kind. Остались list/table styles, `sprmCMajority`/reset semantics и дополнительные style properties.
-- [ ] Расширить PAPX на list properties, tabs, paragraph borders/shading и остальные paragraph SPRM; keep/keep-next, widow control, bidi, outline level, page-break-before и nested-table depth (`sprmPItap`/`sprmPDtap`) уже поддерживаются.
+- [ ] Расширить PAPX на list properties, paragraph borders/shading и остальные paragraph SPRM; custom tabs через `sprmPChgTabsPapx` уже поддерживаются с delete/add semantics, left/center/right/decimal alignment и none/dots/hyphens/underline/heavy leaders, а HTML metadata использует общий `DocumentTabStop`. Bar/list tabs и middle-dot leader пока не представлены нейтральной моделью и приводят к явной unsupported-ошибке. Keep/keep-next, widow control, bidi, outline level, page-break-before и nested-table depth (`sprmPItap`/`sprmPDtap`) уже поддерживаются.
 - [ ] Таблицы: `sprmTDefTable`, structural/grid-width overrides, TC80/BRC80 и modern cell borders, table-wide borders, preferred widths/autofit, logical alignment/RTL, shading, padding/vertical alignment, row properties, no-wrap/fit-text, `sprmTTextFlow` и nested tables поддерживаются. Nested cells сохраняют ordered block content и рекурсивные `DocumentTable`; depth>1 cell/row marks обрабатываются через `sprmPFInnerTableCell`/`sprmPFInnerTtp`. Остались patterned shading visual rendering, table styles и advanced border conflict cases.
 - [ ] Изображения и OfficeArt: inline `U+0001` и floating `U+0008` raster PNG/JPEG читаются; floating path разрешает `PlcfSpa` → `OfficeArtFSP.spid` → `FOPT.pib` → BStore/FBSE/BLIP и показывает image в reflow. Остались `PlcSpaHdr`, точное floating positioning/wrap, complex/delayed/fill BLIP references, WMF/EMF/DIB/TIFF и полноценный shape rendering.
 - [ ] Headers/footers: text stories и Even/Odd/First variants по секциям читаются; остались `PlcSpaHdr` drawings, header/footer-specific fields и layout properties.
