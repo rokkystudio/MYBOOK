@@ -2240,6 +2240,38 @@ internal static class Program
             BuildSimpleListMarkers(0x36, "\0", 2, 12)
                 .SequenceEqual(["๑๒", "๑๓"]),
             "DOC thaiNumbers должен использовать Thai decimal digits.");
+        Assert(
+            BuildSimpleListMarkers(0x0C, "\0", 2)
+                .SequenceEqual(["ｱ", "ｲ"]),
+            "DOC aiueo должен использовать half-width Katakana sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x0C, "\0", 2, 46)
+                .SequenceEqual(["ﾝ", "ｱ"]),
+            "DOC aiueo должен restart sequence после 46 символов.");
+        Assert(
+            BuildSimpleListMarkers(0x14, "\0", 2)
+                .SequenceEqual(["ア", "イ"]),
+            "DOC aiueoFullWidth должен использовать full-width Katakana sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x14, "\0", 2, 46)
+                .SequenceEqual(["ン", "ア"]),
+            "DOC aiueoFullWidth должен restart sequence после 46 символов.");
+        Assert(
+            BuildSimpleListMarkers(0x18, "\0", 2)
+                .SequenceEqual(["가", "나"]),
+            "DOC ganada должен использовать Korean Ganada sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x18, "\0", 2, 14)
+                .SequenceEqual(["하", "가"]),
+            "DOC ganada должен restart sequence после 14 символов.");
+        Assert(
+            BuildSimpleListMarkers(0x19, "\0", 2)
+                .SequenceEqual(["ㄱ", "ㄴ"]),
+            "DOC chosung должен использовать Korean Chosung sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x19, "\0", 2, 14)
+                .SequenceEqual(["ㅎ", "ㄱ"]),
+            "DOC chosung должен restart sequence после 14 символов.");
 
         Assert(
             formatting.KeepTogether == true &&
