@@ -1756,6 +1756,27 @@ internal static class Program
             nilLegacyShadingFormatting.Shading == null,
             "DOC Shd80Nil должен сбрасывать paragraph shading.");
 
+        var legacyBorderFormatting =
+            new DocDocumentReader.DocParagraphFormatting();
+        DocDocumentReader.ReadParagraphGrpprl(
+            new byte[]
+            {
+                0x24, 0x64, 0x08, 0x01, 0x06, 0x00,
+                0x25, 0x64, 0x10, 0x06, 0x0B, 0x00,
+                0x26, 0x64, 0x18, 0x03, 0x02, 0x00,
+                0x27, 0x64, 0x0C, 0x07, 0x0C, 0x00,
+                0x28, 0x64, 0x08, 0x01, 0x0A, 0x00
+            },
+            legacyBorderFormatting);
+
+        Assert(
+            legacyBorderFormatting.BorderTop is { Type: 0x01, WidthPoints: 1, ColorIndex: 0x06 } &&
+            legacyBorderFormatting.BorderLeft is { Type: 0x06, WidthPoints: 2, ColorIndex: 0x0B } &&
+            legacyBorderFormatting.BorderBottom is { Type: 0x03, WidthPoints: 3, ColorIndex: 0x02 } &&
+            legacyBorderFormatting.BorderRight is { Type: 0x07, WidthPoints: 1.5, ColorIndex: 0x0C } &&
+            legacyBorderFormatting.BorderBetween is { Type: 0x01, WidthPoints: 1, ColorIndex: 0x0A },
+            "DOC sprmPBrc*80 должны декодировать legacy Brc80 paragraph borders.");
+
         Assert(
             formatting.KeepTogether == true &&
             formatting.KeepWithNext == true &&
