@@ -1663,6 +1663,33 @@ internal static class Program
             0x2407,
             1);
 
+        void AddModernParagraphBorder(
+            ushort sprm,
+            byte red,
+            byte green,
+            byte blue,
+            byte widthEighthPoints,
+            byte type)
+        {
+            grpprl.Add((byte)(sprm & 0xFF));
+            grpprl.Add((byte)(sprm >> 8));
+            grpprl.Add(8);
+            grpprl.Add(red);
+            grpprl.Add(green);
+            grpprl.Add(blue);
+            grpprl.Add(0);
+            grpprl.Add(widthEighthPoints);
+            grpprl.Add(type);
+            grpprl.Add(0);
+            grpprl.Add(0);
+        }
+
+        AddModernParagraphBorder(0xC64E, 0xFF, 0x00, 0x00, 8, 0x01);
+        AddModernParagraphBorder(0xC64F, 0x00, 0x80, 0x00, 16, 0x06);
+        AddModernParagraphBorder(0xC650, 0x00, 0x00, 0xFF, 24, 0x03);
+        AddModernParagraphBorder(0xC651, 0x80, 0x00, 0x80, 12, 0x07);
+        AddModernParagraphBorder(0xC652, 0x00, 0x80, 0x80, 8, 0x01);
+
         grpprl.Add(0x4D);
         grpprl.Add(0xC6);
         grpprl.Add(10);
@@ -1714,6 +1741,11 @@ internal static class Program
                 BackgroundColor: "#FFFF00",
                 Pattern: 1
             } &&
+            formatting.BorderTop is { Type: 0x01, WidthPoints: 1, Color: "#FF0000" } &&
+            formatting.BorderLeft is { Type: 0x06, WidthPoints: 2, Color: "#008000" } &&
+            formatting.BorderBottom is { Type: 0x03, WidthPoints: 3, Color: "#0000FF" } &&
+            formatting.BorderRight is { Type: 0x07, WidthPoints: 1.5, Color: "#800080" } &&
+            formatting.BorderBetween is { Type: 0x01, WidthPoints: 1, Color: "#008080" } &&
             formatting.TabStops.Count == 3 &&
             formatting.TabStops[0].PositionPoints == 72 &&
             formatting.TabStops[0].Alignment == DocumentTabAlignment.Right &&
@@ -1752,6 +1784,11 @@ internal static class Program
                         RightToLeft =
                             formatting.RightToLeft ?? false,
                         Shading = formatting.Shading,
+                        BorderTop = formatting.BorderTop,
+                        BorderLeft = formatting.BorderLeft,
+                        BorderBottom = formatting.BorderBottom,
+                        BorderRight = formatting.BorderRight,
+                        BorderBetween = formatting.BorderBetween,
                         TabStops = formatting.TabStops
                     }
                 ]
@@ -1786,6 +1823,26 @@ internal static class Program
             html,
             "background-color:#FF0000",
             "DOC rendered solid paragraph shading");
+        AssertContains(
+            html,
+            "border-top:1pt solid #FF0000",
+            "DOC rendered paragraph top border");
+        AssertContains(
+            html,
+            "border-left:2pt dotted #008000",
+            "DOC rendered paragraph left border");
+        AssertContains(
+            html,
+            "border-bottom:3pt double #0000FF",
+            "DOC rendered paragraph bottom border");
+        AssertContains(
+            html,
+            "border-right:1.5pt dashed #800080",
+            "DOC rendered paragraph right border");
+        AssertContains(
+            html,
+            "data-border-between-type=\"1\" data-border-between-width-pt=\"1\" data-border-between-color=\"#008080\"",
+            "DOC paragraph between-border metadata");
         AssertContains(
             html,
             "data-tab-stops=\"72:right:dots;144:center:hyphens;216:decimal:underline\"",
