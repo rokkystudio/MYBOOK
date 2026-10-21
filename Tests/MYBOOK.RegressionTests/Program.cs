@@ -2145,7 +2145,8 @@ internal static class Program
         static string?[] BuildSimpleListMarkers(
             byte formatCode,
             string numberText,
-            byte followCharacter)
+            byte followCharacter,
+            int startAt = 1)
         {
             const int listId = 5000;
             var definition = new DocDocumentReader.DocListDefinition(
@@ -2153,7 +2154,7 @@ internal static class Program
                 true,
                 [
                     new DocDocumentReader.DocListLevelDefinition(
-                        1,
+                        startAt,
                         formatCode,
                         followCharacter,
                         numberText,
@@ -2199,6 +2200,46 @@ internal static class Program
             BuildSimpleListMarkers(0xFF, "\0", 1)
                 .All(marker => marker == null),
             "DOC MSONFC none не должен создавать видимый list marker.");
+        Assert(
+            BuildSimpleListMarkers(0x00, "\0", 2, 0)
+                .SequenceEqual(["0", "1"]),
+            "DOC decimal numbering должен поддерживать iStartAt=0.");
+        Assert(
+            BuildSimpleListMarkers(0x08, "\0", 2, 10)
+                .SequenceEqual(["A", "B"]),
+            "DOC hex numbering должен использовать uppercase hexadecimal digits.");
+        Assert(
+            BuildSimpleListMarkers(0x0E, "\0", 2, 12)
+                .SequenceEqual(["１２", "１３"]),
+            "DOC decimalFullWidth должен переводить каждую decimal digit в full-width Unicode block.");
+        Assert(
+            BuildSimpleListMarkers(0x16, "\0", 2)
+                .SequenceEqual(["01", "02"]),
+            "DOC decimalZero должен добавлять leading zero для однозначных чисел.");
+        Assert(
+            BuildSimpleListMarkers(0x16, "\0", 2, 10)
+                .SequenceEqual(["10", "11"]),
+            "DOC decimalZero не должен добавлять лишний zero к двузначным числам.");
+        Assert(
+            BuildSimpleListMarkers(0x12, "\0", 2)
+                .SequenceEqual(["①", "②"]),
+            "DOC decimalEnclosedCircle должен использовать Unicode circled digits.");
+        Assert(
+            BuildSimpleListMarkers(0x1A, "\0", 2)
+                .SequenceEqual(["⒈", "⒉"]),
+            "DOC decimalEnclosedFullstop должен использовать Unicode digit-full-stop sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x1B, "\0", 2)
+                .SequenceEqual(["⑴", "⑵"]),
+            "DOC decimalEnclosedParen должен использовать Unicode parenthesized digits.");
+        Assert(
+            BuildSimpleListMarkers(0x33, "\0", 2, 12)
+                .SequenceEqual(["१२", "१३"]),
+            "DOC hindiNumbers должен использовать Devanagari decimal digits.");
+        Assert(
+            BuildSimpleListMarkers(0x36, "\0", 2, 12)
+                .SequenceEqual(["๑๒", "๑๓"]),
+            "DOC thaiNumbers должен использовать Thai decimal digits.");
 
         Assert(
             formatting.KeepTogether == true &&
