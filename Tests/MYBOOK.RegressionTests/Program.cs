@@ -1662,6 +1662,12 @@ internal static class Program
         AddByteSprm(
             0x2407,
             1);
+        AddByteSprm(
+            0x260A,
+            2);
+        grpprl.Add(0x0B);
+        grpprl.Add(0x46);
+        grpprl.AddRange(BitConverter.GetBytes((short)-3));
 
         void AddModernParagraphBorder(
             ushort sprm,
@@ -1805,12 +1811,42 @@ internal static class Program
             legacyBorderFormatting.BorderBetween is { Type: 0x01, WidthPoints: 1, ColorIndex: 0x0A },
             "DOC sprmPBrc*80 должны декодировать legacy Brc80 paragraph borders.");
 
+        var skippedListFormatting =
+            new DocDocumentReader.DocParagraphFormatting();
+        DocDocumentReader.ReadParagraphGrpprl(
+            new byte[] { 0x0A, 0x26, 0x0C, 0x0B, 0x46, 0x01, 0x00 },
+            skippedListFormatting);
+        Assert(
+            skippedListFormatting.ListFormatOverrideRaw == 1 &&
+            skippedListFormatting.ListLevelRaw == 0x0C,
+            "DOC sprmPIlvl 0x0C должен сохранять skip-numbering list semantics.");
+
+        var clearedListFormatting =
+            new DocDocumentReader.DocParagraphFormatting();
+        DocDocumentReader.ReadParagraphGrpprl(
+            new byte[] { 0x0B, 0x46, 0x00, 0x00 },
+            clearedListFormatting);
+        Assert(
+            clearedListFormatting.ListFormatOverrideRaw == 0,
+            "DOC sprmPIlfo 0 должен явно сбрасывать list membership.");
+
+        var noListFormatting =
+            new DocDocumentReader.DocParagraphFormatting();
+        DocDocumentReader.ReadParagraphGrpprl(
+            new byte[] { 0x0B, 0x46, 0x01, 0xF8 },
+            noListFormatting);
+        Assert(
+            noListFormatting.ListFormatOverrideRaw == -2047,
+            "DOC sprmPIlfo 0xF801 должен сохранять explicit not-in-list semantics.");
+
         Assert(
             formatting.KeepTogether == true &&
             formatting.KeepWithNext == true &&
             formatting.WidowControl == true &&
             formatting.RightToLeft == true &&
             formatting.OutlineLevel == 3 &&
+            formatting.ListFormatOverrideRaw == -3 &&
+            formatting.ListLevelRaw == 2 &&
             formatting.PageBreakBefore == true &&
             formatting.Shading is
             {
@@ -1852,6 +1888,9 @@ internal static class Program
                             }
                         ],
                         OutlineLevel = formatting.OutlineLevel,
+                        ListFormatOverrideIndex = 3,
+                        ListLevel = 2,
+                        ListPreserveIndents = true,
                         KeepTogether =
                             formatting.KeepTogether ?? false,
                         KeepWithNext =
@@ -1876,6 +1915,10 @@ internal static class Program
             html,
             "data-outline-level=\"3\"",
             "DOC rendered outline level");
+        AssertContains(
+            html,
+            "data-list-format-override=\"3\" data-list-level=\"2\" data-list-preserve-indents=\"true\"",
+            "DOC rendered list membership metadata");
         AssertContains(
             html,
             "break-inside:avoid",
