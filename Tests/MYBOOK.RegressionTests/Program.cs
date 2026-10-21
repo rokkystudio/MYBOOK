@@ -1839,6 +1839,93 @@ internal static class Program
             noListFormatting.ListFormatOverrideRaw == -2047,
             "DOC sprmPIlfo 0xF801 должен сохранять explicit not-in-list semantics.");
 
+        var plfLst = new List<byte>();
+        plfLst.AddRange(BitConverter.GetBytes((short)1));
+        plfLst.AddRange(BitConverter.GetBytes(1234));
+        plfLst.AddRange(new byte[4]);
+        for (var index = 0; index < 9; index++)
+        {
+            plfLst.AddRange(BitConverter.GetBytes((ushort)0x0FFF));
+        }
+        plfLst.Add(0x01);
+        plfLst.Add(0x00);
+
+        var lvlTail = new List<byte>();
+        lvlTail.AddRange(BitConverter.GetBytes(1));
+        lvlTail.Add(0x17);
+        lvlTail.Add(0x00);
+        lvlTail.AddRange(new byte[9]);
+        lvlTail.Add(0x01);
+        lvlTail.AddRange(new byte[4]);
+        lvlTail.AddRange(new byte[4]);
+        lvlTail.Add(0x00);
+        lvlTail.Add(0x00);
+        lvlTail.Add(0x00);
+        lvlTail.Add(0x00);
+        lvlTail.AddRange(BitConverter.GetBytes((ushort)1));
+        lvlTail.AddRange(BitConverter.GetBytes((ushort)'•'));
+
+        var plfLfo = new List<byte>();
+        plfLfo.AddRange(BitConverter.GetBytes((uint)1));
+        plfLfo.AddRange(BitConverter.GetBytes(1234));
+        plfLfo.AddRange(new byte[12]);
+        plfLfo.AddRange(BitConverter.GetBytes(0));
+
+        var listTables = DocDocumentReader.ReadListTables(
+            plfLst.ToArray(),
+            lvlTail.ToArray(),
+            plfLfo.ToArray());
+
+        Assert(
+            listTables.ListsById.Count == 1 &&
+            listTables.ListIdsByOverrideIndex.SequenceEqual([1234]) &&
+            listTables.ListsById[1234].Simple &&
+            listTables.ListsById[1234].Levels.Count == 1 &&
+            listTables.ListsById[1234].Levels[0] is
+            {
+                StartAt: 1,
+                NumberFormatCode: 0x17,
+                FollowCharacter: 1,
+                NumberText: "•"
+            },
+            "DOC PlfLst/LVL/PlfLfo должны сохранять simple bullet list definition.");
+
+        var listBlocks = DocDocumentReader.BuildParagraphs(
+            "Bullet\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(
+                    0,
+                    7,
+                    new DocDocumentReader.DocParagraphFormatting
+                    {
+                        ListFormatOverrideRaw = 1,
+                        ListLevelRaw = 0
+                    })
+            ],
+            listTables);
+        var listParagraph = (DocumentParagraph)listBlocks.Single();
+
+        Assert(
+            listParagraph.ListFormatOverrideIndex == 1 &&
+            listParagraph.ListLevel == 0 &&
+            listParagraph.ListStartAt == 1 &&
+            listParagraph.ListNumberFormatCode == 0x17 &&
+            listParagraph.ListFollowCharacter == 1 &&
+            listParagraph.ListBulletText == "•",
+            "DOC paragraph должен разрешать iLfo/iLvl в LVL properties.");
+
+        var listHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC list tables",
+                Blocks = listBlocks
+            },
+            CreateRenderTheme());
+        AssertContains(
+            listHtml,
+            "data-list-format-override=\"1\" data-list-level=\"0\" data-list-start-at=\"1\" data-list-number-format=\"23\" data-list-follow=\"1\" data-list-bullet=\"•\"",
+            "DOC resolved list definition metadata");
+
         Assert(
             formatting.KeepTogether == true &&
             formatting.KeepWithNext == true &&
