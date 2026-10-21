@@ -196,7 +196,7 @@ internal static class Program
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
-            \trowd\trhdr\trkeep\trrh-480\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
+            \trowd\trhdr\trkeep\trrh-480\trbrdrt\brdrdash\brdrw60\brdrcf2\trbrdrl\brdrs\brdrw20\brdrcf2\trbrdrb\brdrdb\brdrw40\brdrcf2\trbrdrr\brdrdot\brdrw30\brdrcf2\trbrdrh\brdrs\brdrw20\brdrcf2\trbrdrv\brdrdot\brdrw20\brdrcf2\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
             \trowd\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
             \trowd\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
@@ -397,6 +397,47 @@ internal static class Program
             table.Rows[0].HeightExact,
             "RTF trhdr, trkeep и negative trrh должны сохранять свойства строки.");
 
+        var borderedRow = table.Rows[0];
+
+        Assert(
+            borderedRow.BorderTop is
+            {
+                Type: 0x07,
+                WidthPoints: 3,
+                Color: "#FFFF00"
+            } &&
+            borderedRow.BorderLeft is
+            {
+                Type: 0x01,
+                WidthPoints: 1,
+                Color: "#FFFF00"
+            } &&
+            borderedRow.BorderBottom is
+            {
+                Type: 0x03,
+                WidthPoints: 2,
+                Color: "#FFFF00"
+            } &&
+            borderedRow.BorderRight is
+            {
+                Type: 0x06,
+                WidthPoints: 1.5,
+                Color: "#FFFF00"
+            } &&
+            borderedRow.BorderHorizontalInside is
+            {
+                Type: 0x01,
+                WidthPoints: 1,
+                Color: "#FFFF00"
+            } &&
+            borderedRow.BorderVerticalInside is
+            {
+                Type: 0x06,
+                WidthPoints: 1,
+                Color: "#FFFF00"
+            },
+            "RTF trbrdr* controls должны сохранять outer и inside borders строки.");
+
         Assert(
             table.Rows[0].Cells[0].WidthPoints == 50 &&
             table.Rows[0].Cells[0].PaddingLeftPoints == 5 &&
@@ -592,6 +633,16 @@ internal static class Program
             html,
             "border-left:1.5pt dotted #FF0000",
             "RTF rendered dotted cell border");
+
+        AssertContains(
+            html,
+            "border-top:3pt dashed #FFFF00",
+            "RTF rendered row outer border fallback");
+
+        AssertContains(
+            html,
+            "border-left:1pt dotted #FFFF00",
+            "RTF rendered row inside border fallback");
 
         AssertContains(
             html,

@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.2.3
+Текущая версия: 1.2.4
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -35,7 +35,7 @@
 
 ## RTF
 
-- [ ] Таблицы: cell borders через `clbrdr*` с `brdrs`/`brdrdb`/`brdrdot`/`brdrdash`, width/color/spacing/shadow/frame и cell shading через `clshdng`/`clcfpat`/`clcbpat` сохраняются в нейтральной модели; точные 0%/100% fills визуально рендерятся, промежуточные patterned fills сохраняют процент и цвета как metadata. Horizontal `clmgf`/`clmrg` и vertical `clvmgf`/`clvmrg` merges сохраняются как `ColumnSpan`/`RowSpan`; `cellx` задаёт фактическую ширину ячеек; `trhdr`, `trkeep`, `trrh`, `clvertal*`, twips-padding через `clpad*` + unit 3, `clNoWrap` и `clFitText` поддерживаются. Остались nested tables, row/table border controls, дополнительные border styles, визуальный renderer patterned shading и остальные редкие row/cell properties.
+- [ ] Таблицы: cell borders через `clbrdr*` и row outer/inside borders через `trbrdrt`/`trbrdrl`/`trbrdrb`/`trbrdrr`/`trbrdrh`/`trbrdrv` с `brdrs`/`brdrdb`/`brdrdot`/`brdrdash`, width/color/spacing/shadow/frame сохраняются в нейтральной модели и применяются renderer как fallback под cell borders. Cell shading через `clshdng`/`clcfpat`/`clcbpat` сохраняется в нейтральной модели; точные 0%/100% fills визуально рендерятся, промежуточные patterned fills сохраняют процент и цвета как metadata. Horizontal `clmgf`/`clmrg` и vertical `clvmgf`/`clvmrg` merges сохраняются как `ColumnSpan`/`RowSpan`; `cellx` задаёт фактическую ширину ячеек; `trhdr`, `trkeep`, `trrh`, `clvertal*`, twips-padding через `clpad*` + unit 3, `clNoWrap` и `clFitText` поддерживаются. Остались nested tables, дополнительные border styles, визуальный renderer patterned shading и остальные редкие row/cell properties.
 - [ ] Изображения: WMF/EMF и дополнительные варианты `pict`; стандартный BI_RGB `dibitmap` уже преобразуется в BMP, PNG/JPEG поддерживаются напрямую.
 - [ ] Стили абзацев: `tx` tab stops с `tql`/`tqc`/`tqr`/`tqdec` alignment и `tldot`/`tlhyph`/`tlul`/`tlth`/`tleq` leaders сохраняются в нейтральной модели и HTML metadata; символы `tab` сохраняются в reflow. Остались точное позиционирование custom tab stops в layout и редкие paragraph controls; alignment, indents, spacing, `slmult`, keep/keep-next, widow control и bidi direction уже поддерживаются.
 - [ ] Расширенные Unicode/codepage edge cases: Symbol/OEM charsets, редкие charset/codepage combinations и malformed fallback; известные `fcharset` mapping и DBCS hex sequences уже поддерживаются.
