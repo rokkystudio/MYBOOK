@@ -1878,7 +1878,7 @@ internal static class Program
 
         Assert(
             listTables.ListsById.Count == 1 &&
-            listTables.ListIdsByOverrideIndex.SequenceEqual([1234]) &&
+            listTables.OverridesByIndex.Select(item => item.ListId).SequenceEqual([1234]) &&
             listTables.ListsById[1234].Simple &&
             listTables.ListsById[1234].Levels.Count == 1 &&
             listTables.ListsById[1234].Levels[0] is
@@ -1889,6 +1889,26 @@ internal static class Program
                 NumberText: "·"
             },
             "DOC PlfLst/LVL/PlfLfo должны сохранять simple bullet list definition.");
+
+        var plfLfoStartOverride = new List<byte>();
+        plfLfoStartOverride.AddRange(BitConverter.GetBytes((uint)1));
+        plfLfoStartOverride.AddRange(BitConverter.GetBytes(1234));
+        plfLfoStartOverride.AddRange(new byte[8]);
+        plfLfoStartOverride.Add(1);
+        plfLfoStartOverride.AddRange(new byte[3]);
+        plfLfoStartOverride.AddRange(BitConverter.GetBytes(0));
+        plfLfoStartOverride.AddRange(BitConverter.GetBytes(7));
+        plfLfoStartOverride.AddRange(BitConverter.GetBytes((uint)0x10));
+
+        var overrideTables = DocDocumentReader.ReadListTables(
+            plfLst.ToArray(),
+            lvlTail.ToArray(),
+            plfLfoStartOverride.ToArray());
+
+        Assert(
+            overrideTables.OverridesByIndex[0].LevelOverrides[0].StartAtOverride == 7 &&
+            overrideTables.OverridesByIndex[0].LevelOverrides[0].ReplacementLevel == null,
+            "DOC LFOLVL fStartAt должен сохранять one-shot startAt override.");
 
         var listBlocks = DocDocumentReader.BuildParagraphs(
             "Bullet\r",
@@ -1961,12 +1981,68 @@ internal static class Program
                     false,
                     0)
             ]);
+
+        var startOverrideTables = new DocDocumentReader.DocListTables(
+            new Dictionary<int, DocDocumentReader.DocListDefinition>
+            {
+                [4321] = numberedList
+            },
+            [new DocDocumentReader.DocListOverrideDefinition(
+                4321,
+                new Dictionary<int, DocDocumentReader.DocListLevelOverride>
+                {
+                    [0] = new DocDocumentReader.DocListLevelOverride(5, null)
+                })]);
+        var startOverrideBlocks = DocDocumentReader.BuildParagraphs(
+            "Five\rSix\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 5, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(5, 9, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            startOverrideTables);
+        Assert(
+            startOverrideBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["5. ", "6. "]),
+            "DOC LFOLVL startAt override должен применяться один раз для iLfo.");
+
+        var replacementLevel = numberedList.Levels[0] with
+        {
+            NumberFormatCode = 0x01,
+            NumberText = "\0)"
+        };
+        var replacementTables = new DocDocumentReader.DocListTables(
+            new Dictionary<int, DocDocumentReader.DocListDefinition>
+            {
+                [4321] = numberedList
+            },
+            [new DocDocumentReader.DocListOverrideDefinition(
+                4321,
+                new Dictionary<int, DocDocumentReader.DocListLevelOverride>
+                {
+                    [0] = new DocDocumentReader.DocListLevelOverride(null, replacementLevel)
+                })]);
+        var replacementBlocks = DocDocumentReader.BuildParagraphs(
+            "First\rSecond\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 6, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(6, 13, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            replacementTables);
+        Assert(
+            replacementBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["I) ", "II) "]),
+            "DOC LFOLVL replacement LVL должен заменять list level formatting.");
+
         var numberedTables = new DocDocumentReader.DocListTables(
             new Dictionary<int, DocDocumentReader.DocListDefinition>
             {
                 [4321] = numberedList
             },
-            [4321]);
+            [new DocDocumentReader.DocListOverrideDefinition(
+                4321,
+                new Dictionary<int, DocDocumentReader.DocListLevelOverride>())]);
         var numberedBlocks = DocDocumentReader.BuildParagraphs(
             "One\rSubA\rSubB\rTwo\rSubC\r",
             [
@@ -2014,7 +2090,9 @@ internal static class Program
             {
                 [4322] = noRestartList
             },
-            [4322]);
+            [new DocDocumentReader.DocListOverrideDefinition(
+                4322,
+                new Dictionary<int, DocDocumentReader.DocListLevelOverride>())]);
         var noRestartBlocks = DocDocumentReader.BuildParagraphs(
             "One\rSubA\rTwo\rSubB\r",
             [
@@ -2055,7 +2133,9 @@ internal static class Program
                 {
                     [4323] = romanList
                 },
-                [4323]));
+                [new DocDocumentReader.DocListOverrideDefinition(
+                    4323,
+                    new Dictionary<int, DocDocumentReader.DocListLevelOverride>())]));
         Assert(
             romanBlocks.Cast<DocumentParagraph>()
                 .Select(paragraph => paragraph.ListMarkerText)
