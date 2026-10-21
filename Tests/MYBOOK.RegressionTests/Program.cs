@@ -201,7 +201,7 @@ internal static class Program
             \trowd\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
             \pard
-            {\pict\pngblip 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
+            {\pict\pngblip\picw1\pich1\picwgoal1440\pichgoal720\picscalex50\picscaley200 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
             {\pict\dibitmap0 280000000100000001000000010018000000000004000000000000000000000000000000000000000000FF00}\par
             }
             """;
@@ -525,17 +525,28 @@ internal static class Program
                     StringComparison.Ordinal)),
             "RTF clvmgf/clvmrg должны сохраняться как RowSpan.");
 
+        var pngImage = model.Blocks
+            .OfType<DocumentParagraph>()
+            .SelectMany(paragraph => paragraph.Inlines)
+            .Select(inline => inline.Image)
+            .FirstOrDefault(image =>
+                image != null &&
+                string.Equals(
+                    image.ContentType,
+                    "image/png",
+                    StringComparison.Ordinal));
+
         Assert(
-            model.Blocks
-                .OfType<DocumentParagraph>()
-                .SelectMany(paragraph => paragraph.Inlines)
-                .Any(inline =>
-                    inline.Image != null &&
-                    string.Equals(
-                        inline.Image.ContentType,
-                        "image/png",
-                        StringComparison.Ordinal)),
-            "RTF pict pngblip должен сохранять встроенное PNG-изображение.");
+            pngImage is
+            {
+                PixelWidth: 1,
+                PixelHeight: 1,
+                WidthPoints: 36,
+                HeightPoints: 72,
+                ScaleXPercent: 50,
+                ScaleYPercent: 200
+            },
+            "RTF pict должен сохранять picw/pich и применять picwgoal/pichgoal вместе с picscalex/picscaley.");
 
         var bmpImage = model.Blocks
             .OfType<DocumentParagraph>()
@@ -658,6 +669,11 @@ internal static class Program
             html,
             "class=\"inline-image\"",
             "RTF rendered image");
+
+        AssertContains(
+            html,
+            "data-pixel-width=\"1\" data-pixel-height=\"1\" data-scale-x-percent=\"50\" data-scale-y-percent=\"200\" style=\"width:36pt;height:72pt;\"",
+            "RTF rendered picture geometry");
 
         AssertContains(
             html,
