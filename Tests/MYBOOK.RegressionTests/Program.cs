@@ -1663,6 +1663,13 @@ internal static class Program
             0x2407,
             1);
 
+        grpprl.Add(0x4D);
+        grpprl.Add(0xC6);
+        grpprl.Add(10);
+        grpprl.AddRange(new byte[] { 0xFF, 0x00, 0x00, 0x00 });
+        grpprl.AddRange(new byte[] { 0xFF, 0xFF, 0x00, 0x00 });
+        grpprl.AddRange(BitConverter.GetBytes((ushort)1));
+
         grpprl.Add(0x0D);
         grpprl.Add(0xC6);
         grpprl.Add(13);
@@ -1701,6 +1708,12 @@ internal static class Program
             formatting.RightToLeft == true &&
             formatting.OutlineLevel == 3 &&
             formatting.PageBreakBefore == true &&
+            formatting.Shading is
+            {
+                ForegroundColor: "#FF0000",
+                BackgroundColor: "#FFFF00",
+                Pattern: 1
+            } &&
             formatting.TabStops.Count == 3 &&
             formatting.TabStops[0].PositionPoints == 72 &&
             formatting.TabStops[0].Alignment == DocumentTabAlignment.Right &&
@@ -1738,6 +1751,7 @@ internal static class Program
                             formatting.WidowControl ?? false,
                         RightToLeft =
                             formatting.RightToLeft ?? false,
+                        Shading = formatting.Shading,
                         TabStops = formatting.TabStops
                     }
                 ]
@@ -1764,6 +1778,14 @@ internal static class Program
             html,
             "direction:rtl",
             "DOC rendered bidi paragraph");
+        AssertContains(
+            html,
+            "data-shading-pattern=\"1\" data-shading-foreground=\"#FF0000\" data-shading-background=\"#FFFF00\"",
+            "DOC rendered paragraph shading metadata");
+        AssertContains(
+            html,
+            "background-color:#FF0000",
+            "DOC rendered solid paragraph shading");
         AssertContains(
             html,
             "data-tab-stops=\"72:right:dots;144:center:hyphens;216:decimal:underline\"",
