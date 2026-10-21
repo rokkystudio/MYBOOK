@@ -196,8 +196,8 @@ internal static class Program
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
-            \trowd\trhdr\trkeep\trrh-480\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
-            \trowd\clmgf\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
+            \trowd\trhdr\trkeep\trrh-480\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
+            \trowd\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
             \trowd\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
             \pard
@@ -412,6 +412,45 @@ internal static class Program
             table.Rows[0].Cells[1].FitText,
             "RTF cellx, clpad*, clvertal*, clNoWrap и clFitText должны сохранять свойства ячеек.");
 
+        var borderedCell = table.Rows[0].Cells[0];
+
+        Assert(
+            borderedCell.BorderTop is
+            {
+                Type: 0x01,
+                WidthPoints: 1,
+                Color: "#FF0000"
+            } &&
+            borderedCell.BorderLeft is
+            {
+                Type: 0x06,
+                WidthPoints: 1.5,
+                Color: "#FF0000"
+            } &&
+            borderedCell.BorderBottom is
+            {
+                Type: 0x03,
+                WidthPoints: 2,
+                Color: "#FF0000"
+            } &&
+            borderedCell.BorderRight is
+            {
+                Type: 0x07,
+                WidthPoints: 1,
+                Color: "#FF0000"
+            },
+            "RTF clbrdr* с brdrs/brdrdot/brdrdb/brdrdash должны сохранять cell borders.");
+
+        Assert(
+            borderedCell.Shading is
+            {
+                Pattern: 0x0001,
+                FillPercentage: 100,
+                ForegroundColor: "#FFFF00",
+                BackgroundColor: "#FF0000"
+            },
+            "RTF solid cell shading должна сохранять foreground/background и fill percentage.");
+
         Assert(
             table.Rows[1].Cells.Count == 1 &&
             table.Rows[1].Cells[0].ColumnSpan == 2 &&
@@ -420,6 +459,16 @@ internal static class Program
                     "Merged RTF cell",
                     StringComparison.Ordinal)),
             "RTF clmgf/clmrg должны сохраняться как ColumnSpan.");
+
+        Assert(
+            table.Rows[1].Cells[0].Shading is
+            {
+                Pattern: 0,
+                FillPercentage: 50,
+                ForegroundColor: "#FF0000",
+                BackgroundColor: "#FFFF00"
+            },
+            "RTF patterned cell shading должна сохранять точный процент и цвета без ложного solid mapping.");
 
         Assert(
             table.Rows[2].Cells.Count == 2 &&
@@ -533,6 +582,26 @@ internal static class Program
             html,
             "rowspan=\"2\"",
             "RTF rendered vertical merge");
+
+        AssertContains(
+            html,
+            "border-top:1pt solid #FF0000",
+            "RTF rendered solid cell border");
+
+        AssertContains(
+            html,
+            "border-left:1.5pt dotted #FF0000",
+            "RTF rendered dotted cell border");
+
+        AssertContains(
+            html,
+            "background-color:#FFFF00",
+            "RTF rendered exact solid cell shading");
+
+        AssertContains(
+            html,
+            "data-shading-fill-percentage=\"50\"",
+            "RTF rendered patterned shading metadata");
 
         AssertContains(
             html,
