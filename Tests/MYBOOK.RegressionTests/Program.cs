@@ -189,6 +189,7 @@ internal static class Program
             {\*\bkmkstart bookmark}
             \qc\li720\ri360\fi-180\sb240\sa120\sl360\f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
             \pard\sl360\slmult1\keep\keepn\widctl\rtlpar Paragraph controls\par
+            \pard\pagebb\outlinelevel3 Page break outline\par
             \pard\tqr\tldot\tx1440\tqc\tlhyph\tx2880\tqdec\tleq\tx4320 Tabs\tab One\tab Two\tab Three\par
             \pard Unicode \u1046?\par
             \f2 \'82\'a0\par
@@ -271,6 +272,17 @@ internal static class Program
             controlledParagraph.WidowControl &&
             controlledParagraph.RightToLeft,
             "RTF slmult, keep, keepn, widctl и rtlpar должны сохраняться.");
+
+        var outlineParagraph = paragraphs.First(paragraph =>
+            paragraph.Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "Page break outline",
+                    StringComparison.Ordinal)));
+
+        Assert(
+            outlineParagraph.PageBreakBefore &&
+            outlineParagraph.OutlineLevel == 3,
+            "RTF pagebb и outlinelevel должны сохраняться в paragraph model.");
 
         var tabParagraph = paragraphs.First(paragraph =>
             paragraph.Inlines.Any(inline =>
@@ -613,6 +625,16 @@ internal static class Program
             html,
             "direction:rtl",
             "RTF rendered right-to-left paragraph");
+
+        AssertContains(
+            html,
+            "break-before:page;page-break-before:always;",
+            "RTF rendered page-break-before");
+
+        AssertContains(
+            html,
+            "data-outline-level=\"3\"",
+            "RTF rendered outline level metadata");
 
         AssertContains(
             html,
