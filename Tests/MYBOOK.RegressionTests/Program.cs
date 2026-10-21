@@ -2142,6 +2142,64 @@ internal static class Program
                 .SequenceEqual(["I. ", "II. "]),
             "DOC upper-Roman list numbering должен форматироваться точно.");
 
+        static string?[] BuildSimpleListMarkers(
+            byte formatCode,
+            string numberText,
+            byte followCharacter)
+        {
+            const int listId = 5000;
+            var definition = new DocDocumentReader.DocListDefinition(
+                listId,
+                true,
+                [
+                    new DocDocumentReader.DocListLevelDefinition(
+                        1,
+                        formatCode,
+                        followCharacter,
+                        numberText,
+                        PlaceholderOffsets(1),
+                        false,
+                        false,
+                        0)
+                ]);
+            var tables = new DocDocumentReader.DocListTables(
+                new Dictionary<int, DocDocumentReader.DocListDefinition>
+                {
+                    [listId] = definition
+                },
+                [new DocDocumentReader.DocListOverrideDefinition(
+                    listId,
+                    new Dictionary<int, DocDocumentReader.DocListLevelOverride>())]);
+            var blocks = DocDocumentReader.BuildParagraphs(
+                "A\rB\r",
+                [
+                    new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                    new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+                ],
+                tables);
+
+            return blocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .ToArray();
+        }
+
+        Assert(
+            BuildSimpleListMarkers(0x0F, "\0.", 1)
+                .SequenceEqual(["1. ", "2. "]),
+            "DOC decimalHalfWidth numbering должен использовать single-byte decimal digits.");
+        Assert(
+            BuildSimpleListMarkers(0x28, "\0.", 1)
+                .SequenceEqual(["1. ", "2. "]),
+            "DOC MSONFC 0x28 должен использовать decimal numbering.");
+        Assert(
+            BuildSimpleListMarkers(0x39, "\0", 2)
+                .SequenceEqual(["- 1 -", "- 2 -"]),
+            "DOC numberInDash должен выводить число с пробелами между двумя тире.");
+        Assert(
+            BuildSimpleListMarkers(0xFF, "\0", 1)
+                .All(marker => marker == null),
+            "DOC MSONFC none не должен создавать видимый list marker.");
+
         Assert(
             formatting.KeepTogether == true &&
             formatting.KeepWithNext == true &&
