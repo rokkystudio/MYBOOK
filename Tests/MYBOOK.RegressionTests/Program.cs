@@ -2296,6 +2296,38 @@ internal static class Program
             BuildSimpleListMarkers(0x3B, "\0", 2, 32)
                 .SequenceEqual(["Я", null]),
             "DOC russianUpper не должен синтезировать неподтверждённый rollover после 32 символов.");
+        Assert(
+            BuildSimpleListMarkers(0x15, "\0", 2)
+                .SequenceEqual(["イ", "ロ"]),
+            "DOC irohaFullWidth должен начинаться с И-Ро-Ха sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x15, "\0", 2, 47)
+                .SequenceEqual(["ス", null]),
+            "DOC irohaFullWidth не должен синтезировать неподтверждённое значение после 47 символов.");
+        Assert(
+            BuildSimpleListMarkers(0x2F, "\0", 2)
+                .SequenceEqual(["\u200Fא", "\u200Fב"]),
+            "DOC hebrew2 должен добавлять Word RTL marker перед Hebrew alphabet symbol.");
+        Assert(
+            BuildSimpleListMarkers(0x2F, "\0", 2, 22)
+                .SequenceEqual(["\u200Fת", null]),
+            "DOC hebrew2 должен ограничиваться документированным набором из 22 букв.");
+        Assert(
+            BuildSimpleListMarkers(0x2E, "\0", 2)
+                .SequenceEqual(["أ\u200C", "ب\u200C"]),
+            "DOC arabicAlpha должен добавлять Word ZWNJ после sequence number.");
+        Assert(
+            BuildSimpleListMarkers(0x2E, "\0", 2, 29)
+                .SequenceEqual(["أأ\u200C", "بب\u200C"]),
+            "DOC arabicAlpha должен повторять выбранный символ после 28 значений.");
+        Assert(
+            BuildSimpleListMarkers(0x30, "\0", 2)
+                .SequenceEqual(["\u200Cأ", "\u200Cب"]),
+            "DOC arabicAbjad должен добавлять Word ZWNJ перед sequence number.");
+        Assert(
+            BuildSimpleListMarkers(0x30, "\0", 2, 29)
+                .SequenceEqual(["\u200Cأأ", "\u200Cبب"]),
+            "DOC arabicAbjad должен повторять выбранный символ после 28 значений.");
 
         Assert(
             formatting.KeepTogether == true &&
