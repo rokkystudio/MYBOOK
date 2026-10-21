@@ -189,6 +189,7 @@ internal static class Program
             {\*\bkmkstart bookmark}
             \qc\li720\ri360\fi-180\sb240\sa120\sl360\f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
             \pard\sl360\slmult1\keep\keepn\widctl\rtlpar Paragraph controls\par
+            \pard\tqr\tldot\tx1440\tqc\tlhyph\tx2880\tqdec\tleq\tx4320 Tabs\tab One\tab Two\tab Three\par
             \pard Unicode \u1046?\par
             \f2 \'82\'a0\par
             \f0 \strike strike\strike0 \super sup\nosupersub \sub sub\nosupersub\par
@@ -270,6 +271,29 @@ internal static class Program
             controlledParagraph.WidowControl &&
             controlledParagraph.RightToLeft,
             "RTF slmult, keep, keepn, widctl и rtlpar должны сохраняться.");
+
+        var tabParagraph = paragraphs.First(paragraph =>
+            paragraph.Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "Tabs",
+                    StringComparison.Ordinal)));
+
+        Assert(
+            tabParagraph.TabStops.Count == 3 &&
+            tabParagraph.TabStops[0].PositionPoints == 72 &&
+            tabParagraph.TabStops[0].Alignment == DocumentTabAlignment.Right &&
+            tabParagraph.TabStops[0].Leader == DocumentTabLeader.Dots &&
+            tabParagraph.TabStops[1].PositionPoints == 144 &&
+            tabParagraph.TabStops[1].Alignment == DocumentTabAlignment.Center &&
+            tabParagraph.TabStops[1].Leader == DocumentTabLeader.Hyphens &&
+            tabParagraph.TabStops[2].PositionPoints == 216 &&
+            tabParagraph.TabStops[2].Alignment == DocumentTabAlignment.Decimal &&
+            tabParagraph.TabStops[2].Leader == DocumentTabLeader.EqualSign &&
+            tabParagraph.Inlines.Any(inline =>
+                inline.Text.Contains(
+                    "\t",
+                    StringComparison.Ordinal)),
+            "RTF tx, tq* и tab leader controls должны сохранять tab stops и символы табуляции.");
 
         var inlines = paragraphs
             .SelectMany(paragraph => paragraph.Inlines)
@@ -484,6 +508,16 @@ internal static class Program
             html,
             "direction:rtl",
             "RTF rendered right-to-left paragraph");
+
+        AssertContains(
+            html,
+            "data-tab-stops=\"72:right:dots;144:center:hyphens;216:decimal:equal-sign\"",
+            "RTF rendered tab stop metadata");
+
+        AssertContains(
+            html,
+            "class=\"flow-tab\"",
+            "RTF rendered tab character");
 
         AssertContains(
             html,

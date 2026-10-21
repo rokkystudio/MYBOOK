@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.2.1
+Текущая версия: 1.2.2
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -37,7 +37,7 @@
 
 - [ ] Таблицы: nested tables, borders/shading и остальные редкие row/cell properties; horizontal `clmgf`/`clmrg` и vertical `clvmgf`/`clvmrg` merges сохраняются как `ColumnSpan`/`RowSpan`; `cellx` задаёт фактическую ширину ячеек; `trhdr`, `trkeep`, `trrh`, `clvertal*`, twips-padding через `clpad*` + unit 3, `clNoWrap` и `clFitText` сохраняются в нейтральной модели.
 - [ ] Изображения: WMF/EMF и дополнительные варианты `pict`; стандартный BI_RGB `dibitmap` уже преобразуется в BMP, PNG/JPEG поддерживаются напрямую.
-- [ ] Стили абзацев: tab stops и редкие paragraph controls; alignment, indents, spacing, `slmult`, keep/keep-next, widow control и bidi direction уже поддерживаются.
+- [ ] Стили абзацев: `tx` tab stops с `tql`/`tqc`/`tqr`/`tqdec` alignment и `tldot`/`tlhyph`/`tlul`/`tlth`/`tleq` leaders сохраняются в нейтральной модели и HTML metadata; символы `tab` сохраняются в reflow. Остались точное позиционирование custom tab stops в layout и редкие paragraph controls; alignment, indents, spacing, `slmult`, keep/keep-next, widow control и bidi direction уже поддерживаются.
 - [ ] Расширенные Unicode/codepage edge cases: Symbol/OEM charsets, редкие charset/codepage combinations и malformed fallback; известные `fcharset` mapping и DBCS hex sequences уже поддерживаются.
 
 ## Markdown / TXT / HTML
