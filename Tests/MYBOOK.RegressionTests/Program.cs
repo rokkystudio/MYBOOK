@@ -2272,6 +2272,30 @@ internal static class Program
             BuildSimpleListMarkers(0x19, "\0", 2, 14)
                 .SequenceEqual(["ㅎ", "ㄱ"]),
             "DOC chosung должен restart sequence после 14 символов.");
+        Assert(
+            BuildSimpleListMarkers(0x08, "\0", 2, 65535)
+                .SequenceEqual(["FFFF", null]),
+            "DOC hex должен прекращать вывод после Word-limit 65535.");
+        Assert(
+            BuildSimpleListMarkers(0x1C, "\0", 2, 10)
+                .SequenceEqual(["⑩", "11"]),
+            "DOC decimalEnclosedCircleChinese должен после 10 переходить на decimal.");
+        Assert(
+            BuildSimpleListMarkers(0x3A, "\0", 2)
+                .SequenceEqual(["а", "б"]),
+            "DOC russianLower должен использовать последовательный Cyrillic Unicode range без ё.");
+        Assert(
+            BuildSimpleListMarkers(0x3A, "\0", 2, 32)
+                .SequenceEqual(["я", null]),
+            "DOC russianLower не должен синтезировать неподтверждённый rollover после 32 символов.");
+        Assert(
+            BuildSimpleListMarkers(0x3B, "\0", 2)
+                .SequenceEqual(["А", "Б"]),
+            "DOC russianUpper должен использовать последовательный Cyrillic Unicode range без Ё.");
+        Assert(
+            BuildSimpleListMarkers(0x3B, "\0", 2, 32)
+                .SequenceEqual(["Я", null]),
+            "DOC russianUpper не должен синтезировать неподтверждённый rollover после 32 символов.");
 
         Assert(
             formatting.KeepTogether == true &&
