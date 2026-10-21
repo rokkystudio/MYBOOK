@@ -1863,7 +1863,7 @@ internal static class Program
         lvlTail.Add(0x00);
         lvlTail.Add(0x00);
         lvlTail.AddRange(BitConverter.GetBytes((ushort)1));
-        lvlTail.AddRange(BitConverter.GetBytes((ushort)'•'));
+        lvlTail.AddRange(BitConverter.GetBytes((ushort)'·'));
 
         var plfLfo = new List<byte>();
         plfLfo.AddRange(BitConverter.GetBytes((uint)1));
@@ -1886,7 +1886,7 @@ internal static class Program
                 StartAt: 1,
                 NumberFormatCode: 0x17,
                 FollowCharacter: 1,
-                NumberText: "•"
+                NumberText: "·"
             },
             "DOC PlfLst/LVL/PlfLfo должны сохранять simple bullet list definition.");
 
@@ -1911,7 +1911,8 @@ internal static class Program
             listParagraph.ListStartAt == 1 &&
             listParagraph.ListNumberFormatCode == 0x17 &&
             listParagraph.ListFollowCharacter == 1 &&
-            listParagraph.ListBulletText == "•",
+            listParagraph.ListBulletText == "·" &&
+            listParagraph.ListMarkerText == "· ",
             "DOC paragraph должен разрешать iLfo/iLvl в LVL properties.");
 
         var listHtml = DocumentHtmlRenderer.Render(
@@ -1923,8 +1924,143 @@ internal static class Program
             CreateRenderTheme());
         AssertContains(
             listHtml,
-            "data-list-format-override=\"1\" data-list-level=\"0\" data-list-start-at=\"1\" data-list-number-format=\"23\" data-list-follow=\"1\" data-list-bullet=\"•\"",
+            "data-list-format-override=\"1\" data-list-level=\"0\" data-list-start-at=\"1\" data-list-number-format=\"23\" data-list-follow=\"1\" data-list-bullet=\"&#183;\"",
             "DOC resolved list definition metadata");
+        AssertContains(
+            listHtml,
+            "<span class=\"flow-list-marker\" style=\"white-space:pre\">&#183; </span>Bullet",
+            "DOC rendered bullet marker");
+
+        static byte[] PlaceholderOffsets(params byte[] values)
+        {
+            var result = new byte[9];
+            Array.Copy(values, result, values.Length);
+            return result;
+        }
+
+        var numberedList = new DocDocumentReader.DocListDefinition(
+            4321,
+            false,
+            [
+                new DocDocumentReader.DocListLevelDefinition(
+                    1,
+                    0x00,
+                    1,
+                    "\0.",
+                    PlaceholderOffsets(1),
+                    false,
+                    false,
+                    0),
+                new DocDocumentReader.DocListLevelDefinition(
+                    1,
+                    0x04,
+                    1,
+                    "\u0000.\u0001)",
+                    PlaceholderOffsets(1, 3),
+                    false,
+                    false,
+                    0)
+            ]);
+        var numberedTables = new DocDocumentReader.DocListTables(
+            new Dictionary<int, DocDocumentReader.DocListDefinition>
+            {
+                [4321] = numberedList
+            },
+            [4321]);
+        var numberedBlocks = DocDocumentReader.BuildParagraphs(
+            "One\rSubA\rSubB\rTwo\rSubC\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(4, 9, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 1 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(9, 14, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 1 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(14, 18, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(18, 23, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 1 })
+            ],
+            numberedTables);
+        var numberedParagraphs = numberedBlocks.Cast<DocumentParagraph>().ToArray();
+
+        Assert(
+            numberedParagraphs.Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["1. ", "1.a) ", "1.b) ", "2. ", "2.a) "]),
+            "DOC numbering должен increment/restart nested list levels.");
+
+        var numberedHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC numbering",
+                Blocks = numberedBlocks
+            },
+            CreateRenderTheme());
+        AssertContains(
+            numberedHtml,
+            "<span class=\"flow-list-marker\" style=\"white-space:pre\">2.a) </span>SubC",
+            "DOC rendered nested numbered marker");
+
+        var noRestartList = numberedList with
+        {
+            ListId = 4322,
+            Levels =
+            [
+                numberedList.Levels[0],
+                numberedList.Levels[1] with
+                {
+                    NoRestart = true,
+                    RestartLimit = 0
+                }
+            ]
+        };
+        var noRestartTables = new DocDocumentReader.DocListTables(
+            new Dictionary<int, DocDocumentReader.DocListDefinition>
+            {
+                [4322] = noRestartList
+            },
+            [4322]);
+        var noRestartBlocks = DocDocumentReader.BuildParagraphs(
+            "One\rSubA\rTwo\rSubB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(4, 9, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 1 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(9, 13, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(13, 18, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 1 })
+            ],
+            noRestartTables);
+        Assert(
+            noRestartBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["1. ", "1.a) ", "2. ", "2.b) "]),
+            "DOC fNoRestart/ilvlRestartLim должны сохранять child sequence.");
+
+        var romanList = new DocDocumentReader.DocListDefinition(
+            4323,
+            true,
+            [
+                new DocDocumentReader.DocListLevelDefinition(
+                    1,
+                    0x01,
+                    1,
+                    "\0.",
+                    PlaceholderOffsets(1),
+                    false,
+                    false,
+                    0)
+            ]);
+        var romanBlocks = DocDocumentReader.BuildParagraphs(
+            "First\rSecond\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 6, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(6, 13, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            new DocDocumentReader.DocListTables(
+                new Dictionary<int, DocDocumentReader.DocListDefinition>
+                {
+                    [4323] = romanList
+                },
+                [4323]));
+        Assert(
+            romanBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["I. ", "II. "]),
+            "DOC upper-Roman list numbering должен форматироваться точно.");
 
         Assert(
             formatting.KeepTogether == true &&
