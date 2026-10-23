@@ -3324,6 +3324,114 @@ internal static class Program
             majorityStyledResolved.TextColor == "#FF0000",
             "DOC sprmCMajority должен игнорироваться при non-default character style.");
 
+        static byte[] BuildFfn(
+            string name,
+            string? alternateName,
+            byte charset,
+            byte family,
+            short weight)
+        {
+            var nameData = Encoding.Unicode.GetBytes(
+                alternateName == null
+                    ? name + "\0"
+                    : name + "\0" + alternateName + "\0");
+            var ffn = new byte[39 + nameData.Length];
+            ffn[0] = family;
+            BinaryPrimitives.WriteInt16LittleEndian(ffn.AsSpan(1, 2), weight);
+            ffn[3] = charset;
+            ffn[4] = alternateName == null
+                ? (byte)0
+                : checked((byte)(name.Length + 1));
+            nameData.CopyTo(ffn, 39);
+            return ffn;
+        }
+
+        var ffnEntries = new[]
+        {
+            BuildFfn("Arial", "Arial Alt", 0, 2, 400),
+            BuildFfn("MS Mincho", null, 128, 3, 400),
+            BuildFfn("Times New Roman", null, 0, 1, 400),
+            BuildFfn("Traditional Arabic", null, 178, 2, 400)
+        };
+        var fontTableLength = 4 + ffnEntries.Sum(entry => 1 + entry.Length);
+        var fontTableBytes = new byte[fontTableLength];
+        BinaryPrimitives.WriteUInt16LittleEndian(fontTableBytes.AsSpan(0, 2), 4);
+        BinaryPrimitives.WriteUInt16LittleEndian(fontTableBytes.AsSpan(2, 2), 0);
+        var fontTableOffset = 4;
+        foreach (var entry in ffnEntries)
+        {
+            fontTableBytes[fontTableOffset++] = checked((byte)entry.Length);
+            entry.CopyTo(fontTableBytes, fontTableOffset);
+            fontTableOffset += entry.Length;
+        }
+
+        var fonts = DocDocumentReader.ReadFontTable(fontTableBytes);
+        Assert(
+            fonts.Count == 4 &&
+            fonts[0].Name == "Arial" &&
+            fonts[0].AlternateName == "Arial Alt" &&
+            fonts[0].Charset == 0 &&
+            fonts[0].Family == 2 &&
+            fonts[0].Weight == 400 &&
+            fonts[1].Name == "MS Mincho" &&
+            fonts[1].Charset == 128 &&
+            fonts[3].Charset == 178,
+            "DOC SttbfFfn должен сохранять FFN font names, alternate names, charset, family и weight.");
+
+        var fontFormatting = DocDocumentReader.ReadCharacterGrpprl(
+            new byte[]
+            {
+                0x4F, 0x4A, 0x00, 0x00,
+                0x50, 0x4A, 0x01, 0x00,
+                0x51, 0x4A, 0x02, 0x00,
+                0x5E, 0x4A, 0x03, 0x00,
+                0x6F, 0x28, 0x01
+            });
+
+        Assert(
+            fontFormatting.FontAsciiIndex == 0 &&
+            fontFormatting.FontEastAsiaIndex == 1 &&
+            fontFormatting.FontOtherIndex == 2 &&
+            fontFormatting.FontBiIndex == 3 &&
+            fontFormatting.FontHint == 1,
+            "DOC CHPX должен сохранять ftc0/ftc1/ftc2/ftcBi и sprmCIdctHint.");
+        Assert(
+            DocDocumentReader.ResolveDocFontFamily(
+                fontFormatting,
+                fonts,
+                DocDocumentReader.DocFontSlot.Ascii) == "Arial",
+            "DOC ASCII font mapping должен разрешать ftc0 через SttbfFfn.");
+        Assert(
+            DocDocumentReader.ResolveDocFontFamily(
+                fontFormatting,
+                fonts,
+                DocDocumentReader.DocFontSlot.EastAsia) == "MS Mincho",
+            "DOC East Asia font mapping должен разрешать ftc1 через SttbfFfn.");
+        Assert(
+            DocDocumentReader.ResolveDocFontFamily(
+                fontFormatting,
+                fonts,
+                DocDocumentReader.DocFontSlot.Other) == "Times New Roman",
+            "DOC Other Unicode font mapping должен разрешать ftc2 через SttbfFfn.");
+        Assert(
+            DocDocumentReader.ResolveDocFontFamily(
+                fontFormatting,
+                fonts,
+                DocDocumentReader.DocFontSlot.Bi) == "Traditional Arabic",
+            "DOC complex-script font mapping должен разрешать ftcBi через SttbfFfn.");
+
+        var fontPlainReset = DocDocumentReader.ReadCharacterGrpprl(
+            new byte[]
+            {
+                0x4F, 0x4A, 0x02, 0x00,
+                0x6F, 0x28, 0x01,
+                0x33, 0x2A, 0x00
+            });
+        Assert(
+            fontPlainReset.FontAsciiIndex == null &&
+            fontPlainReset.FontHint == null,
+            "DOC sprmCPlain должен сбрасывать direct font slots и hint.");
+
         var wrongKind =
             characterStyle with
             {

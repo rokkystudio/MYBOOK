@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.2.37
+Текущая версия: 1.2.38
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -29,7 +29,7 @@
 - [ ] Footnotes/endnotes: PLC references и note text stories поддерживаются с anchors/links; остались точные custom-symbol glyphs через `sprmCSymbol`, note-specific fields и layout properties.
 - [ ] Sections: `PlcfSed`/SEPX, section break kind, orientation, page size, margins, gutter, header/footer distances, title-page и bidi поддерживаются; остались columns, page numbering, page borders/document grid и применение этих свойств в реальном pagination/layout engine.
 - [ ] Поля Word: saved result уже безопасно сохраняется для всех field codes; для HYPERLINK, PAGE, NUMPAGES, DATE, TIME, REF, PAGEREF и NOTEREF теперь сохраняются нейтральные `DocumentFieldKind`, исходная instruction и безопасный target (где применимо), а HTML экспортирует `data-field-*` metadata. Значения не пересчитываются: PAGE/NUMPAGES требуют pagination engine, DATE/TIME используют cached result, REF/PAGEREF/NOTEREF требуют bookmark/note resolution. Исполняемые/неизвестные fields (например MACROBUTTON/DDE/formulas) остаются plain saved result без semantic metadata. Остались полноценное field evaluation/update и дополнительные безопасные field kinds.
-- [ ] Дополнительные кодировки и charset/font mapping.
+- [ ] DOC font mapping: `SttbfFfn`/`FFN` теперь читаются из FIB index 15 с primary/alternate Unicode names, `chs`, family и weight; `sprmCRgFtc0`/`sprmCRgFtc1`/`sprmCRgFtc2`/`sprmCFtcBi` и `sprmCIdctHint` проходят через style/direct CHPX inheritance до `DocumentInline.FontFamily`, default hint разделяет ASCII (`ftc0`) и прочий Unicode (`ftc2`), East Asia/complex-script hints используют `ftc1`/`ftcBi`, `0xFF` не угадывается. `sprmCPlain` сбрасывает direct font slots/hint. Остались document-default `Stshif.ftcAsci/ftcFE/ftcOther/ftcBi`, Symbol/OEM byte mapping и дополнительные codepage/font-substitution fixups.
 - [ ] Старые версии Word Binary Format.
 - [ ] Реальная постраничная layout/pagination модель для превью страниц.
 
