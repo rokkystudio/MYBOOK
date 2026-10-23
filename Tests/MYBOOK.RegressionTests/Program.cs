@@ -2017,6 +2017,9 @@ internal static class Program
 
         const int rectangleShapeId = 3001;
         const int lineShapeId = 3002;
+        const int diamondShapeId = 3003;
+        const int adjustedDiamondShapeId = 3004;
+        const int connectorShapeId = 3005;
 
         var rectangle = BuildShapeRecord(
             rectangleShapeId,
@@ -2030,18 +2033,60 @@ internal static class Program
             lineShapeId,
             20,
             0x000000C0,
+            (0x0004, 45u << 16),
             (0x01C0, 0x0000AAFF),
-            (0x01CB, 12700));
+            (0x01CB, 12700),
+            (0x01D0, 1),
+            (0x01D1, 5));
+
+        var diamond = BuildShapeRecord(
+            diamondShapeId,
+            4,
+            0,
+            (0x0181, 0x0000CC44),
+            (0x01C0, 0x00000000));
+
+        var adjustedDiamond = BuildShapeRecord(
+            adjustedDiamondShapeId,
+            4,
+            0,
+            (0x0147, 5400),
+            (0x0181, 0x0000CC44));
+
+        var connector = BuildShapeRecord(
+            connectorShapeId,
+            32,
+            0,
+            (0x01C0, 0x00CC0000),
+            (0x01CB, 19050),
+            (0x01D1, 3));
 
         var dgg = new byte[
             rectangle.Length +
-            line.Length];
+            line.Length +
+            diamond.Length +
+            adjustedDiamond.Length +
+            connector.Length];
+        var dggOffset = 0;
         rectangle.CopyTo(
             dgg,
-            0);
+            dggOffset);
+        dggOffset += rectangle.Length;
         line.CopyTo(
             dgg,
-            rectangle.Length);
+            dggOffset);
+        dggOffset += line.Length;
+        diamond.CopyTo(
+            dgg,
+            dggOffset);
+        dggOffset += diamond.Length;
+        adjustedDiamond.CopyTo(
+            dgg,
+            dggOffset);
+        dggOffset += adjustedDiamond.Length;
+        connector.CopyTo(
+            dgg,
+            dggOffset);
 
         var shapes = DocDocumentReader.ReadOfficeArtShapes(
             dgg,
@@ -2076,8 +2121,33 @@ internal static class Program
             lineShape.FlipHorizontal &&
             lineShape.FlipVertical &&
             lineShape.StrokeColor == "#FFAA00" &&
-            lineShape.StrokeWidthPoints == 1.0,
-            "DOC OfficeArt line должен сохранять FSP flips и line properties.");
+            lineShape.StrokeWidthPoints == 1.0 &&
+            lineShape.RotationDegrees == 45.0 &&
+            lineShape.StartArrowhead == DocumentShapeArrowhead.Triangle &&
+            lineShape.EndArrowhead == DocumentShapeArrowhead.Open,
+            "DOC OfficeArt line должен сохранять FSP flips, rotation, arrowheads и line properties.");
+
+        Assert(
+            shapes.TryGetValue(
+                diamondShapeId,
+                out var diamondShape) &&
+            diamondShape.Kind == DocumentShapeKind.Diamond &&
+            diamondShape.FillColor == "#44CC00",
+            "DOC OfficeArt diamond preset должен сохраняться как vector shape.");
+
+        Assert(
+            !shapes.ContainsKey(adjustedDiamondShapeId),
+            "DOC OfficeArt preset shape с adjustValue не должен рендериться как default geometry.");
+
+        Assert(
+            shapes.TryGetValue(
+                connectorShapeId,
+                out var connectorShape) &&
+            connectorShape.Kind == DocumentShapeKind.StraightConnector &&
+            connectorShape.StrokeColor == "#0000CC" &&
+            connectorShape.StrokeWidthPoints == 1.5 &&
+            connectorShape.EndArrowhead == DocumentShapeArrowhead.Diamond,
+            "DOC OfficeArt StraightConnector1 должен сохранять line и arrowhead properties.");
 
         var blocks = DocDocumentReader.BuildParagraphs(
             "\u0008\r",
@@ -2134,6 +2204,92 @@ internal static class Program
             html,
             "style=\"width:72pt;height:72pt;float:left;\"",
             "DOC OfficeArt vector shape FSPA reflow sizing");
+
+        var lineBlocks = DocDocumentReader.BuildParagraphs(
+            "\u0008\r",
+            [
+                new DocDocumentReader.DocFloatingShapeAnchor(
+                    0,
+                    lineShapeId,
+                    0,
+                    0,
+                    1440,
+                    1440,
+                    1,
+                    2,
+                    2,
+                    2,
+                    false,
+                    false)
+            ],
+            new Dictionary<int, DocumentImage>(),
+            shapes);
+
+        var lineHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC OfficeArt line",
+                Blocks = lineBlocks
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            lineHtml,
+            "data-shape-rotation-deg=\"45\"",
+            "DOC OfficeArt rotation metadata");
+        AssertContains(
+            lineHtml,
+            "data-shape-start-arrowhead=\"triangle\" data-shape-end-arrowhead=\"open\"",
+            "DOC OfficeArt arrowhead metadata");
+        AssertContains(
+            lineHtml,
+            "transform:rotate(45deg) scale(-1,-1);transform-origin:center;",
+            "DOC OfficeArt rotation and FSP flips rendering");
+        AssertContains(
+            lineHtml,
+            "marker-start=\"url(#shape-marker-",
+            "DOC OfficeArt start arrowhead SVG marker");
+        AssertContains(
+            lineHtml,
+            "marker-end=\"url(#shape-marker-",
+            "DOC OfficeArt end arrowhead SVG marker");
+
+        var connectorBlocks = DocDocumentReader.BuildParagraphs(
+            "\u0008\r",
+            [
+                new DocDocumentReader.DocFloatingShapeAnchor(
+                    0,
+                    connectorShapeId,
+                    0,
+                    0,
+                    1440,
+                    720,
+                    1,
+                    2,
+                    2,
+                    2,
+                    false,
+                    false)
+            ],
+            new Dictionary<int, DocumentImage>(),
+            shapes);
+
+        var connectorHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC OfficeArt connector",
+                Blocks = connectorBlocks
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            connectorHtml,
+            "data-shape-kind=\"straight-connector\"",
+            "DOC OfficeArt StraightConnector1 renderer");
+        AssertContains(
+            connectorHtml,
+            "data-shape-end-arrowhead=\"diamond\"",
+            "DOC OfficeArt connector arrowhead renderer");
     }
 
     private static void TestDocHeaderStoryTable()
