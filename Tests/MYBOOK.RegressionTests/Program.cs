@@ -3582,6 +3582,81 @@ internal static class Program
                 DocDocumentReader.DocFontSlot.Bi) == "Traditional Arabic",
             "DOC complex-script font mapping должен разрешать ftcBi через SttbfFfn.");
 
+        var stsh = new byte[22];
+        BinaryPrimitives.WriteUInt16LittleEndian(stsh.AsSpan(0, 2), 20);
+        BinaryPrimitives.WriteUInt16LittleEndian(stsh.AsSpan(2, 2), 15);
+        BinaryPrimitives.WriteUInt16LittleEndian(stsh.AsSpan(4, 2), 10);
+        BinaryPrimitives.WriteInt16LittleEndian(stsh.AsSpan(14, 2), 0);
+        BinaryPrimitives.WriteInt16LittleEndian(stsh.AsSpan(16, 2), 1);
+        BinaryPrimitives.WriteInt16LittleEndian(stsh.AsSpan(18, 2), 2);
+        BinaryPrimitives.WriteInt16LittleEndian(stsh.AsSpan(20, 2), 3);
+        var defaults = DocDocumentReader.ReadDefaultFontIndices(stsh);
+        Assert(
+            defaults.Ascii == 0 &&
+            defaults.EastAsia == 1 &&
+            defaults.Other == 2 &&
+            defaults.Bi == 3,
+            "DOC STSHI.Stshif должен читать ftcAsci/ftcFE/ftcOther/ftcBi defaults.");
+
+        var noDirectFonts = new DocDocumentReader.DocCharacterFormatting();
+        Assert(
+            DocDocumentReader.ResolveDocFontFamily(
+                noDirectFonts,
+                fonts,
+                DocDocumentReader.DocFontSlot.Ascii,
+                defaults) == "Arial" &&
+            DocDocumentReader.ResolveDocFontFamily(
+                noDirectFonts,
+                fonts,
+                DocDocumentReader.DocFontSlot.EastAsia,
+                defaults) == "MS Mincho" &&
+            DocDocumentReader.ResolveDocFontFamily(
+                noDirectFonts,
+                fonts,
+                DocDocumentReader.DocFontSlot.Other,
+                defaults) == "Times New Roman" &&
+            DocDocumentReader.ResolveDocFontFamily(
+                noDirectFonts,
+                fonts,
+                DocDocumentReader.DocFontSlot.Bi,
+                defaults) == "Traditional Arabic",
+            "DOC font resolution должен использовать STSHI defaults при отсутствии style/direct ftc.");
+
+        var directOverride = new DocDocumentReader.DocCharacterFormatting
+        {
+            FontAsciiIndex = 2
+        };
+        Assert(
+            DocDocumentReader.ResolveDocFontFamily(
+                directOverride,
+                fonts,
+                DocDocumentReader.DocFontSlot.Ascii,
+                defaults) == "Times New Roman",
+            "DOC explicit CHPX font должен переопределять STSHI default.");
+
+        var symbolFormatting = DocDocumentReader.ReadCharacterGrpprl(
+            new byte[]
+            {
+                0x09, 0x6A,
+                0x01, 0x00,
+                0x05, 0x26
+            });
+        Assert(
+            symbolFormatting.SymbolFontIndex == 1 &&
+            symbolFormatting.SymbolCharacterCode == 0x2605,
+            "DOC sprmCSymbol должен сохранять font-table index и Unicode xchar.");
+
+        var symbolPlainReset = DocDocumentReader.ReadCharacterGrpprl(
+            new byte[]
+            {
+                0x09, 0x6A, 0x01, 0x00, 0x05, 0x26,
+                0x33, 0x2A, 0x00
+            });
+        Assert(
+            symbolPlainReset.SymbolFontIndex == null &&
+            symbolPlainReset.SymbolCharacterCode == null,
+            "DOC sprmCPlain должен сбрасывать sprmCSymbol.");
+
         var fontPlainReset = DocDocumentReader.ReadCharacterGrpprl(
             new byte[]
             {
