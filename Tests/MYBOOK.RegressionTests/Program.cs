@@ -1907,6 +1907,39 @@ internal static class Program
             grpprl.Add((byte)(twips >> 8));
         }
 
+        void AddModernSectionBorder(
+            ushort sprm,
+            byte red,
+            byte green,
+            byte blue,
+            byte widthEighthPoints,
+            byte type)
+        {
+            grpprl.Add((byte)(sprm & 0xFF));
+            grpprl.Add((byte)(sprm >> 8));
+            grpprl.Add(8);
+            grpprl.Add(red);
+            grpprl.Add(green);
+            grpprl.Add(blue);
+            grpprl.Add(0);
+            grpprl.Add(widthEighthPoints);
+            grpprl.Add(type);
+            grpprl.Add(0);
+            grpprl.Add(0);
+        }
+
+        AddByteSprm(0x3000, 3);
+        AddByteSprm(0x3001, 2);
+        AddByteSprm(0x3013, 1);
+        AddUInt16Sprm(0x5015, 5);
+        AddUInt16Sprm(0x9016, 360);
+        AddUInt16Sprm(0x501B, 9);
+        AddModernSectionBorder(0xD234, 0xFF, 0x00, 0x00, 8, 0x01);
+        AddModernSectionBorder(0xD235, 0x00, 0x80, 0x00, 16, 0x06);
+        AddModernSectionBorder(0xD236, 0x00, 0x00, 0xFF, 24, 0x03);
+        AddModernSectionBorder(0xD237, 0x80, 0x00, 0x80, 12, 0x07);
+        AddUInt16Sprm(0x522F, 0x002A);
+
         AddColumnSprm(0xF203, 0, 2880);
         AddColumnSprm(0xF203, 1, 2160);
         AddColumnSprm(0xF203, 2, 1440);
@@ -2014,8 +2047,21 @@ internal static class Program
             properties.RestartPageNumbering == true &&
             properties.PageNumberStart == 70000 &&
             properties.GridMode == DocumentGridMode.LinesOnly &&
-            properties.GridLinePitchPoints == 18,
-            "DOC SEPX должен сохранять page setup, columns, page numbering и document grid.");
+            properties.GridLinePitchPoints == 18 &&
+            properties.ChapterSeparatorCode == 3 &&
+            properties.ChapterHeadingLevel == 2 &&
+            properties.LineNumberingMode == DocumentLineNumberingMode.RestartEachSection &&
+            properties.LineNumberingInterval == 5 &&
+            properties.LineNumberingStart == 10 &&
+            properties.LineNumberDistancePoints == 18 &&
+            properties.PageBorderTop is { WidthPoints: 1, Type: 0x01, Color: "#FF0000" } &&
+            properties.PageBorderLeft is { WidthPoints: 2, Type: 0x06, Color: "#008000" } &&
+            properties.PageBorderBottom is { WidthPoints: 3, Type: 0x03, Color: "#0000FF" } &&
+            properties.PageBorderRight is { WidthPoints: 1.5, Type: 0x07, Color: "#800080" } &&
+            properties.PageBorderApplyTo == DocumentPageBorderApplyTo.AllButFirst &&
+            properties.PageBorderDepth == DocumentPageBorderDepth.Back &&
+            properties.PageBorderOffsetFrom == DocumentPageBorderOffsetFrom.PageEdge,
+            "DOC SEPX должен сохранять page setup, columns, page/chapter/line numbering, page borders и document grid.");
 
         var blocks = DocDocumentReader.BuildParagraphs(
             "One\r\fTwo\r",
@@ -2109,6 +2155,34 @@ internal static class Program
             html,
             "data-grid-mode=\"LinesOnly\" data-grid-line-pitch-pt=\"18\"",
             "DOC rendered document-grid metadata");
+        AssertContains(
+            html,
+            "data-chapter-separator=\"3\"",
+            "DOC rendered chapter separator metadata");
+        AssertContains(
+            html,
+            "data-chapter-heading-level=\"2\"",
+            "DOC rendered chapter heading level metadata");
+        AssertContains(
+            html,
+            "data-line-numbering-mode=\"RestartEachSection\"",
+            "DOC rendered line-numbering mode");
+        AssertContains(
+            html,
+            "data-line-numbering-interval=\"5\" data-line-numbering-start=\"10\" data-line-number-distance-pt=\"18\"",
+            "DOC rendered line-numbering interval/start/distance");
+        AssertContains(
+            html,
+            "data-page-border-apply-to=\"AllButFirst\" data-page-border-depth=\"Back\" data-page-border-offset-from=\"PageEdge\"",
+            "DOC rendered page-border properties");
+        AssertContains(
+            html,
+            "data-page-border-top-width-pt=\"1\" data-page-border-top-type=\"1\" data-page-border-top-color-index=\"0\" data-page-border-top-color=\"#FF0000\"",
+            "DOC rendered top page-border metadata");
+        AssertContains(
+            html,
+            "data-page-border-bottom-width-pt=\"3\" data-page-border-bottom-type=\"3\" data-page-border-bottom-color-index=\"0\" data-page-border-bottom-color=\"#0000FF\"",
+            "DOC rendered bottom page-border metadata");
     }
 
     private static void TestDocParagraphProperties()
