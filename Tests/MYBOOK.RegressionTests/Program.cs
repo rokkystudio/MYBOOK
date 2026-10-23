@@ -2707,6 +2707,9 @@ internal static class Program
             {
                 Bold = false,
                 Italic = false,
+                Underline = false,
+                Superscript = false,
+                Subscript = false,
                 FontSizePoints = 10,
                 TextColor = "#000000"
             };
@@ -2753,6 +2756,93 @@ internal static class Program
             resolved.FontSizePoints == 14 &&
             resolved.TextColor == "#336699",
             "DOC character style должен применяться между paragraph-style formatting и direct CHPX.");
+
+        var plainReset =
+            DocDocumentReader.ReadCharacterGrpprl(
+                new byte[]
+                {
+                    0x30, 0x4A, 0x05, 0x00,
+                    0x35, 0x08, 0x01,
+                    0x03, 0x6A, 0x78, 0x56, 0x34, 0x12,
+                    0x33, 0x2A, 0x00,
+                    0x36, 0x08, 0x01
+                });
+        var plainResolved =
+            DocDocumentReader.ResolveCharacterFormatting(
+                paragraphStyleFormatting,
+                plainReset,
+                styles);
+
+        Assert(
+            plainReset.CharacterStyleIndex == null &&
+            plainReset.PictureLocation == 0x12345678 &&
+            plainResolved.Bold == false &&
+            plainResolved.Italic == true &&
+            plainResolved.FontSizePoints == 10 &&
+            plainResolved.TextColor == "#000000",
+            "DOC sprmCPlain должен сбрасывать character style/direct properties к paragraph style, сохраняя picture location и последующие direct SPRM.");
+
+        static byte[] BuildMajorityGrpprl(
+            ushort? characterStyleIndex)
+        {
+            var bytes = new List<byte>();
+            if (characterStyleIndex is { } styleIndex)
+            {
+                bytes.Add(0x30);
+                bytes.Add(0x4A);
+                bytes.AddRange(BitConverter.GetBytes(styleIndex));
+            }
+
+            bytes.AddRange(new byte[] { 0x35, 0x08, 0x01 });
+            bytes.AddRange(new byte[] { 0x3E, 0x2A, 0x01 });
+            bytes.AddRange(new byte[] { 0x48, 0x2A, 0x01 });
+            bytes.AddRange(new byte[] { 0x70, 0x68, 0xFF, 0x00, 0x00, 0x00 });
+
+            var criteria = new byte[]
+            {
+                0x3E, 0x2A, 0x01,
+                0x48, 0x2A, 0x01,
+                0x70, 0x68, 0xFF, 0x00, 0x00, 0x00
+            };
+            bytes.Add(0x47);
+            bytes.Add(0xCA);
+            bytes.Add(checked((byte)criteria.Length));
+            bytes.AddRange(criteria);
+            return bytes.ToArray();
+        }
+
+        var majorityDirect =
+            DocDocumentReader.ReadCharacterGrpprl(
+                BuildMajorityGrpprl(null));
+        var majorityResolved =
+            DocDocumentReader.ResolveCharacterFormatting(
+                paragraphStyleFormatting,
+                majorityDirect,
+                styles);
+
+        Assert(
+            majorityResolved.Bold == true &&
+            majorityResolved.Underline == false &&
+            majorityResolved.Superscript == false &&
+            majorityResolved.Subscript == false &&
+            majorityResolved.TextColor == "#000000",
+            "DOC sprmCMajority должен reset-ить совпавшие underline/script/color к paragraph style, не затрагивая bold.");
+
+        var majorityStyledDirect =
+            DocDocumentReader.ReadCharacterGrpprl(
+                BuildMajorityGrpprl(5));
+        var majorityStyledResolved =
+            DocDocumentReader.ResolveCharacterFormatting(
+                paragraphStyleFormatting,
+                majorityStyledDirect,
+                styles);
+
+        Assert(
+            majorityStyledResolved.Underline == true &&
+            majorityStyledResolved.Superscript == true &&
+            majorityStyledResolved.Subscript == false &&
+            majorityStyledResolved.TextColor == "#FF0000",
+            "DOC sprmCMajority должен игнорироваться при non-default character style.");
 
         var wrongKind =
             characterStyle with
