@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 using System.IO.Compression;
+using System.Globalization;
 using System.Text;
 using Book.Diagnostics;
 using Book.Documents;
@@ -6975,6 +6976,72 @@ internal static class Program
             lzwPage.Text,
             "PDF LZW marker",
             "PDF LZW content stream");
+
+        var extGStatePath = Path.Combine(
+            directory,
+            "regression-extgstate.pdf");
+        CreateExtGStatePdf(extGStatePath);
+
+        var extGStateModel = SupportedFormatRegistry.ReadDocument(extGStatePath);
+        var extGStatePage = extGStateModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+
+        AssertEqual(
+            4,
+            extGStatePage.PathRuns.Count,
+            "PDF ExtGState fixture path count");
+
+        var firstPath = extGStatePage.PathRuns[0];
+        var nestedPath = extGStatePage.PathRuns[1];
+        var restoredPath = extGStatePage.PathRuns[2];
+        var defaultPath = extGStatePage.PathRuns[3];
+
+        Assert(
+            firstPath.BlendMode == "Multiply" &&
+            firstPath.FillOverprint &&
+            firstPath.StrokeOverprint &&
+            firstPath.OverprintMode == 1 &&
+            firstPath.SoftMaskActive &&
+            Math.Abs(firstPath.FillOpacity - 0.5) < 0.0001 &&
+            Math.Abs(firstPath.StrokeOpacity - 0.75) < 0.0001,
+            "PDF ExtGState должен применять BM/OP/op/OPM/SMask/CA/ca к path state.");
+
+        Assert(
+            nestedPath.BlendMode == "Screen" &&
+            !nestedPath.FillOverprint &&
+            !nestedPath.StrokeOverprint &&
+            nestedPath.OverprintMode == 0 &&
+            !nestedPath.SoftMaskActive,
+            "PDF nested ExtGState должен заменять blend/overprint/soft-mask state.");
+
+        Assert(
+            restoredPath.BlendMode == "Multiply" &&
+            restoredPath.FillOverprint &&
+            restoredPath.StrokeOverprint &&
+            restoredPath.OverprintMode == 1 &&
+            restoredPath.SoftMaskActive,
+            "PDF Q должен восстанавливать ExtGState composite parameters.");
+
+        Assert(
+            defaultPath.BlendMode == "Normal" &&
+            !defaultPath.FillOverprint &&
+            !defaultPath.StrokeOverprint &&
+            defaultPath.OverprintMode == 0 &&
+            !defaultPath.SoftMaskActive,
+            "PDF outer Q должен восстанавливать default composite state.");
+
+        var extGStateHtml = DocumentHtmlRenderer.Render(
+            extGStateModel,
+            CreateRenderTheme());
+        AssertContains(
+            extGStateHtml,
+            "data-pdf-blend-mode=\"Multiply\" style=\"mix-blend-mode:multiply;\"",
+            "PDF renderer blend mode");
+        AssertContains(
+            extGStateHtml,
+            "data-pdf-overprint-stroke=\"true\" data-pdf-overprint-fill=\"true\" data-pdf-overprint-mode=\"1\" data-pdf-soft-mask-active=\"true\"",
+            "PDF renderer overprint/soft-mask metadata");
     }
 
     private static void TestParserTrace(string directory)
@@ -7147,6 +7214,65 @@ internal static class Program
             leaveOpen: false);
 
         writer.Write(content);
+    }
+
+    private static void CreateExtGStatePdf(string path)
+    {
+        var encoding = Encoding.ASCII;
+        var content =
+            "q\n" +
+            "/GS1 gs\n" +
+            "10 10 40 40 re B\n" +
+            "q\n" +
+            "/GS2 gs\n" +
+            "60 10 40 40 re B\n" +
+            "Q\n" +
+            "110 10 40 40 re B\n" +
+            "Q\n" +
+            "160 10 40 40 re B\n";
+
+        var objects = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 240 120] >>",
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /ExtGState << /GS1 5 0 R /GS2 6 0 R >> >> >>",
+            $"<< /Length {encoding.GetByteCount(content)} >>\nstream\n{content}endstream",
+            "<< /Type /ExtGState /BM [/UnknownVendorMode /Multiply] /OP true /op true /OPM 1 /SMask << /S /Alpha >> /CA 0.75 /ca 0.5 >>",
+            "<< /Type /ExtGState /BM /Screen /OP false /op false /OPM 0 /SMask /None >>"
+        };
+
+        using var memory = new MemoryStream();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(bytes, 0, bytes.Length);
+        }
+
+        Write("%PDF-1.7\n");
+        var offsets = new List<long>();
+
+        for (var index = 0; index < objects.Length; index++)
+        {
+            offsets.Add(memory.Position);
+            Write($"{index + 1} 0 obj\n{objects[index]}\nendobj\n");
+        }
+
+        var xref = memory.Position;
+        Write("xref\n" + $"0 {objects.Length + 1}\n" + "0000000000 65535 f \n");
+        foreach (var offset in offsets)
+        {
+            Write(offset.ToString("0000000000", CultureInfo.InvariantCulture) + " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n" +
+            $"<< /Size {objects.Length + 1} /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(path, memory.ToArray());
     }
 
     private static void CreateSimplePdf(

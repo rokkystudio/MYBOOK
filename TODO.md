@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.2.42
+Текущая версия: 1.2.43
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -48,7 +48,7 @@
 
 ## PDF
 
-- [ ] ExtGState: blend modes, soft mask как graphics state и overprint.
+- [ ] ExtGState: стандартные `/BM` blend modes теперь проходят через graphics state/q/Q и fixed-page model; массив `/BM` выбирает первый поддерживаемый mode, SVG использует точный `mix-blend-mode`. `/OP`, `/op` и `/OPM` сохраняются через graphics state и экспортируются как device-dependent metadata без ложной браузерной эмуляции. `/SMask /None` корректно сбрасывает state, dictionary soft mask отмечается как активная и также восстанавливается через q/Q. Осталось реальное compositing содержимого ExtGState soft-mask group; Image XObject `/SMask` уже рендерится отдельно.
 - [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
 - [ ] Image XObject: Indexed/JPEG + `/Matte`, нестандартный `/Decode` поверх DCT/JPEG и дополнительные ColorSpace.
 - [ ] Image filters: CCITT, JPX и JBIG2; LZW с `EarlyChange` 0/1 и predictor parameters уже поддерживается для streams и Image XObject.
