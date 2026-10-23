@@ -2296,6 +2296,7 @@ internal static class Program
         const int connectorShapeId = 3005;
         const int customShapeId = 3006;
         const int textBoxShapeId = 3007;
+        const int linkedTextBoxShapeId = 3008;
 
         var rectangle = BuildShapeRecord(
             rectangleShapeId,
@@ -2342,6 +2343,9 @@ internal static class Program
         var textBox = BuildTextBoxShapeRecord(
             textBoxShapeId,
             0x00010000);
+        var linkedTextBox = BuildTextBoxShapeRecord(
+            linkedTextBoxShapeId,
+            0x00010001);
 
         var dgg = new byte[
             rectangle.Length +
@@ -2350,7 +2354,8 @@ internal static class Program
             adjustedDiamond.Length +
             connector.Length +
             custom.Length +
-            textBox.Length];
+            textBox.Length +
+            linkedTextBox.Length];
         var dggOffset = 0;
         rectangle.CopyTo(
             dgg,
@@ -2377,6 +2382,10 @@ internal static class Program
             dggOffset);
         dggOffset += custom.Length;
         textBox.CopyTo(
+            dgg,
+            dggOffset);
+        dggOffset += textBox.Length;
+        linkedTextBox.CopyTo(
             dgg,
             dggOffset);
 
@@ -2650,7 +2659,7 @@ internal static class Program
             7);
         BinaryPrimitives.WriteInt32LittleEndian(
             textboxPlc.AsSpan(12, 4),
-            1);
+            2);
         BinaryPrimitives.WriteInt32LittleEndian(
             textboxPlc.AsSpan(26, 4),
             textBoxShapeId);
@@ -2669,10 +2678,56 @@ internal static class Program
             textboxStories[0].Index == 0 &&
             textboxStories[0].LocalStart == 0 &&
             textboxStories[0].ContentLength == 5 &&
-            textboxStories[0].ShapeId == textBoxShapeId,
+            textboxStories[0].ShapeId == textBoxShapeId &&
+            textboxStories[0].ChainLength == 2,
             "DOC PlcftxbxTxt должен связывать textbox story с FTXBXS.lid.");
 
-        textBoxShape!.Text = "Hello\nWorld";
+        Assert(
+            shapes.TryGetValue(
+                linkedTextBoxShapeId,
+                out var linkedTextBoxShape) &&
+            linkedTextBoxShape.Kind == DocumentShapeKind.TextBox &&
+            linkedTextBoxShape.TextIdentifier == 0x00010001,
+            "DOC linked TextBox должен сохранять zero-based chain index в OfficeArtClientTextbox.");
+
+        var textboxBreakPlc = new byte[34];
+        BinaryPrimitives.WriteInt32LittleEndian(
+            textboxBreakPlc.AsSpan(0, 4),
+            0);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            textboxBreakPlc.AsSpan(4, 4),
+            2);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            textboxBreakPlc.AsSpan(8, 4),
+            5);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            textboxBreakPlc.AsSpan(12, 4),
+            7);
+        BinaryPrimitives.WriteInt16LittleEndian(
+            textboxBreakPlc.AsSpan(16, 2),
+            0);
+        BinaryPrimitives.WriteInt16LittleEndian(
+            textboxBreakPlc.AsSpan(22, 2),
+            0);
+
+        var textboxBreaks = DocDocumentReader.ReadTextboxBreakDescriptors(
+            textboxBreakPlc,
+            0,
+            textboxBreakPlc.Length,
+            7);
+
+        Assert(
+            textboxBreaks.Count == 2 &&
+            textboxBreaks[0].TextboxIndex == 0 &&
+            textboxBreaks[0].LocalStart == 0 &&
+            textboxBreaks[0].ContentLength == 2 &&
+            textboxBreaks[1].TextboxIndex == 0 &&
+            textboxBreaks[1].LocalStart == 2 &&
+            textboxBreaks[1].ContentLength == 3,
+            "DOC PlcfTxbxBkd должен разделять linked textbox chain на дискретные Tbkd ranges.");
+
+        textBoxShape!.Text = "Hello";
+        linkedTextBoxShape!.Text = "World";
         var textBoxBlocks = DocDocumentReader.BuildParagraphs(
             "\u0008\r",
             [
@@ -2710,7 +2765,7 @@ internal static class Program
             "DOC OfficeArt textbox text renderer");
         AssertContains(
             textBoxHtml,
-            "Hello\nWorld",
+            "Hello",
             "DOC OfficeArt textbox story text");
     }
 
