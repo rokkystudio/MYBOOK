@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.2.36
+Текущая версия: 1.2.37
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -28,7 +28,7 @@
 - [ ] Headers/footers: text stories и Even/Odd/First variants по секциям читаются; `PlcSpaHdr` drawings теперь привязываются к конкретной story и используют общий OfficeArt image resolver. Остались header/footer-specific fields, наследование пустых stories и layout properties.
 - [ ] Footnotes/endnotes: PLC references и note text stories поддерживаются с anchors/links; остались точные custom-symbol glyphs через `sprmCSymbol`, note-specific fields и layout properties.
 - [ ] Sections: `PlcfSed`/SEPX, section break kind, orientation, page size, margins, gutter, header/footer distances, title-page и bidi поддерживаются; остались columns, page numbering, page borders/document grid и применение этих свойств в реальном pagination/layout engine.
-- [ ] Поля Word, кроме уже поддержанных безопасных HYPERLINK fields.
+- [ ] Поля Word: saved result уже безопасно сохраняется для всех field codes; для HYPERLINK, PAGE, NUMPAGES, DATE, TIME, REF, PAGEREF и NOTEREF теперь сохраняются нейтральные `DocumentFieldKind`, исходная instruction и безопасный target (где применимо), а HTML экспортирует `data-field-*` metadata. Значения не пересчитываются: PAGE/NUMPAGES требуют pagination engine, DATE/TIME используют cached result, REF/PAGEREF/NOTEREF требуют bookmark/note resolution. Исполняемые/неизвестные fields (например MACROBUTTON/DDE/formulas) остаются plain saved result без semantic metadata. Остались полноценное field evaluation/update и дополнительные безопасные field kinds.
 - [ ] Дополнительные кодировки и charset/font mapping.
 - [ ] Старые версии Word Binary Format.
 - [ ] Реальная постраничная layout/pagination модель для превью страниц.

@@ -782,6 +782,22 @@ internal static class Program
             '\u0014' +
             "Unsafe DOC link" +
             '\u0015' +
+            " / " +
+            '\u0013' + " PAGE " + '\u0014' + "12" + '\u0015' +
+            " / " +
+            '\u0013' + " NUMPAGES " + '\u0014' + "30" + '\u0015' +
+            " / " +
+            '\u0013' + " REF bookmark \\h " + '\u0014' + "Section title" + '\u0015' +
+            " / " +
+            '\u0013' + " PAGEREF bookmark " + '\u0014' + "7" + '\u0015' +
+            " / " +
+            '\u0013' + " NOTEREF noteMark " + '\u0014' + "3" + '\u0015' +
+            " / " +
+            '\u0013' + " DATE \\@ \"yyyy-MM-dd\" " + '\u0014' + "2026-10-23" + '\u0015' +
+            " / " +
+            '\u0013' + " TIME \\@ \"HH:mm\" " + '\u0014' + "12:21" + '\u0015' +
+            " / " +
+            '\u0013' + " MACROBUTTON TestMacro Run " + '\u0014' + "Run" + '\u0015' +
             '\r' +
             "Page one" +
             '\u000C' +
@@ -828,6 +844,49 @@ internal static class Program
             "DOC unsafe HYPERLINK должен сохранять result text без href.");
 
         Assert(
+            inlines.Any(inline =>
+                inline.FieldKind == DocumentFieldKind.Page &&
+                inline.Text == "12" &&
+                inline.FieldInstruction?.Contains("PAGE", StringComparison.OrdinalIgnoreCase) == true),
+            "DOC PAGE field должен сохранять saved result и field metadata.");
+        Assert(
+            inlines.Any(inline =>
+                inline.FieldKind == DocumentFieldKind.NumPages &&
+                inline.Text == "30"),
+            "DOC NUMPAGES field должен сохранять saved result.");
+        Assert(
+            inlines.Any(inline =>
+                inline.FieldKind == DocumentFieldKind.Ref &&
+                inline.FieldTarget == "bookmark" &&
+                inline.Text == "Section title"),
+            "DOC REF field должен сохранять bookmark target.");
+        Assert(
+            inlines.Any(inline =>
+                inline.FieldKind == DocumentFieldKind.PageRef &&
+                inline.FieldTarget == "bookmark" &&
+                inline.Text == "7"),
+            "DOC PAGEREF field должен сохранять bookmark target.");
+        Assert(
+            inlines.Any(inline =>
+                inline.FieldKind == DocumentFieldKind.NoteRef &&
+                inline.FieldTarget == "noteMark" &&
+                inline.Text == "3"),
+            "DOC NOTEREF field должен сохранять note target.");
+        Assert(
+            inlines.Any(inline =>
+                inline.FieldKind == DocumentFieldKind.Date &&
+                inline.Text == "2026-10-23") &&
+            inlines.Any(inline =>
+                inline.FieldKind == DocumentFieldKind.Time &&
+                inline.Text == "12:21"),
+            "DOC DATE/TIME fields должны сохранять cached result без пересчёта.");
+        Assert(
+            inlines.Any(inline =>
+                inline.FieldKind == null &&
+                inline.Text.Contains("Run", StringComparison.Ordinal)),
+            "DOC executable/unknown fields должны оставаться plain saved result без semantic metadata.");
+
+        Assert(
             blocks
                 .OfType<DocumentFlowBreak>()
                 .Any(flowBreak =>
@@ -859,6 +918,30 @@ internal static class Program
                 "href=\"file:",
                 StringComparison.OrdinalIgnoreCase),
             "DOC renderer не должен выпускать unsafe file: hyperlink.");
+        AssertContains(
+            html,
+            "data-field-kind=\"page\" data-field-instruction=\"PAGE\"",
+            "DOC renderer PAGE field metadata");
+        AssertContains(
+            html,
+            "data-field-kind=\"ref\" data-field-instruction=\"REF bookmark \\h\" data-field-target=\"bookmark\"",
+            "DOC renderer REF field metadata");
+        AssertContains(
+            html,
+            "data-field-kind=\"pageref\"",
+            "DOC renderer PAGEREF field metadata");
+        AssertContains(
+            html,
+            "data-field-kind=\"noteref\"",
+            "DOC renderer NOTEREF field metadata");
+        AssertContains(
+            html,
+            "data-field-kind=\"date\"",
+            "DOC renderer DATE field metadata");
+        AssertContains(
+            html,
+            "data-field-kind=\"time\"",
+            "DOC renderer TIME field metadata");
     }
 
     private static void TestDocInlinePicture()
