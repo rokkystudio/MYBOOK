@@ -1760,6 +1760,183 @@ internal static class Program
             wmfImage.ContentType == "image/wmf" &&
             wmfImage.Data.SequenceEqual(wmf),
             "DOC OfficeArt WMF должен сохранять uncompressed metafile bytes.");
+
+        var fillDgg = BuildOfficeArtDgg(
+            blipRecord,
+            0x06,
+            2053);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            fillDgg.AsSpan(
+                fillDgg.Length - 6,
+                2),
+            0x4186);
+        var fillImages = DocDocumentReader.ReadOfficeArtShapeImages(
+            fillDgg,
+            0,
+            fillDgg.Length);
+        Assert(
+            fillImages.TryGetValue(2053, out var fillImage) &&
+            fillImage.Data.SequenceEqual(png),
+            "DOC simple FOPT.fillBlip должен разрешаться через BStore.");
+
+        static byte[] BuildComplexImageDgg(
+            byte[] imageBlipRecord,
+            ushort propertyId,
+            int testShapeId)
+        {
+            var testFsp = new byte[16];
+            BinaryPrimitives.WriteUInt16LittleEndian(testFsp.AsSpan(0, 2), 0x0012);
+            BinaryPrimitives.WriteUInt16LittleEndian(testFsp.AsSpan(2, 2), 0xF00A);
+            BinaryPrimitives.WriteUInt32LittleEndian(testFsp.AsSpan(4, 4), 8);
+            BinaryPrimitives.WriteInt32LittleEndian(testFsp.AsSpan(8, 4), testShapeId);
+
+            var testFopt = new byte[
+                14 +
+                imageBlipRecord.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(testFopt.AsSpan(0, 2), 0x0013);
+            BinaryPrimitives.WriteUInt16LittleEndian(testFopt.AsSpan(2, 2), 0xF00B);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testFopt.AsSpan(4, 4),
+                checked((uint)(6 + imageBlipRecord.Length)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                testFopt.AsSpan(8, 2),
+                checked((ushort)(0x8000 | propertyId)));
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testFopt.AsSpan(10, 4),
+                checked((uint)imageBlipRecord.Length));
+            imageBlipRecord.CopyTo(
+                testFopt,
+                14);
+
+            var testSpContainer = new byte[
+                8 +
+                testFsp.Length +
+                testFopt.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(testSpContainer.AsSpan(0, 2), 0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(testSpContainer.AsSpan(2, 2), 0xF004);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testSpContainer.AsSpan(4, 4),
+                checked((uint)(testFsp.Length + testFopt.Length)));
+            testFsp.CopyTo(testSpContainer, 8);
+            testFopt.CopyTo(testSpContainer, 8 + testFsp.Length);
+            return testSpContainer;
+        }
+
+        var complexPibDgg = BuildComplexImageDgg(
+            blipRecord,
+            0x0104,
+            2054);
+        var complexPibImages = DocDocumentReader.ReadOfficeArtShapeImages(
+            complexPibDgg,
+            0,
+            complexPibDgg.Length);
+        Assert(
+            complexPibImages.TryGetValue(2054, out var complexPibImage) &&
+            complexPibImage.Data.SequenceEqual(png),
+            "DOC complex FOPT.pib должен читать embedded OfficeArtBlip из complex data.");
+
+        var complexFillDgg = BuildComplexImageDgg(
+            blipRecord,
+            0x0186,
+            2055);
+        var complexFillImages = DocDocumentReader.ReadOfficeArtShapeImages(
+            complexFillDgg,
+            0,
+            complexFillDgg.Length);
+        Assert(
+            complexFillImages.TryGetValue(2055, out var complexFillImage) &&
+            complexFillImage.Data.SequenceEqual(png),
+            "DOC complex FOPT.fillBlip должен читать embedded OfficeArtBlip из complex data.");
+
+        static byte[] BuildDelayedOfficeArtDgg(
+            int testShapeId,
+            int delayOffset,
+            int blipSize)
+        {
+            var testFbsePayload = new byte[36];
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testFbsePayload.AsSpan(20, 4),
+                checked((uint)blipSize));
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testFbsePayload.AsSpan(24, 4),
+                1);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testFbsePayload.AsSpan(28, 4),
+                checked((uint)delayOffset));
+
+            var testFbseRecord = new byte[
+                8 +
+                testFbsePayload.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(testFbseRecord.AsSpan(0, 2), 0x0062);
+            BinaryPrimitives.WriteUInt16LittleEndian(testFbseRecord.AsSpan(2, 2), 0xF007);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testFbseRecord.AsSpan(4, 4),
+                checked((uint)testFbsePayload.Length));
+            testFbsePayload.CopyTo(testFbseRecord, 8);
+
+            var testBstore = new byte[
+                8 +
+                testFbseRecord.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(testBstore.AsSpan(0, 2), 0x001F);
+            BinaryPrimitives.WriteUInt16LittleEndian(testBstore.AsSpan(2, 2), 0xF001);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testBstore.AsSpan(4, 4),
+                checked((uint)testFbseRecord.Length));
+            testFbseRecord.CopyTo(testBstore, 8);
+
+            var testFsp = new byte[16];
+            BinaryPrimitives.WriteUInt16LittleEndian(testFsp.AsSpan(0, 2), 0x0012);
+            BinaryPrimitives.WriteUInt16LittleEndian(testFsp.AsSpan(2, 2), 0xF00A);
+            BinaryPrimitives.WriteUInt32LittleEndian(testFsp.AsSpan(4, 4), 8);
+            BinaryPrimitives.WriteInt32LittleEndian(testFsp.AsSpan(8, 4), testShapeId);
+
+            var testFopt = new byte[14];
+            BinaryPrimitives.WriteUInt16LittleEndian(testFopt.AsSpan(0, 2), 0x0013);
+            BinaryPrimitives.WriteUInt16LittleEndian(testFopt.AsSpan(2, 2), 0xF00B);
+            BinaryPrimitives.WriteUInt32LittleEndian(testFopt.AsSpan(4, 4), 6);
+            BinaryPrimitives.WriteUInt16LittleEndian(testFopt.AsSpan(8, 2), 0x4104);
+            BinaryPrimitives.WriteUInt32LittleEndian(testFopt.AsSpan(10, 4), 1);
+
+            var testSpContainer = new byte[
+                8 +
+                testFsp.Length +
+                testFopt.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(testSpContainer.AsSpan(0, 2), 0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(testSpContainer.AsSpan(2, 2), 0xF004);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testSpContainer.AsSpan(4, 4),
+                checked((uint)(testFsp.Length + testFopt.Length)));
+            testFsp.CopyTo(testSpContainer, 8);
+            testFopt.CopyTo(testSpContainer, 8 + testFsp.Length);
+
+            var testDgg = new byte[
+                testBstore.Length +
+                testSpContainer.Length];
+            testBstore.CopyTo(testDgg, 0);
+            testSpContainer.CopyTo(testDgg, testBstore.Length);
+            return testDgg;
+        }
+
+        const int delayedOffset = 128;
+        var delayedWordDocument = new byte[
+            delayedOffset +
+            blipRecord.Length];
+        blipRecord.CopyTo(
+            delayedWordDocument,
+            delayedOffset);
+        var delayedDgg = BuildDelayedOfficeArtDgg(
+            2056,
+            delayedOffset,
+            blipRecord.Length);
+        var delayedImages = DocDocumentReader.ReadOfficeArtShapeImages(
+            delayedDgg,
+            0,
+            delayedDgg.Length,
+            wordDocument: delayedWordDocument);
+        Assert(
+            delayedImages.TryGetValue(2056, out var delayedImage) &&
+            delayedImage.Data.SequenceEqual(png),
+            "DOC delayed FBSE должен разрешать foDelay в WordDocument stream.");
     }
 
     private static void TestDocHeaderStoryTable()
