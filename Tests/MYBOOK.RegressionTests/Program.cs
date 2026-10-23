@@ -2416,6 +2416,46 @@ internal static class Program
             BuildSimpleListMarkers(0x2C, "\0", 2, 999999)
                 .SequenceEqual(["九九九九九九", null]),
             "DOC koreanDigital2 должен прекращать вывод после Word-limit 999999.");
+        Assert(
+            BuildSimpleListMarkers(0x09, "\0", 2)
+                .SequenceEqual(["*", "†"]),
+            "DOC chicago должен начинаться с *, dagger.");
+        Assert(
+            BuildSimpleListMarkers(0x09, "\0", 2, 5)
+                .SequenceEqual(["**", "††"]),
+            "DOC chicago должен повторять выбранный symbol после полного цикла.");
+        Assert(
+            BuildSimpleListMarkers(0x09, "\0", 2, 116)
+                .SequenceEqual([new string('§', 29), null]),
+            "DOC chicago должен прекращать вывод после Word-limit 116.");
+        Assert(
+            BuildSimpleListMarkers(0x0B, "\0", 2, 10)
+                .SequenceEqual(["十", "十一"]),
+            "DOC japaneseCounting должен использовать Japanese ten-unit semantics.");
+        Assert(
+            BuildSimpleListMarkers(0x0B, "\0", 2, 105)
+                .SequenceEqual(["百五", "百六"]),
+            "DOC japaneseCounting должен опускать zero groups.");
+        Assert(
+            BuildSimpleListMarkers(0x0B, "\0", 2, 10005)
+                .SequenceEqual(["一万五", "一万六"]),
+            "DOC japaneseCounting должен сохранять 一 перед 万.");
+        Assert(
+            BuildSimpleListMarkers(0x0B, "\0", 2, 999999)
+                .SequenceEqual(["九十九万九千九百九十九", null]),
+            "DOC japaneseCounting должен прекращать вывод после Word-limit 999999.");
+        Assert(
+            BuildSimpleListMarkers(0x11, "\0", 2, 101)
+                .SequenceEqual(["一〇一", "一〇二"]),
+            "DOC japaneseDigitalTenThousand должен быть positional digital format.");
+        Assert(
+            BuildSimpleListMarkers(0x11, "\0", 2, 9999)
+                .SequenceEqual(["九九九九", null]),
+            "DOC japaneseDigitalTenThousand должен прекращать вывод после Word-limit 9999.");
+        Assert(
+            BuildSimpleListMarkers(0x13, "\0", 2, 12)
+                .SequenceEqual(["１２", "１３"]),
+            "DOC decimalFullWidth2 должен использовать full-width decimal digits.");
 
         Assert(
             formatting.KeepTogether == true &&
