@@ -2015,11 +2015,183 @@ internal static class Program
             return container;
         }
 
+        static byte[] BuildCustomPathShapeRecord(
+            int shapeId)
+        {
+            static byte[] BuildPointArray(
+                params (int X, int Y)[] points)
+            {
+                var data = new byte[
+                    6 +
+                    points.Length * 8];
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(0, 2),
+                    checked((ushort)points.Length));
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(2, 2),
+                    checked((ushort)points.Length));
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(4, 2),
+                    8);
+
+                for (var index = 0;
+                     index < points.Length;
+                     index++)
+                {
+                    var offset =
+                        6 +
+                        index * 8;
+                    BinaryPrimitives.WriteInt32LittleEndian(
+                        data.AsSpan(offset, 4),
+                        points[index].X);
+                    BinaryPrimitives.WriteInt32LittleEndian(
+                        data.AsSpan(offset + 4, 4),
+                        points[index].Y);
+                }
+
+                return data;
+            }
+
+            static byte[] BuildSegmentArray(
+                params ushort[] segments)
+            {
+                var data = new byte[
+                    6 +
+                    segments.Length * 2];
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(0, 2),
+                    checked((ushort)segments.Length));
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(2, 2),
+                    checked((ushort)segments.Length));
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(4, 2),
+                    2);
+
+                for (var index = 0;
+                     index < segments.Length;
+                     index++)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        data.AsSpan(
+                            6 + index * 2,
+                            2),
+                        segments[index]);
+                }
+
+                return data;
+            }
+
+            var vertices = BuildPointArray(
+                (0, 0),
+                (1000, 0),
+                (1000, 300),
+                (700, 1000),
+                (0, 1000));
+            var segments = BuildSegmentArray(
+                0x0002,
+                0x0008,
+                0x0009,
+                0x000B,
+                0x0004);
+
+            var properties = new (ushort PropertyId, uint Value)[]
+            {
+                (0x0140, 0),
+                (0x0141, 0),
+                (0x0142, 1000),
+                (0x0143, 1000),
+                (0x0144, 4),
+                (0x8145, checked((uint)vertices.Length)),
+                (0x8146, checked((uint)segments.Length)),
+                (0x0181, 0x00EECC22),
+                (0x01C0, 0x00224466)
+            };
+
+            var fsp = new byte[16];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(0, 2),
+                0x0002);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(2, 2),
+                0xF00A);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fsp.AsSpan(4, 4),
+                8);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                fsp.AsSpan(8, 4),
+                shapeId);
+
+            var complexLength =
+                vertices.Length +
+                segments.Length;
+            var fopt = new byte[
+                8 +
+                properties.Length * 6 +
+                complexLength];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fopt.AsSpan(0, 2),
+                checked((ushort)((properties.Length << 4) | 0x0003)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fopt.AsSpan(2, 2),
+                0xF00B);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fopt.AsSpan(4, 4),
+                checked((uint)(properties.Length * 6 + complexLength)));
+
+            for (var index = 0;
+                 index < properties.Length;
+                 index++)
+            {
+                var propertyOffset =
+                    8 +
+                    index * 6;
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    fopt.AsSpan(propertyOffset, 2),
+                    properties[index].PropertyId);
+                BinaryPrimitives.WriteUInt32LittleEndian(
+                    fopt.AsSpan(propertyOffset + 2, 4),
+                    properties[index].Value);
+            }
+
+            var complexOffset =
+                8 +
+                properties.Length * 6;
+            vertices.CopyTo(
+                fopt,
+                complexOffset);
+            segments.CopyTo(
+                fopt,
+                complexOffset + vertices.Length);
+
+            var container = new byte[
+                8 +
+                fsp.Length +
+                fopt.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(0, 2),
+                0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(2, 2),
+                0xF004);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                container.AsSpan(4, 4),
+                checked((uint)(fsp.Length + fopt.Length)));
+            fsp.CopyTo(
+                container,
+                8);
+            fopt.CopyTo(
+                container,
+                8 + fsp.Length);
+            return container;
+        }
+
         const int rectangleShapeId = 3001;
         const int lineShapeId = 3002;
         const int diamondShapeId = 3003;
         const int adjustedDiamondShapeId = 3004;
         const int connectorShapeId = 3005;
+        const int customShapeId = 3006;
 
         var rectangle = BuildShapeRecord(
             rectangleShapeId,
@@ -2061,12 +2233,16 @@ internal static class Program
             (0x01CB, 19050),
             (0x01D1, 3));
 
+        var custom = BuildCustomPathShapeRecord(
+            customShapeId);
+
         var dgg = new byte[
             rectangle.Length +
             line.Length +
             diamond.Length +
             adjustedDiamond.Length +
-            connector.Length];
+            connector.Length +
+            custom.Length];
         var dggOffset = 0;
         rectangle.CopyTo(
             dgg,
@@ -2085,6 +2261,10 @@ internal static class Program
             dggOffset);
         dggOffset += adjustedDiamond.Length;
         connector.CopyTo(
+            dgg,
+            dggOffset);
+        dggOffset += connector.Length;
+        custom.CopyTo(
             dgg,
             dggOffset);
 
@@ -2148,6 +2328,16 @@ internal static class Program
             connectorShape.StrokeWidthPoints == 1.5 &&
             connectorShape.EndArrowhead == DocumentShapeArrowhead.Diamond,
             "DOC OfficeArt StraightConnector1 должен сохранять line и arrowhead properties.");
+
+        Assert(
+            shapes.TryGetValue(
+                customShapeId,
+                out var customShape) &&
+            customShape.Kind == DocumentShapeKind.CustomPath &&
+            customShape.PathData == "M0 0 L100 0 C100 30 70 100 0 100 Z" &&
+            customShape.FillColor == "#22CCEE" &&
+            customShape.StrokeColor == "#664422",
+            "DOC OfficeArt pVertices/pSegmentInfo должен строить mixed custom SVG path.");
 
         var blocks = DocDocumentReader.BuildParagraphs(
             "\u0008\r",
@@ -2290,6 +2480,43 @@ internal static class Program
             connectorHtml,
             "data-shape-end-arrowhead=\"diamond\"",
             "DOC OfficeArt connector arrowhead renderer");
+
+        var customBlocks = DocDocumentReader.BuildParagraphs(
+            "\u0008\r",
+            [
+                new DocDocumentReader.DocFloatingShapeAnchor(
+                    0,
+                    customShapeId,
+                    0,
+                    0,
+                    1440,
+                    1440,
+                    1,
+                    2,
+                    2,
+                    2,
+                    false,
+                    false)
+            ],
+            new Dictionary<int, DocumentImage>(),
+            shapes);
+
+        var customHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC OfficeArt custom path",
+                Blocks = customBlocks
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            customHtml,
+            "data-shape-kind=\"custom-path\"",
+            "DOC OfficeArt custom path renderer metadata");
+        AssertContains(
+            customHtml,
+            "<path d=\"M0 0 L100 0 C100 30 70 100 0 100 Z\"",
+            "DOC OfficeArt custom mixed path SVG");
     }
 
     private static void TestDocHeaderStoryTable()
