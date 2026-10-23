@@ -205,6 +205,8 @@ internal static class Program
             \pard
             {\pict\pngblip\picw1\pich1\picwgoal1440\pichgoal720\picscalex50\picscaley200\piccropl120\piccropt-40\piccropr60\piccropb20 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
             {\pict\dibitmap0 280000000100000001000000010018000000000004000000000000000000000000000000000000000000FF00}\par
+            {\pict\emfblip 0100000000000000000000000000000000000000000000000000000000000000000000000000000020454D46}\par
+            {\pict\wmetafile8 000009000000000000000000000000000000}\par
             }
             """;
 
@@ -591,6 +593,41 @@ internal static class Program
             bmpImage.Data[1] == (byte)'M',
             "RTF dibitmap должен преобразовываться в полноценный BMP.");
 
+        var emfImage = model.Blocks
+            .OfType<DocumentParagraph>()
+            .SelectMany(paragraph => paragraph.Inlines)
+            .Select(inline => inline.Image)
+            .FirstOrDefault(image =>
+                image != null &&
+                string.Equals(
+                    image.ContentType,
+                    "image/emf",
+                    StringComparison.Ordinal));
+
+        Assert(
+            emfImage != null &&
+            emfImage.Data.Length == 44,
+            "RTF emfblip должен сохранять валидный EMF payload.");
+
+        var wmfImage = model.Blocks
+            .OfType<DocumentParagraph>()
+            .SelectMany(paragraph => paragraph.Inlines)
+            .Select(inline => inline.Image)
+            .FirstOrDefault(image =>
+                image != null &&
+                string.Equals(
+                    image.ContentType,
+                    "image/wmf",
+                    StringComparison.Ordinal));
+
+        Assert(
+            wmfImage is
+            {
+                MetafileMappingMode: 8
+            } &&
+            wmfImage.Data.Length == 18,
+            "RTF wmetafile должен сохранять WMF payload и mapping mode.");
+
         var html = DocumentHtmlRenderer.Render(
             model,
             CreateRenderTheme());
@@ -722,8 +759,13 @@ internal static class Program
 
         AssertContains(
             html,
-            "data-pixel-width=\"1\" data-pixel-height=\"1\" data-scale-x-percent=\"50\" data-scale-y-percent=\"200\" data-crop-left-pt=\"6\" data-crop-top-pt=\"-2\" data-crop-right-pt=\"3\" data-crop-bottom-pt=\"1\" style=\"width:36pt;height:72pt;\"",
-            "RTF rendered picture geometry and crop metadata");
+            "data-pixel-width=\"1\" data-pixel-height=\"1\" data-scale-x-percent=\"50\" data-scale-y-percent=\"200\" data-crop-left-pt=\"6\" data-crop-top-pt=\"-2\" data-crop-right-pt=\"3\" data-crop-bottom-pt=\"1\" style=\"width:36pt;height:72pt;clip-path:inset(0pt 3pt 1pt 6pt);\"",
+            "RTF rendered picture geometry and positive crop clipping");
+
+        AssertContains(
+            html,
+            "data-metafile-mapping-mode=\"8\"",
+            "RTF rendered WMF mapping-mode metadata");
 
         AssertContains(
             html,
