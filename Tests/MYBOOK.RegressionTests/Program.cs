@@ -2344,6 +2344,14 @@ internal static class Program
             BuildSimpleListMarkers(0x32, "\0", 2, 16)
                 .SequenceEqual(["औ", null]),
             "DOC hindiConsonants не должен синтезировать rollover после U+0914.");
+        Assert(
+            BuildSimpleListMarkers(0x35, "\0", 2)
+                .SequenceEqual(["ก", "ข"]),
+            "DOC thaiLetters должен использовать Thai consonant sequence без устаревших letters.");
+        Assert(
+            BuildSimpleListMarkers(0x35, "\0", 2, 42)
+                .SequenceEqual(["ฮ", null]),
+            "DOC thaiLetters не должен синтезировать неподтверждённый rollover после 42 letters.");
 
         Assert(
             formatting.KeepTogether == true &&
