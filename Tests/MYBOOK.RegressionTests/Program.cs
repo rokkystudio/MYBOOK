@@ -38,6 +38,7 @@ internal static class Program
             ("DOC inline picture", TestDocInlinePicture),
             ("DOC floating shape tables", TestDocFloatingShapeTables),
             ("DOC floating shape image", TestDocFloatingShapeImage),
+            ("DOC OfficeArt vector shapes", TestDocOfficeArtVectorShapes),
             ("DOC header story table", TestDocHeaderStoryTable),
             ("DOC section table", TestDocSectionTable),
             ("DOC paragraph properties", TestDocParagraphProperties),
@@ -1937,6 +1938,202 @@ internal static class Program
             delayedImages.TryGetValue(2056, out var delayedImage) &&
             delayedImage.Data.SequenceEqual(png),
             "DOC delayed FBSE должен разрешать foDelay в WordDocument stream.");
+    }
+
+    private static void TestDocOfficeArtVectorShapes()
+    {
+        static byte[] BuildShapeRecord(
+            int shapeId,
+            int shapeType,
+            uint shapeFlags,
+            params (ushort PropertyId, uint Value)[] properties)
+        {
+            var fsp = new byte[16];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(0, 2),
+                checked((ushort)((shapeType << 4) | 0x0002)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(2, 2),
+                0xF00A);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fsp.AsSpan(4, 4),
+                8);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                fsp.AsSpan(8, 4),
+                shapeId);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fsp.AsSpan(12, 4),
+                shapeFlags);
+
+            var fopt = new byte[
+                8 +
+                properties.Length * 6];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fopt.AsSpan(0, 2),
+                checked((ushort)((properties.Length << 4) | 0x0003)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fopt.AsSpan(2, 2),
+                0xF00B);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fopt.AsSpan(4, 4),
+                checked((uint)(properties.Length * 6)));
+
+            for (var index = 0;
+                 index < properties.Length;
+                 index++)
+            {
+                var propertyOffset =
+                    8 +
+                    index * 6;
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    fopt.AsSpan(propertyOffset, 2),
+                    properties[index].PropertyId);
+                BinaryPrimitives.WriteUInt32LittleEndian(
+                    fopt.AsSpan(propertyOffset + 2, 4),
+                    properties[index].Value);
+            }
+
+            var container = new byte[
+                8 +
+                fsp.Length +
+                fopt.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(0, 2),
+                0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(2, 2),
+                0xF004);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                container.AsSpan(4, 4),
+                checked((uint)(fsp.Length + fopt.Length)));
+            fsp.CopyTo(
+                container,
+                8);
+            fopt.CopyTo(
+                container,
+                8 + fsp.Length);
+            return container;
+        }
+
+        const int rectangleShapeId = 3001;
+        const int lineShapeId = 3002;
+
+        var rectangle = BuildShapeRecord(
+            rectangleShapeId,
+            1,
+            0,
+            (0x0181, 0x00332211),
+            (0x01C0, 0x00665544),
+            (0x01CB, 25400));
+
+        var line = BuildShapeRecord(
+            lineShapeId,
+            20,
+            0x000000C0,
+            (0x01C0, 0x0000AAFF),
+            (0x01CB, 12700));
+
+        var dgg = new byte[
+            rectangle.Length +
+            line.Length];
+        rectangle.CopyTo(
+            dgg,
+            0);
+        line.CopyTo(
+            dgg,
+            rectangle.Length);
+
+        var shapes = DocDocumentReader.ReadOfficeArtShapes(
+            dgg,
+            0,
+            dgg.Length);
+
+        Assert(
+            shapes.TryGetValue(
+                rectangleShapeId,
+                out var rectangleShape),
+            "DOC OfficeArt rectangle должен разрешаться из FSP/FOPT.");
+        AssertEqual(
+            DocumentShapeKind.Rectangle,
+            rectangleShape!.Kind,
+            "DOC OfficeArt rectangle kind");
+        Assert(
+            rectangleShape.FillColor == "#112233",
+            "DOC OfficeArt fillColor RGB.");
+        Assert(
+            rectangleShape.StrokeColor == "#445566",
+            "DOC OfficeArt lineColor RGB.");
+        AssertEqual(
+            2.0,
+            rectangleShape.StrokeWidthPoints!.Value,
+            "DOC OfficeArt lineWidth points");
+
+        Assert(
+            shapes.TryGetValue(
+                lineShapeId,
+                out var lineShape) &&
+            lineShape.Kind == DocumentShapeKind.Line &&
+            lineShape.FlipHorizontal &&
+            lineShape.FlipVertical &&
+            lineShape.StrokeColor == "#FFAA00" &&
+            lineShape.StrokeWidthPoints == 1.0,
+            "DOC OfficeArt line должен сохранять FSP flips и line properties.");
+
+        var blocks = DocDocumentReader.BuildParagraphs(
+            "\u0008\r",
+            [
+                new DocDocumentReader.DocFloatingShapeAnchor(
+                    0,
+                    rectangleShapeId,
+                    720,
+                    1440,
+                    2160,
+                    2880,
+                    1,
+                    2,
+                    2,
+                    2,
+                    false,
+                    true)
+            ],
+            new Dictionary<int, DocumentImage>(),
+            shapes);
+
+        var shapeInline = blocks
+            .OfType<DocumentParagraph>()
+            .SelectMany(paragraph => paragraph.Inlines)
+            .SingleOrDefault(inline =>
+                inline.Shape != null);
+
+        Assert(
+            shapeInline?.Shape?.Kind == DocumentShapeKind.Rectangle &&
+            shapeInline.FloatingPlacement != null,
+            "DOC floating vector shape должен попадать в нейтральный inline с FSPA placement.");
+
+        var html = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC OfficeArt vector shape",
+                Blocks = blocks
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            html,
+            "class=\"floating-shape\"",
+            "DOC OfficeArt vector shape SVG class");
+        AssertContains(
+            html,
+            "data-shape-kind=\"rectangle\"",
+            "DOC OfficeArt vector shape kind metadata");
+        AssertContains(
+            html,
+            "fill=\"#112233\" stroke=\"#445566\" stroke-width=\"2pt\" vector-effect=\"non-scaling-stroke\"",
+            "DOC OfficeArt vector shape paint");
+        AssertContains(
+            html,
+            "style=\"width:72pt;height:72pt;float:left;\"",
+            "DOC OfficeArt vector shape FSPA reflow sizing");
     }
 
     private static void TestDocHeaderStoryTable()
