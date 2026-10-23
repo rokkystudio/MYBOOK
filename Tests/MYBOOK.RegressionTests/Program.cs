@@ -2015,6 +2015,60 @@ internal static class Program
             return container;
         }
 
+        static byte[] BuildTextBoxShapeRecord(
+            int shapeId,
+            uint textIdentifier)
+        {
+            var fsp = new byte[16];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(0, 2),
+                checked((ushort)((202 << 4) | 0x0002)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(2, 2),
+                0xF00A);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fsp.AsSpan(4, 4),
+                8);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                fsp.AsSpan(8, 4),
+                shapeId);
+
+            var clientTextbox = new byte[12];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                clientTextbox.AsSpan(0, 2),
+                0x0000);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                clientTextbox.AsSpan(2, 2),
+                0xF00D);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                clientTextbox.AsSpan(4, 4),
+                4);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                clientTextbox.AsSpan(8, 4),
+                textIdentifier);
+
+            var container = new byte[
+                8 +
+                fsp.Length +
+                clientTextbox.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(0, 2),
+                0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(2, 2),
+                0xF004);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                container.AsSpan(4, 4),
+                checked((uint)(fsp.Length + clientTextbox.Length)));
+            fsp.CopyTo(
+                container,
+                8);
+            clientTextbox.CopyTo(
+                container,
+                8 + fsp.Length);
+            return container;
+        }
+
         static byte[] BuildCustomPathShapeRecord(
             int shapeId)
         {
@@ -2241,6 +2295,7 @@ internal static class Program
         const int adjustedDiamondShapeId = 3004;
         const int connectorShapeId = 3005;
         const int customShapeId = 3006;
+        const int textBoxShapeId = 3007;
 
         var rectangle = BuildShapeRecord(
             rectangleShapeId,
@@ -2284,6 +2339,9 @@ internal static class Program
 
         var custom = BuildCustomPathShapeRecord(
             customShapeId);
+        var textBox = BuildTextBoxShapeRecord(
+            textBoxShapeId,
+            0x00010000);
 
         var dgg = new byte[
             rectangle.Length +
@@ -2291,7 +2349,8 @@ internal static class Program
             diamond.Length +
             adjustedDiamond.Length +
             connector.Length +
-            custom.Length];
+            custom.Length +
+            textBox.Length];
         var dggOffset = 0;
         rectangle.CopyTo(
             dgg,
@@ -2314,6 +2373,10 @@ internal static class Program
             dggOffset);
         dggOffset += connector.Length;
         custom.CopyTo(
+            dgg,
+            dggOffset);
+        dggOffset += custom.Length;
+        textBox.CopyTo(
             dgg,
             dggOffset);
 
@@ -2566,6 +2629,89 @@ internal static class Program
             customHtml,
             "<path d=\"M0 0 L100 0 C100 25 50 100 0 100 Z\"",
             "DOC OfficeArt custom mixed path SVG");
+
+        Assert(
+            shapes.TryGetValue(
+                textBoxShapeId,
+                out var textBoxShape) &&
+            textBoxShape.Kind == DocumentShapeKind.TextBox &&
+            textBoxShape.TextIdentifier == 0x00010000,
+            "DOC OfficeArt TextBox должен сохранять OfficeArtClientTextbox identifier.");
+
+        var textboxPlc = new byte[56];
+        BinaryPrimitives.WriteInt32LittleEndian(
+            textboxPlc.AsSpan(0, 4),
+            0);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            textboxPlc.AsSpan(4, 4),
+            6);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            textboxPlc.AsSpan(8, 4),
+            7);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            textboxPlc.AsSpan(12, 4),
+            1);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            textboxPlc.AsSpan(26, 4),
+            textBoxShapeId);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            textboxPlc.AsSpan(42, 2),
+            1);
+
+        var textboxStories = DocDocumentReader.ReadTextboxStoryDescriptors(
+            textboxPlc,
+            0,
+            textboxPlc.Length,
+            7);
+
+        Assert(
+            textboxStories.Count == 1 &&
+            textboxStories[0].Index == 0 &&
+            textboxStories[0].LocalStart == 0 &&
+            textboxStories[0].ContentLength == 5 &&
+            textboxStories[0].ShapeId == textBoxShapeId,
+            "DOC PlcftxbxTxt должен связывать textbox story с FTXBXS.lid.");
+
+        textBoxShape!.Text = "Hello\nWorld";
+        var textBoxBlocks = DocDocumentReader.BuildParagraphs(
+            "\u0008\r",
+            [
+                new DocDocumentReader.DocFloatingShapeAnchor(
+                    0,
+                    textBoxShapeId,
+                    0,
+                    0,
+                    1440,
+                    720,
+                    1,
+                    2,
+                    2,
+                    2,
+                    false,
+                    false)
+            ],
+            new Dictionary<int, DocumentImage>(),
+            shapes);
+        var textBoxHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC OfficeArt textbox",
+                Blocks = textBoxBlocks
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            textBoxHtml,
+            "data-shape-kind=\"text-box\"",
+            "DOC OfficeArt textbox renderer metadata");
+        AssertContains(
+            textBoxHtml,
+            "class=\"shape-text\"",
+            "DOC OfficeArt textbox text renderer");
+        AssertContains(
+            textBoxHtml,
+            "Hello\nWorld",
+            "DOC OfficeArt textbox story text");
     }
 
     private static void TestDocHeaderStoryTable()
