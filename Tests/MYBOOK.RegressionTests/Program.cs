@@ -2052,6 +2052,46 @@ internal static class Program
                 return data;
             }
 
+            static byte[] BuildGuideArray(
+                params (ushort Flags, ushort Param1, ushort Param2, ushort Param3)[] guides)
+            {
+                var data = new byte[
+                    6 +
+                    guides.Length * 8];
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(0, 2),
+                    checked((ushort)guides.Length));
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(2, 2),
+                    checked((ushort)guides.Length));
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(4, 2),
+                    8);
+
+                for (var index = 0;
+                     index < guides.Length;
+                     index++)
+                {
+                    var offset =
+                        6 +
+                        index * 8;
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        data.AsSpan(offset, 2),
+                        guides[index].Flags);
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        data.AsSpan(offset + 2, 2),
+                        guides[index].Param1);
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        data.AsSpan(offset + 4, 2),
+                        guides[index].Param2);
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        data.AsSpan(offset + 6, 2),
+                        guides[index].Param3);
+                }
+
+                return data;
+            }
+
             static byte[] BuildSegmentArray(
                 params ushort[] segments)
             {
@@ -2082,11 +2122,14 @@ internal static class Program
                 return data;
             }
 
+            var guides = BuildGuideArray(
+                (0x2000, 0x0147, 250, 0),
+                (0x2001, 0x0400, 1, 2));
             var vertices = BuildPointArray(
                 (0, 0),
                 (1000, 0),
-                (1000, 300),
-                (700, 1000),
+                (1000, unchecked((int)0x80000001u)),
+                (unchecked((int)0x80000000u), 1000),
                 (0, 1000));
             var segments = BuildSegmentArray(
                 0x0002,
@@ -2102,6 +2145,8 @@ internal static class Program
                 (0x0142, 1000),
                 (0x0143, 1000),
                 (0x0144, 4),
+                (0x0147, 250),
+                (0x8156, checked((uint)guides.Length)),
                 (0x8145, checked((uint)vertices.Length)),
                 (0x8146, checked((uint)segments.Length)),
                 (0x0181, 0x00EECC22),
@@ -2123,6 +2168,7 @@ internal static class Program
                 shapeId);
 
             var complexLength =
+                guides.Length +
                 vertices.Length +
                 segments.Length;
             var fopt = new byte[
@@ -2157,12 +2203,15 @@ internal static class Program
             var complexOffset =
                 8 +
                 properties.Length * 6;
-            vertices.CopyTo(
+            guides.CopyTo(
                 fopt,
                 complexOffset);
+            vertices.CopyTo(
+                fopt,
+                complexOffset + guides.Length);
             segments.CopyTo(
                 fopt,
-                complexOffset + vertices.Length);
+                complexOffset + guides.Length + vertices.Length);
 
             var container = new byte[
                 8 +
@@ -2334,7 +2383,7 @@ internal static class Program
                 customShapeId,
                 out var customShape) &&
             customShape.Kind == DocumentShapeKind.CustomPath &&
-            customShape.PathData == "M0 0 L100 0 C100 30 70 100 0 100 Z" &&
+            customShape.PathData == "M0 0 L100 0 C100 25 50 100 0 100 Z" &&
             customShape.FillColor == "#22CCEE" &&
             customShape.StrokeColor == "#664422",
             "DOC OfficeArt pVertices/pSegmentInfo должен строить mixed custom SVG path.");
@@ -2515,7 +2564,7 @@ internal static class Program
             "DOC OfficeArt custom path renderer metadata");
         AssertContains(
             customHtml,
-            "<path d=\"M0 0 L100 0 C100 30 70 100 0 100 Z\"",
+            "<path d=\"M0 0 L100 0 C100 25 50 100 0 100 Z\"",
             "DOC OfficeArt custom mixed path SVG");
     }
 
