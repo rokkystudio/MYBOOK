@@ -1301,6 +1301,212 @@ internal static class Program
             html,
             "class=\"inline-image\"",
             "DOC floating shape rendered image");
+
+        static byte[] BuildOfficeArtBlipRecord(
+            ushort recordType,
+            int recordInstance,
+            byte[] payload)
+        {
+            var record = new byte[8 + payload.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                record.AsSpan(0, 2),
+                checked((ushort)(recordInstance << 4)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                record.AsSpan(2, 2),
+                recordType);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                record.AsSpan(4, 4),
+                checked((uint)payload.Length));
+            payload.CopyTo(record, 8);
+            return record;
+        }
+
+        static byte[] BuildOfficeArtDgg(
+            byte[] blipRecord,
+            int blipType,
+            int testShapeId)
+        {
+            var testFbsePayload = new byte[36 + blipRecord.Length];
+            blipRecord.CopyTo(testFbsePayload, 36);
+            var testFbseRecord = new byte[8 + testFbsePayload.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                testFbseRecord.AsSpan(0, 2),
+                checked((ushort)((blipType << 4) | 0x0002)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                testFbseRecord.AsSpan(2, 2),
+                0xF007);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testFbseRecord.AsSpan(4, 4),
+                checked((uint)testFbsePayload.Length));
+            testFbsePayload.CopyTo(testFbseRecord, 8);
+
+            var testBstore = new byte[8 + testFbseRecord.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(testBstore.AsSpan(0, 2), 0x001F);
+            BinaryPrimitives.WriteUInt16LittleEndian(testBstore.AsSpan(2, 2), 0xF001);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testBstore.AsSpan(4, 4),
+                checked((uint)testFbseRecord.Length));
+            testFbseRecord.CopyTo(testBstore, 8);
+
+            var testFsp = new byte[16];
+            BinaryPrimitives.WriteUInt16LittleEndian(testFsp.AsSpan(0, 2), 0x0012);
+            BinaryPrimitives.WriteUInt16LittleEndian(testFsp.AsSpan(2, 2), 0xF00A);
+            BinaryPrimitives.WriteUInt32LittleEndian(testFsp.AsSpan(4, 4), 8);
+            BinaryPrimitives.WriteInt32LittleEndian(testFsp.AsSpan(8, 4), testShapeId);
+
+            var testFopt = new byte[14];
+            BinaryPrimitives.WriteUInt16LittleEndian(testFopt.AsSpan(0, 2), 0x0013);
+            BinaryPrimitives.WriteUInt16LittleEndian(testFopt.AsSpan(2, 2), 0xF00B);
+            BinaryPrimitives.WriteUInt32LittleEndian(testFopt.AsSpan(4, 4), 6);
+            BinaryPrimitives.WriteUInt16LittleEndian(testFopt.AsSpan(8, 2), 0x4104);
+            BinaryPrimitives.WriteUInt32LittleEndian(testFopt.AsSpan(10, 4), 1);
+
+            var testSpContainer = new byte[8 + testFsp.Length + testFopt.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(testSpContainer.AsSpan(0, 2), 0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(testSpContainer.AsSpan(2, 2), 0xF004);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                testSpContainer.AsSpan(4, 4),
+                checked((uint)(testFsp.Length + testFopt.Length)));
+            testFsp.CopyTo(testSpContainer, 8);
+            testFopt.CopyTo(testSpContainer, 8 + testFsp.Length);
+
+            var testDgg = new byte[testBstore.Length + testSpContainer.Length];
+            testBstore.CopyTo(testDgg, 0);
+            testSpContainer.CopyTo(testDgg, testBstore.Length);
+            return testDgg;
+        }
+
+        static DocumentImage ReadSingleShapeImage(
+            byte[] blipRecord,
+            int blipType,
+            int testShapeId)
+        {
+            var testDgg = BuildOfficeArtDgg(
+                blipRecord,
+                blipType,
+                testShapeId);
+            var testImages = DocDocumentReader.ReadOfficeArtShapeImages(
+                testDgg,
+                0,
+                testDgg.Length);
+            Assert(
+                testImages.TryGetValue(testShapeId, out var testImage),
+                $"DOC OfficeArt BLIP type {blipType} должен разрешаться через BStore/FOPT.pib.");
+            return testImage!;
+        }
+
+        var dib = new byte[44];
+        BinaryPrimitives.WriteUInt32LittleEndian(dib.AsSpan(0, 4), 40);
+        BinaryPrimitives.WriteInt32LittleEndian(dib.AsSpan(4, 4), 1);
+        BinaryPrimitives.WriteInt32LittleEndian(dib.AsSpan(8, 4), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(dib.AsSpan(12, 2), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(dib.AsSpan(14, 2), 24);
+        BinaryPrimitives.WriteUInt32LittleEndian(dib.AsSpan(20, 4), 4);
+        dib[40] = 0x33;
+        dib[41] = 0x22;
+        dib[42] = 0x11;
+
+        var dibPayload = new byte[17 + dib.Length];
+        dibPayload[16] = 0xFF;
+        dib.CopyTo(dibPayload, 17);
+        var dibImage = ReadSingleShapeImage(
+            BuildOfficeArtBlipRecord(0xF01F, 0x7A8, dibPayload),
+            0x07,
+            2049);
+        Assert(
+            dibImage.ContentType == "image/bmp" &&
+            dibImage.Data.Length == 58 &&
+            dibImage.Data[0] == (byte)'B' &&
+            dibImage.Data[1] == (byte)'M' &&
+            BinaryPrimitives.ReadUInt32LittleEndian(dibImage.Data.AsSpan(10, 4)) == 54,
+            "DOC OfficeArt DIB должен преобразовываться в полноценный BMP stream.");
+
+        var tiff = new byte[]
+        {
+            0x49, 0x49, 0x2A, 0x00,
+            0x08, 0x00, 0x00, 0x00,
+            0x00, 0x00
+        };
+        var tiffPayload = new byte[17 + tiff.Length];
+        tiffPayload[16] = 0xFF;
+        tiff.CopyTo(tiffPayload, 17);
+        var tiffImage = ReadSingleShapeImage(
+            BuildOfficeArtBlipRecord(0xF029, 0x6E4, tiffPayload),
+            0x11,
+            2050);
+        Assert(
+            tiffImage.ContentType == "image/tiff" &&
+            tiffImage.Data.SequenceEqual(tiff),
+            "DOC OfficeArt TIFF должен сохранять исходные TIFF bytes.");
+
+        static byte[] BuildMetafilePayload(
+            byte[] uncompressed,
+            bool compress)
+        {
+            byte[] saved;
+            if (compress)
+            {
+                using var compressed = new MemoryStream();
+                using (var zlib = new ZLibStream(
+                           compressed,
+                           CompressionLevel.Optimal,
+                           leaveOpen: true))
+                {
+                    zlib.Write(uncompressed);
+                }
+
+                saved = compressed.ToArray();
+            }
+            else
+            {
+                saved = uncompressed;
+            }
+
+            var payload = new byte[16 + 34 + saved.Length];
+            var header = payload.AsSpan(16, 34);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                header[..4],
+                checked((uint)uncompressed.Length));
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                header.Slice(28, 4),
+                checked((uint)saved.Length));
+            header[32] = compress ? (byte)0x00 : (byte)0xFE;
+            header[33] = 0xFE;
+            saved.CopyTo(payload, 50);
+            return payload;
+        }
+
+        var emf = new byte[]
+        {
+            0x01, 0x00, 0x00, 0x00,
+            0x08, 0x00, 0x00, 0x00
+        };
+        var emfImage = ReadSingleShapeImage(
+            BuildOfficeArtBlipRecord(
+                0xF01A,
+                0x3D4,
+                BuildMetafilePayload(emf, compress: true)),
+            0x02,
+            2051);
+        Assert(
+            emfImage.ContentType == "image/emf" &&
+            emfImage.Data.SequenceEqual(emf),
+            "DOC OfficeArt EMF должен распаковывать RFC1950 BLIPFileData.");
+
+        var wmf = new byte[18];
+        BinaryPrimitives.WriteUInt16LittleEndian(wmf.AsSpan(0, 2), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(wmf.AsSpan(2, 2), 9);
+        var wmfImage = ReadSingleShapeImage(
+            BuildOfficeArtBlipRecord(
+                0xF01B,
+                0x216,
+                BuildMetafilePayload(wmf, compress: false)),
+            0x03,
+            2052);
+        Assert(
+            wmfImage.ContentType == "image/wmf" &&
+            wmfImage.Data.SequenceEqual(wmf),
+            "DOC OfficeArt WMF должен сохранять uncompressed metafile bytes.");
     }
 
     private static void TestDocHeaderStoryTable()
