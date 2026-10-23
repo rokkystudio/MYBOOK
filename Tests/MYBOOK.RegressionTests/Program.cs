@@ -1405,6 +1405,101 @@ internal static class Program
             image.Data.SequenceEqual(png),
             "DOC floating shape должен возвращать исходные PNG bytes из FBSE/BLIP.");
 
+        const int headerShapeId = 2049;
+        var headerFsp = fsp.ToArray();
+        BinaryPrimitives.WriteInt32LittleEndian(
+            headerFsp.AsSpan(8, 4),
+            headerShapeId);
+        var headerSpContainer = new byte[
+            8 +
+            headerFsp.Length +
+            fopt.Length];
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            headerSpContainer.AsSpan(0, 2),
+            0x000F);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            headerSpContainer.AsSpan(2, 2),
+            0xF004);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            headerSpContainer.AsSpan(4, 4),
+            checked((uint)(headerFsp.Length + fopt.Length)));
+        headerFsp.CopyTo(headerSpContainer, 8);
+        fopt.CopyTo(headerSpContainer, 8 + headerFsp.Length);
+
+        static byte[] WrapOfficeArtContainer(
+            ushort recordType,
+            byte[] payload)
+        {
+            var record = new byte[8 + payload.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                record.AsSpan(0, 2),
+                0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                record.AsSpan(2, 2),
+                recordType);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                record.AsSpan(4, 4),
+                checked((uint)payload.Length));
+            payload.CopyTo(record, 8);
+            return record;
+        }
+
+        var drawingGroup = WrapOfficeArtContainer(
+            0xF000,
+            bstore);
+        var mainDrawing = WrapOfficeArtContainer(
+            0xF002,
+            spContainer);
+        var headerDrawing = WrapOfficeArtContainer(
+            0xF002,
+            headerSpContainer);
+        var officeArtContent = new byte[
+            drawingGroup.Length +
+            1 + mainDrawing.Length +
+            1 + headerDrawing.Length];
+        var officeArtOffset = 0;
+        drawingGroup.CopyTo(officeArtContent, officeArtOffset);
+        officeArtOffset += drawingGroup.Length;
+        officeArtContent[officeArtOffset++] = 0x00;
+        mainDrawing.CopyTo(officeArtContent, officeArtOffset);
+        officeArtOffset += mainDrawing.Length;
+        officeArtContent[officeArtOffset++] = 0x01;
+        headerDrawing.CopyTo(officeArtContent, officeArtOffset);
+
+        var mainShapeIds = DocDocumentReader.ReadOfficeArtShapeIds(
+            officeArtContent,
+            0,
+            officeArtContent.Length,
+            drawingLabel: 0x00);
+        var headerShapeIds = DocDocumentReader.ReadOfficeArtShapeIds(
+            officeArtContent,
+            0,
+            officeArtContent.Length,
+            drawingLabel: 0x01);
+        Assert(
+            mainShapeIds.SetEquals([shapeId]) &&
+            headerShapeIds.SetEquals([headerShapeId]),
+            "DOC OfficeArtContent должен разделять Main/Header drawings по dgglbl.");
+
+        var mainDrawingImages = DocDocumentReader.ReadOfficeArtShapeImages(
+            officeArtContent,
+            0,
+            officeArtContent.Length,
+            drawingLabel: 0x00);
+        var headerDrawingImages = DocDocumentReader.ReadOfficeArtShapeImages(
+            officeArtContent,
+            0,
+            officeArtContent.Length,
+            drawingLabel: 0x01);
+        Assert(
+            mainDrawingImages.TryGetValue(shapeId, out var mainDrawingImage) &&
+            !mainDrawingImages.ContainsKey(headerShapeId) &&
+            headerDrawingImages.TryGetValue(headerShapeId, out var headerDrawingImage) &&
+            !headerDrawingImages.ContainsKey(shapeId) &&
+            mainDrawingImage.Data.SequenceEqual(png) &&
+            headerDrawingImage.Data.SequenceEqual(png),
+            "DOC Main/Header drawings должны использовать общий Dgg/BStore, но собственные FSP/FOPT containers.");
+
         var blocks = DocDocumentReader.BuildParagraphs(
             "\u0008\r",
             [
