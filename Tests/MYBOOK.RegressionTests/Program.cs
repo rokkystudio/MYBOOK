@@ -2400,6 +2400,22 @@ internal static class Program
             BuildSimpleListMarkers(0x24, "\0", 2, 101)
                 .SequenceEqual(["一○一", "一○二"]),
             "DOC taiwaneseDigital должен сохранять positional zeros без counting semantics.");
+        Assert(
+            BuildSimpleListMarkers(0x29, "\0", 2, 10)
+                .SequenceEqual(["일영", "일일"]),
+            "DOC koreanDigital должен переводить decimal digits в Hangul digit set.");
+        Assert(
+            BuildSimpleListMarkers(0x29, "\0", 2, 101)
+                .SequenceEqual(["일영일", "일영이"]),
+            "DOC koreanDigital должен сохранять positional zeros без counting semantics.");
+        Assert(
+            BuildSimpleListMarkers(0x2C, "\0", 2, 101)
+                .SequenceEqual(["一零一", "一零二"]),
+            "DOC koreanDigital2 должен использовать ideograph digits с U+96F6 как zero.");
+        Assert(
+            BuildSimpleListMarkers(0x2C, "\0", 2, 999999)
+                .SequenceEqual(["九九九九九九", null]),
+            "DOC koreanDigital2 должен прекращать вывод после Word-limit 999999.");
 
         Assert(
             formatting.KeepTogether == true &&
