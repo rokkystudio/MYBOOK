@@ -2384,6 +2384,22 @@ internal static class Program
             BuildSimpleListMarkers(0x1D, "\0", 2, 10)
                 .SequenceEqual(["㈩", null]),
             "DOC ideographEnclosedCircle не должен синтезировать значения после Unicode parenthesized one-ten block.");
+        Assert(
+            BuildSimpleListMarkers(0x0A, "\0", 2, 10)
+                .SequenceEqual(["一〇", "一一"]),
+            "DOC ideographDigital должен переводить каждую decimal digit в ideograph digit set с U+3007 для zero.");
+        Assert(
+            BuildSimpleListMarkers(0x0A, "\0", 2, 101)
+                .SequenceEqual(["一〇一", "一〇二"]),
+            "DOC ideographDigital должен сохранять positional zeros без counting semantics.");
+        Assert(
+            BuildSimpleListMarkers(0x24, "\0", 2, 10)
+                .SequenceEqual(["一○", "一一"]),
+            "DOC taiwaneseDigital должен использовать U+25CB как positional zero.");
+        Assert(
+            BuildSimpleListMarkers(0x24, "\0", 2, 101)
+                .SequenceEqual(["一○一", "一○二"]),
+            "DOC taiwaneseDigital должен сохранять positional zeros без counting semantics.");
 
         Assert(
             formatting.KeepTogether == true &&
