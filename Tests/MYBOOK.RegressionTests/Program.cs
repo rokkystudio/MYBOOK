@@ -1790,7 +1790,7 @@ internal static class Program
         }
 
         const int firstSepxOffset = 64;
-        const int secondSepxOffset = 160;
+        const int secondSepxOffset = 320;
         var sedOffset = cps.Length * 4;
 
         BinaryPrimitives.WriteInt32LittleEndian(
@@ -1834,7 +1834,7 @@ internal static class Program
                 }),
             "DOC PlcfSed должен возвращать CP завершающего 0x0C первой секции.");
 
-        var word = new byte[256];
+        var word = new byte[512];
         var grpprl = new List<byte>();
 
         void AddByteSprm(
@@ -1884,6 +1884,45 @@ internal static class Program
                 operand.ToArray());
         }
 
+        void AddUInt32Sprm(
+            ushort sprm,
+            uint value)
+        {
+            grpprl.Add((byte)(sprm & 0xFF));
+            grpprl.Add((byte)(sprm >> 8));
+            Span<byte> operand = stackalloc byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(operand, value);
+            grpprl.AddRange(operand.ToArray());
+        }
+
+        void AddColumnSprm(
+            ushort sprm,
+            byte columnIndex,
+            ushort twips)
+        {
+            grpprl.Add((byte)(sprm & 0xFF));
+            grpprl.Add((byte)(sprm >> 8));
+            grpprl.Add(columnIndex);
+            grpprl.Add((byte)(twips & 0xFF));
+            grpprl.Add((byte)(twips >> 8));
+        }
+
+        AddColumnSprm(0xF203, 0, 2880);
+        AddColumnSprm(0xF203, 1, 2160);
+        AddColumnSprm(0xF203, 2, 1440);
+        AddColumnSprm(0xF204, 0, 360);
+        AddColumnSprm(0xF204, 1, 720);
+        AddByteSprm(0x3005, 0);
+        AddUInt16Sprm(0x500B, 2);
+        AddUInt16Sprm(0x900C, 540);
+        AddByteSprm(0x300E, 1);
+        AddByteSprm(0x3011, 1);
+        AddByteSprm(0x3019, 1);
+        AddByteSprm(0x301A, 1);
+        AddUInt16Sprm(0x501C, 3);
+        AddUInt16Sprm(0x9031, 360);
+        AddUInt16Sprm(0x5032, 2);
+        AddUInt32Sprm(0x7044, 70000);
         AddByteSprm(
             0x3009,
             4);
@@ -1958,8 +1997,25 @@ internal static class Program
             properties.HeaderDistancePoints == 36 &&
             properties.FooterDistancePoints == 36 &&
             properties.DifferentFirstPage == true &&
-            properties.RightToLeft == true,
-            "DOC SEPX должен сохранять page setup и section flags.");
+            properties.RightToLeft == true &&
+            properties.ColumnCount == 3 &&
+            properties.ColumnsEvenlySpaced == false &&
+            properties.ColumnSpacingPoints == 27 &&
+            properties.LineBetweenColumns == true &&
+            properties.Columns.Count == 3 &&
+            properties.Columns[0].WidthPoints == 144 &&
+            properties.Columns[0].SpaceAfterPoints == 18 &&
+            properties.Columns[1].WidthPoints == 108 &&
+            properties.Columns[1].SpaceAfterPoints == 36 &&
+            properties.Columns[2].WidthPoints == 72 &&
+            properties.Columns[2].SpaceAfterPoints == null &&
+            properties.VerticalAlignment == DocumentSectionVerticalAlignment.Center &&
+            properties.PageNumberFormatCode == 1 &&
+            properties.RestartPageNumbering == true &&
+            properties.PageNumberStart == 70000 &&
+            properties.GridMode == DocumentGridMode.LinesOnly &&
+            properties.GridLinePitchPoints == 18,
+            "DOC SEPX должен сохранять page setup, columns, page numbering и document grid.");
 
         var blocks = DocDocumentReader.BuildParagraphs(
             "One\r\fTwo\r",
@@ -2021,6 +2077,38 @@ internal static class Program
             html,
             "data-right-to-left=\"true\"",
             "DOC rendered bidi section flag");
+        AssertContains(
+            html,
+            "data-column-count=\"3\"",
+            "DOC rendered section column count");
+        AssertContains(
+            html,
+            "data-columns-evenly-spaced=\"false\"",
+            "DOC rendered uneven-columns flag");
+        AssertContains(
+            html,
+            "data-column-spacing-pt=\"27\"",
+            "DOC rendered default column spacing");
+        AssertContains(
+            html,
+            "data-line-between-columns=\"true\"",
+            "DOC rendered line-between-columns flag");
+        AssertContains(
+            html,
+            "data-columns=\"0:144:18;1:108:36;2:72:\"",
+            "DOC rendered explicit uneven column layout");
+        AssertContains(
+            html,
+            "data-vertical-alignment=\"Center\"",
+            "DOC rendered section vertical alignment");
+        AssertContains(
+            html,
+            "data-page-number-format=\"1\" data-page-number-restart=\"true\" data-page-number-start=\"70000\"",
+            "DOC rendered page-numbering metadata");
+        AssertContains(
+            html,
+            "data-grid-mode=\"LinesOnly\" data-grid-line-pitch-pt=\"18\"",
+            "DOC rendered document-grid metadata");
     }
 
     private static void TestDocParagraphProperties()
