@@ -1034,6 +1034,26 @@ internal static class Program
             shape.AnchorLocked,
             "DOC Spa below-text и anchor-lock flags должны сохраняться.");
 
+        var invalidSimpleRca = plc.ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            invalidSimpleRca.AsSpan(
+                spaOffset + 20,
+                2),
+            checked((ushort)(flags | 0x2000)));
+        try
+        {
+            _ = DocDocumentReader.ReadMainDocumentShapeAnchors(
+                invalidSimpleRca,
+                0,
+                invalidSimpleRca.Length,
+                ccpText);
+            throw new InvalidOperationException(
+                "DOC FSPA fRcaSimple=1 должен быть отклонён.");
+        }
+        catch (InvalidDataException)
+        {
+        }
+
         var dgg = new byte[16];
 
         BinaryPrimitives.WriteUInt16LittleEndian(
@@ -1265,16 +1285,16 @@ internal static class Program
                 new DocDocumentReader.DocFloatingShapeAnchor(
                     0,
                     shapeId,
-                    0,
-                    0,
+                    720,
                     1440,
-                    1440,
-                    0,
-                    0,
+                    2160,
+                    2880,
+                    1,
                     2,
-                    0,
+                    2,
+                    2,
                     false,
-                    false)
+                    true)
             ],
             images);
 
@@ -1299,8 +1319,20 @@ internal static class Program
 
         AssertContains(
             html,
-            "class=\"inline-image\"",
+            "class=\"floating-image\"",
             "DOC floating shape rendered image");
+        AssertContains(
+            html,
+            "data-floating-left-pt=\"36\" data-floating-top-pt=\"72\" data-floating-right-pt=\"108\" data-floating-bottom-pt=\"144\"",
+            "DOC floating shape должен сохранять FSPA rectangle metadata.");
+        AssertContains(
+            html,
+            "data-floating-horizontal-origin=\"page\" data-floating-vertical-origin=\"paragraph\" data-floating-wrap-style=\"square\" data-floating-wrap-side=\"right\" data-floating-below-text=\"false\" data-floating-anchor-locked=\"true\"",
+            "DOC floating shape должен сохранять exact FSPA origin/wrap flags.");
+        AssertContains(
+            html,
+            "style=\"width:72pt;height:72pt;float:left;\"",
+            "DOC square wrap/right side должен использовать точный FSPA size и reflow float-left.");
 
         static byte[] BuildOfficeArtBlipRecord(
             ushort recordType,
