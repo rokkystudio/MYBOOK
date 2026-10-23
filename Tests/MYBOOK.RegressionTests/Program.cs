@@ -1576,6 +1576,79 @@ internal static class Program
                 story.LocalStart == 20 &&
                 story.ContentLength == 3),
             "DOC PlcfHdd должен сохранять odd footer второй секции.");
+
+        var plcSpaHdr = new byte[64];
+        BinaryPrimitives.WriteInt32LittleEndian(plcSpaHdr.AsSpan(0, 4), 17);
+        BinaryPrimitives.WriteInt32LittleEndian(plcSpaHdr.AsSpan(4, 4), 21);
+        BinaryPrimitives.WriteInt32LittleEndian(plcSpaHdr.AsSpan(8, 4), 29);
+
+        static void WriteSpa(
+            Span<byte> target,
+            int shapeId,
+            int left,
+            int top,
+            int right,
+            int bottom)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(target[..4], shapeId);
+            BinaryPrimitives.WriteInt32LittleEndian(target.Slice(4, 4), left);
+            BinaryPrimitives.WriteInt32LittleEndian(target.Slice(8, 4), top);
+            BinaryPrimitives.WriteInt32LittleEndian(target.Slice(12, 4), right);
+            BinaryPrimitives.WriteInt32LittleEndian(target.Slice(16, 4), bottom);
+            BinaryPrimitives.WriteUInt16LittleEndian(target.Slice(20, 2), 0);
+        }
+
+        WriteSpa(
+            plcSpaHdr.AsSpan(12, 26),
+            3001,
+            10,
+            20,
+            1010,
+            1020);
+        WriteSpa(
+            plcSpaHdr.AsSpan(38, 26),
+            3002,
+            30,
+            40,
+            1030,
+            1040);
+
+        var headerAnchors =
+            DocDocumentReader.ReadHeaderDocumentShapeAnchors(
+                plcSpaHdr,
+                0,
+                plcSpaHdr.Length,
+                ccpHdd: 29);
+
+        Assert(
+            headerAnchors.Count == 2 &&
+            headerAnchors[0].Cp == 17 &&
+            headerAnchors[0].ShapeId == 3001 &&
+            headerAnchors[1].Cp == 21 &&
+            headerAnchors[1].ShapeId == 3002,
+            "DOC PlcSpaHdr должен читать shape anchors в координатах Header Document.");
+
+        var oddHeaderAnchors =
+            DocDocumentReader.RebaseHeaderShapeAnchors(
+                headerAnchors,
+                storyLocalStart: 16,
+                storyContentLength: 3);
+        var oddFooterAnchors =
+            DocDocumentReader.RebaseHeaderShapeAnchors(
+                headerAnchors,
+                storyLocalStart: 20,
+                storyContentLength: 3);
+
+        Assert(
+            oddHeaderAnchors.Count == 1 &&
+            oddHeaderAnchors[0].Cp == 1 &&
+            oddHeaderAnchors[0].ShapeId == 3001,
+            "DOC PlcSpaHdr odd-header anchor должен rebased к локальному CP story.");
+        Assert(
+            oddFooterAnchors.Count == 1 &&
+            oddFooterAnchors[0].Cp == 1 &&
+            oddFooterAnchors[0].ShapeId == 3002,
+            "DOC PlcSpaHdr odd-footer anchor должен попадать только в свою story.");
     }
 
     private static void TestDocSectionTable()
