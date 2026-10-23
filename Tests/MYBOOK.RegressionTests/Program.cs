@@ -2352,6 +2352,30 @@ internal static class Program
             BuildSimpleListMarkers(0x35, "\0", 2, 42)
                 .SequenceEqual(["ฮ", null]),
             "DOC thaiLetters не должен синтезировать неподтверждённый rollover после 42 letters.");
+        Assert(
+            BuildSimpleListMarkers(0x1E, "\0", 2)
+                .SequenceEqual(["甲", "乙"]),
+            "DOC ideographTraditional должен использовать heavenly-stem sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x1E, "\0", 2, 10)
+                .SequenceEqual(["癸", null]),
+            "DOC ideographTraditional не должен синтезировать rollover после 10 stems.");
+        Assert(
+            BuildSimpleListMarkers(0x1F, "\0", 2)
+                .SequenceEqual(["子", "丑"]),
+            "DOC ideographZodiac должен использовать earthly-branch sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x1F, "\0", 2, 12)
+                .SequenceEqual(["亥", null]),
+            "DOC ideographZodiac не должен синтезировать rollover после 12 branches.");
+        Assert(
+            BuildSimpleListMarkers(0x20, "\0", 2)
+                .SequenceEqual(["甲子", "乙丑"]),
+            "DOC ideographZodiacTraditional должен сочетать heavenly stems и earthly branches.");
+        Assert(
+            BuildSimpleListMarkers(0x20, "\0", 2, 60)
+                .SequenceEqual(["癸亥", null]),
+            "DOC ideographZodiacTraditional не должен синтезировать rollover после 60 combinations.");
 
         Assert(
             formatting.KeepTogether == true &&
