@@ -2607,6 +2607,92 @@ internal static class Program
             "data-tab-stops=\"72:right:dots;144:center:hyphens;216:decimal:underline\"",
             "DOC rendered custom tab metadata");
 
+        var patternedShadingHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = string.Empty,
+                Blocks =
+                [
+                    new DocumentParagraph
+                    {
+                        Inlines =
+                        [
+                            new DocumentInline
+                            {
+                                Text = "Fifty percent"
+                            }
+                        ],
+                        Shading =
+                            new DocumentShading
+                            {
+                                ForegroundColor = "#FF0000",
+                                BackgroundColor = "#0000FF",
+                                Pattern = 0x0008
+                            }
+                    },
+                    new DocumentParagraph
+                    {
+                        Inlines =
+                        [
+                            new DocumentInline
+                            {
+                                Text = "Diagonal cross"
+                            }
+                        ],
+                        Shading =
+                            new DocumentShading
+                            {
+                                ForegroundColor = "#00FF00",
+                                BackgroundColor = "#FFFFFF",
+                                Pattern = 0x0013
+                            }
+                    },
+                    new DocumentTable
+                    {
+                        Rows =
+                        [
+                            new DocumentTableRow
+                            {
+                                Cells =
+                                [
+                                    new DocumentTableCell
+                                    {
+                                        Inlines =
+                                        [
+                                            new DocumentInline
+                                            {
+                                                Text = "Thin horizontal"
+                                            }
+                                        ],
+                                        Shading =
+                                            new DocumentShading
+                                            {
+                                                ForegroundColor = "#123456",
+                                                BackgroundColor = "#ABCDEF",
+                                                Pattern = 0x0014
+                                            }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            patternedShadingHtml,
+            "background-color:#0000FF;background-image:linear-gradient(rgba(255,0,0,0.5),rgba(255,0,0,0.5))",
+            "DOC renderer должен визуализировать percentage Ipat shading.");
+        AssertContains(
+            patternedShadingHtml,
+            "background-color:#FFFFFF;background-image:repeating-linear-gradient(45deg,#00FF00 0 2px,transparent 2px 4px),repeating-linear-gradient(-45deg,#00FF00 0 2px,transparent 2px 4px)",
+            "DOC renderer должен визуализировать diagonal-cross Ipat shading.");
+        AssertContains(
+            patternedShadingHtml,
+            "background-color:#ABCDEF;background-image:repeating-linear-gradient(0deg,#123456 0 1px,transparent 1px 5px)",
+            "DOC table cell renderer должен визуализировать thin horizontal Ipat shading.");
+
         DocumentParagraph CreateBorderParagraph(
             string text,
             uint paragraphGroupId)
