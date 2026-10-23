@@ -2376,6 +2376,14 @@ internal static class Program
             BuildSimpleListMarkers(0x20, "\0", 2, 60)
                 .SequenceEqual(["癸亥", null]),
             "DOC ideographZodiacTraditional не должен синтезировать rollover после 60 combinations.");
+        Assert(
+            BuildSimpleListMarkers(0x1D, "\0", 2)
+                .SequenceEqual(["㈠", "㈡"]),
+            "DOC ideographEnclosedCircle должен использовать Word-compatible parenthesized ideographs.");
+        Assert(
+            BuildSimpleListMarkers(0x1D, "\0", 2, 10)
+                .SequenceEqual(["㈩", null]),
+            "DOC ideographEnclosedCircle не должен синтезировать значения после Unicode parenthesized one-ten block.");
 
         Assert(
             formatting.KeepTogether == true &&
