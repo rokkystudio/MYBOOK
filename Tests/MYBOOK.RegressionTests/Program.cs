@@ -1695,6 +1695,10 @@ internal static class Program
         AddModernParagraphBorder(0xC650, 0x00, 0x00, 0xFF, 24, 0x03);
         AddModernParagraphBorder(0xC651, 0x80, 0x00, 0x80, 12, 0x07);
         AddModernParagraphBorder(0xC652, 0x00, 0x80, 0x80, 8, 0x01);
+        AddModernParagraphBorder(0xC653, 0x80, 0x80, 0x00, 8, 0x01);
+        grpprl.Add(0x65);
+        grpprl.Add(0x64);
+        grpprl.AddRange(BitConverter.GetBytes((uint)1234));
 
         grpprl.Add(0x4D);
         grpprl.Add(0xC6);
@@ -1771,7 +1775,8 @@ internal static class Program
                 0x25, 0x64, 0x10, 0x06, 0x0B, 0x00,
                 0x26, 0x64, 0x18, 0x03, 0x02, 0x00,
                 0x27, 0x64, 0x0C, 0x07, 0x0C, 0x00,
-                0x28, 0x64, 0x08, 0x01, 0x0A, 0x00
+                0x28, 0x64, 0x08, 0x01, 0x0A, 0x00,
+                0x29, 0x66, 0x08, 0x01, 0x06, 0x00
             },
             legacyBorderFormatting);
 
@@ -1784,7 +1789,8 @@ internal static class Program
                 0x25, 0x44, 0xCE, 0x02,
                 0x26, 0x44, 0x9A, 0x00,
                 0x27, 0x44, 0x0F, 0x03,
-                0x28, 0x44, 0x93, 0x02
+                0x28, 0x44, 0x93, 0x02,
+                0x29, 0x46, 0xA8, 0x11
             },
             word95BorderFormatting);
 
@@ -1800,16 +1806,18 @@ internal static class Program
             word95BorderFormatting.BorderLeft is { Type: 0x06, WidthPoints: 0.75, ColorIndex: 0x0B } &&
             word95BorderFormatting.BorderBottom is { Type: 0x03, WidthPoints: 2.25, ColorIndex: 0x02 } &&
             word95BorderFormatting.BorderRight is { Type: 0x07, WidthPoints: 0.75, ColorIndex: 0x0C } &&
-            word95BorderFormatting.BorderBetween is { Type: 0x02, WidthPoints: 3, ColorIndex: 0x0A },
-            "DOC sprmPBrc*70 должны декодировать Word 95 BRC70 bit fields.");
+            word95BorderFormatting.BorderBetween is { Type: 0x02, WidthPoints: 3, ColorIndex: 0x0A } &&
+            word95BorderFormatting.BorderBar is { Type: 0x01, WidthPoints: 0.75, ColorIndex: 0x06 },
+            "DOC sprmPBrc*70 должны декодировать Word 95 BRC70 bit fields, включая bar.");
 
         Assert(
             legacyBorderFormatting.BorderTop is { Type: 0x01, WidthPoints: 1, ColorIndex: 0x06 } &&
             legacyBorderFormatting.BorderLeft is { Type: 0x06, WidthPoints: 2, ColorIndex: 0x0B } &&
             legacyBorderFormatting.BorderBottom is { Type: 0x03, WidthPoints: 3, ColorIndex: 0x02 } &&
             legacyBorderFormatting.BorderRight is { Type: 0x07, WidthPoints: 1.5, ColorIndex: 0x0C } &&
-            legacyBorderFormatting.BorderBetween is { Type: 0x01, WidthPoints: 1, ColorIndex: 0x0A },
-            "DOC sprmPBrc*80 должны декодировать legacy Brc80 paragraph borders.");
+            legacyBorderFormatting.BorderBetween is { Type: 0x01, WidthPoints: 1, ColorIndex: 0x0A } &&
+            legacyBorderFormatting.BorderBar is { Type: 0x01, WidthPoints: 1, ColorIndex: 0x06 },
+            "DOC sprmPBrc*80 должны декодировать legacy Brc80 paragraph borders, включая bar metadata.");
 
         var skippedListFormatting =
             new DocDocumentReader.DocParagraphFormatting();
@@ -2477,6 +2485,8 @@ internal static class Program
             formatting.BorderBottom is { Type: 0x03, WidthPoints: 3, Color: "#0000FF" } &&
             formatting.BorderRight is { Type: 0x07, WidthPoints: 1.5, Color: "#800080" } &&
             formatting.BorderBetween is { Type: 0x01, WidthPoints: 1, Color: "#008080" } &&
+            formatting.BorderBar is { Type: 0x01, WidthPoints: 1, Color: "#808000" } &&
+            formatting.ParagraphGroupId == 1234 &&
             formatting.TabStops.Count == 3 &&
             formatting.TabStops[0].PositionPoints == 72 &&
             formatting.TabStops[0].Alignment == DocumentTabAlignment.Right &&
@@ -2523,6 +2533,9 @@ internal static class Program
                         BorderBottom = formatting.BorderBottom,
                         BorderRight = formatting.BorderRight,
                         BorderBetween = formatting.BorderBetween,
+                        BorderBar = formatting.BorderBar,
+                        TableDepth = 2,
+                        ParagraphGroupId = formatting.ParagraphGroupId,
                         TabStops = formatting.TabStops
                     }
                 ]
@@ -2583,8 +2596,93 @@ internal static class Program
             "DOC paragraph between-border metadata");
         AssertContains(
             html,
+            "data-border-bar-type=\"1\" data-border-bar-width-pt=\"1\" data-border-bar-color=\"#808000\"",
+            "DOC paragraph bar-border metadata");
+        AssertContains(
+            html,
+            "data-table-depth=\"2\" data-paragraph-group-id=\"1234\"",
+            "DOC paragraph adjacency metadata");
+        AssertContains(
+            html,
             "data-tab-stops=\"72:right:dots;144:center:hyphens;216:decimal:underline\"",
             "DOC rendered custom tab metadata");
+
+        DocumentParagraph CreateBorderParagraph(
+            string text,
+            uint paragraphGroupId)
+        {
+            return new DocumentParagraph
+            {
+                Inlines =
+                [
+                    new DocumentInline
+                    {
+                        Text = text
+                    }
+                ],
+                LeftIndentPoints = 12,
+                RightIndentPoints = 18,
+                BorderTop = formatting.BorderTop,
+                BorderLeft = formatting.BorderLeft,
+                BorderBottom = formatting.BorderBottom,
+                BorderRight = formatting.BorderRight,
+                BorderBetween = formatting.BorderBetween,
+                TableDepth = 1,
+                ParagraphGroupId = paragraphGroupId
+            };
+        }
+
+        var adjacencyHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = string.Empty,
+                Blocks =
+                [
+                    CreateBorderParagraph("Adjacent first", 42),
+                    CreateBorderParagraph("Adjacent second", 42),
+                    CreateBorderParagraph("Different group", 43)
+                ]
+            },
+            CreateRenderTheme());
+
+        static string ExtractParagraphHtml(
+            string source,
+            string text)
+        {
+            var textIndex = source.IndexOf(text, StringComparison.Ordinal);
+            Assert(textIndex >= 0, $"Paragraph text not found: {text}");
+            var start = source.LastIndexOf("<p", textIndex, StringComparison.Ordinal);
+            var end = source.IndexOf("</p>", textIndex, StringComparison.Ordinal);
+            Assert(start >= 0 && end >= start, $"Paragraph HTML not found: {text}");
+            return source[start..(end + 4)];
+        }
+
+        var firstAdjacentHtml = ExtractParagraphHtml(adjacencyHtml, "Adjacent first");
+        var secondAdjacentHtml = ExtractParagraphHtml(adjacencyHtml, "Adjacent second");
+        var differentGroupHtml = ExtractParagraphHtml(adjacencyHtml, "Different group");
+
+        AssertContains(
+            firstAdjacentHtml,
+            "border-top:1pt solid #FF0000",
+            "DOC first paragraph keeps outer top border");
+        AssertContains(
+            firstAdjacentHtml,
+            "border-bottom:1pt solid #008080",
+            "DOC adjacent paragraphs render border-between instead of bottom border");
+        Assert(
+            !firstAdjacentHtml.Contains("border-bottom:3pt double #0000FF", StringComparison.Ordinal),
+            "DOC adjacent first paragraph должен скрывать обычный bottom border.");
+        Assert(
+            !secondAdjacentHtml.Contains("border-top:1pt solid #FF0000", StringComparison.Ordinal),
+            "DOC adjacent second paragraph должен скрывать внутренний top border.");
+        AssertContains(
+            secondAdjacentHtml,
+            "border-bottom:3pt double #0000FF",
+            "DOC differing next sprmPIpgp restores ordinary bottom border");
+        AssertContains(
+            differentGroupHtml,
+            "border-top:1pt solid #FF0000",
+            "DOC differing sprmPIpgp restores next paragraph top border");
     }
 
     private static void TestDocCharacterStyle()
