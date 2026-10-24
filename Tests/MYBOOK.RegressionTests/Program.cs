@@ -2069,6 +2069,153 @@ internal static class Program
             return container;
         }
 
+        static byte[] AddChildAnchor(
+            byte[] shapeRecord,
+            int left,
+            int top,
+            int right,
+            int bottom)
+        {
+            var anchor = new byte[24];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                anchor.AsSpan(0, 2),
+                0x0000);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                anchor.AsSpan(2, 2),
+                0xF00F);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                anchor.AsSpan(4, 4),
+                16);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                anchor.AsSpan(8, 4),
+                left);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                anchor.AsSpan(12, 4),
+                top);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                anchor.AsSpan(16, 4),
+                right);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                anchor.AsSpan(20, 4),
+                bottom);
+
+            var result = new byte[
+                shapeRecord.Length +
+                anchor.Length];
+            shapeRecord.CopyTo(
+                result,
+                0);
+            anchor.CopyTo(
+                result,
+                shapeRecord.Length);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                result.AsSpan(4, 4),
+                checked((uint)(result.Length - 8)));
+            return result;
+        }
+
+        static byte[] BuildGroupHeaderRecord(
+            int shapeId,
+            int left,
+            int top,
+            int right,
+            int bottom,
+            bool child = false)
+        {
+            var fspgr = new byte[24];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fspgr.AsSpan(0, 2),
+                0x0001);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fspgr.AsSpan(2, 2),
+                0xF009);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fspgr.AsSpan(4, 4),
+                16);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                fspgr.AsSpan(8, 4),
+                left);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                fspgr.AsSpan(12, 4),
+                top);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                fspgr.AsSpan(16, 4),
+                right);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                fspgr.AsSpan(20, 4),
+                bottom);
+
+            var fsp = new byte[16];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(0, 2),
+                0x0002);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(2, 2),
+                0xF00A);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fsp.AsSpan(4, 4),
+                8);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                fsp.AsSpan(8, 4),
+                shapeId);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fsp.AsSpan(12, 4),
+                child
+                    ? 0x00000003u
+                    : 0x00000001u);
+
+            var container = new byte[
+                8 +
+                fspgr.Length +
+                fsp.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(0, 2),
+                0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(2, 2),
+                0xF004);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                container.AsSpan(4, 4),
+                checked((uint)(fspgr.Length + fsp.Length)));
+            fspgr.CopyTo(
+                container,
+                8);
+            fsp.CopyTo(
+                container,
+                8 + fspgr.Length);
+            return container;
+        }
+
+        static byte[] BuildGroupContainer(
+            params byte[][] records)
+        {
+            var payloadLength =
+                records.Sum(record => record.Length);
+            var result = new byte[
+                8 +
+                payloadLength];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                result.AsSpan(0, 2),
+                0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                result.AsSpan(2, 2),
+                0xF003);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                result.AsSpan(4, 4),
+                checked((uint)payloadLength));
+
+            var offset = 8;
+            foreach (var record in records)
+            {
+                record.CopyTo(
+                    result,
+                    offset);
+                offset += record.Length;
+            }
+
+            return result;
+        }
+
         static byte[] BuildCustomPathShapeRecord(
             int shapeId)
         {
@@ -2297,6 +2444,9 @@ internal static class Program
         const int customShapeId = 3006;
         const int textBoxShapeId = 3007;
         const int linkedTextBoxShapeId = 3008;
+        const int groupShapeId = 3009;
+        const int groupRectangleShapeId = 3010;
+        const int groupEllipseShapeId = 3011;
 
         var rectangle = BuildShapeRecord(
             rectangleShapeId,
@@ -2346,6 +2496,35 @@ internal static class Program
         var linkedTextBox = BuildTextBoxShapeRecord(
             linkedTextBoxShapeId,
             0x00010001);
+        var groupRectangle = AddChildAnchor(
+            BuildShapeRecord(
+                groupRectangleShapeId,
+                1,
+                0x00000002,
+                (0x0181, 0x000000FF)),
+            0,
+            0,
+            1000,
+            500);
+        var groupEllipse = AddChildAnchor(
+            BuildShapeRecord(
+                groupEllipseShapeId,
+                3,
+                0x00000002,
+                (0x0181, 0x0000FF00)),
+            1000,
+            500,
+            2000,
+            1000);
+        var group = BuildGroupContainer(
+            BuildGroupHeaderRecord(
+                groupShapeId,
+                0,
+                0,
+                2000,
+                1000),
+            groupRectangle,
+            groupEllipse);
 
         var dgg = new byte[
             rectangle.Length +
@@ -2355,7 +2534,8 @@ internal static class Program
             connector.Length +
             custom.Length +
             textBox.Length +
-            linkedTextBox.Length];
+            linkedTextBox.Length +
+            group.Length];
         var dggOffset = 0;
         rectangle.CopyTo(
             dgg,
@@ -2386,6 +2566,10 @@ internal static class Program
             dggOffset);
         dggOffset += textBox.Length;
         linkedTextBox.CopyTo(
+            dgg,
+            dggOffset);
+        dggOffset += linkedTextBox.Length;
+        group.CopyTo(
             dgg,
             dggOffset);
 
@@ -2638,6 +2822,75 @@ internal static class Program
             customHtml,
             "<path d=\"M0 0 L100 0 C100 25 50 100 0 100 Z\"",
             "DOC OfficeArt custom mixed path SVG");
+
+        Assert(
+            shapes.TryGetValue(
+                groupShapeId,
+                out var groupShape) &&
+            groupShape.Kind == DocumentShapeKind.Group &&
+            groupShape.Group != null &&
+            groupShape.Group.Left == 0 &&
+            groupShape.Group.Top == 0 &&
+            groupShape.Group.Right == 2000 &&
+            groupShape.Group.Bottom == 1000 &&
+            groupShape.Group.Children.Count == 2 &&
+            groupShape.Group.Children[0].Shape.Kind == DocumentShapeKind.Rectangle &&
+            groupShape.Group.Children[0].Left == 0 &&
+            groupShape.Group.Children[0].Top == 0 &&
+            groupShape.Group.Children[0].Right == 1000 &&
+            groupShape.Group.Children[0].Bottom == 500 &&
+            groupShape.Group.Children[1].Shape.Kind == DocumentShapeKind.Ellipse &&
+            groupShape.Group.Children[1].Left == 1000 &&
+            groupShape.Group.Children[1].Top == 500 &&
+            groupShape.Group.Children[1].Right == 2000 &&
+            groupShape.Group.Children[1].Bottom == 1000 &&
+            shapes.ContainsKey(groupRectangleShapeId) &&
+            shapes.ContainsKey(groupEllipseShapeId),
+            "DOC OfficeArt group должен сохранять FSPGR coordinate system, child anchors и child spid lookup.");
+
+        var groupBlocks = DocDocumentReader.BuildParagraphs(
+            "\u0008\r",
+            [
+                new DocDocumentReader.DocFloatingShapeAnchor(
+                    0,
+                    groupShapeId,
+                    0,
+                    0,
+                    2880,
+                    1440,
+                    1,
+                    2,
+                    2,
+                    2,
+                    false,
+                    false)
+            ],
+            new Dictionary<int, DocumentImage>(),
+            shapes);
+        var groupHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC OfficeArt group",
+                Blocks = groupBlocks
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            groupHtml,
+            "data-shape-kind=\"group\"",
+            "DOC OfficeArt group renderer metadata");
+        AssertContains(
+            groupHtml,
+            "viewBox=\"0 0 2000 1000\"",
+            "DOC OfficeArt group coordinate system renderer");
+        AssertContains(
+            groupHtml,
+            "class=\"group-child-shape\" x=\"0\" y=\"0\" width=\"1000\" height=\"500\"",
+            "DOC OfficeArt first group child anchor renderer");
+        AssertContains(
+            groupHtml,
+            "class=\"group-child-shape\" x=\"1000\" y=\"500\" width=\"1000\" height=\"500\"",
+            "DOC OfficeArt second group child anchor renderer");
 
         Assert(
             shapes.TryGetValue(
