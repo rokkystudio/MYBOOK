@@ -2015,6 +2015,116 @@ internal static class Program
             return container;
         }
 
+        static byte[] BuildMultiStopGradientShapeRecord(
+            int shapeId)
+        {
+            var fsp = new byte[16];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(0, 2),
+                checked((ushort)((1 << 4) | 0x0002)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fsp.AsSpan(2, 2),
+                0xF00A);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fsp.AsSpan(4, 4),
+                8);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                fsp.AsSpan(8, 4),
+                shapeId);
+
+            var shadeColors = new byte[30];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                shadeColors.AsSpan(0, 2),
+                3);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                shadeColors.AsSpan(2, 2),
+                3);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                shadeColors.AsSpan(4, 2),
+                8);
+
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                shadeColors.AsSpan(6, 4),
+                0x000000FF);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                shadeColors.AsSpan(10, 4),
+                0);
+
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                shadeColors.AsSpan(14, 4),
+                0x0000FF00);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                shadeColors.AsSpan(18, 4),
+                32768);
+
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                shadeColors.AsSpan(22, 4),
+                0x00FF0000);
+            BinaryPrimitives.WriteInt32LittleEndian(
+                shadeColors.AsSpan(26, 4),
+                65536);
+
+            var fopt = new byte[
+                8 +
+                3 * 6 +
+                shadeColors.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fopt.AsSpan(0, 2),
+                checked((ushort)((3 << 4) | 0x0003)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fopt.AsSpan(2, 2),
+                0xF00B);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fopt.AsSpan(4, 4),
+                checked((uint)(3 * 6 + shadeColors.Length)));
+
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fopt.AsSpan(8, 2),
+                0x0180);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fopt.AsSpan(10, 4),
+                4);
+
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fopt.AsSpan(14, 2),
+                0x018B);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fopt.AsSpan(16, 4),
+                90u << 16);
+
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                fopt.AsSpan(20, 2),
+                0x8197);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                fopt.AsSpan(22, 4),
+                checked((uint)shadeColors.Length));
+
+            shadeColors.CopyTo(
+                fopt,
+                26);
+
+            var container = new byte[
+                8 +
+                fsp.Length +
+                fopt.Length];
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(0, 2),
+                0x000F);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                container.AsSpan(2, 2),
+                0xF004);
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                container.AsSpan(4, 4),
+                checked((uint)(fsp.Length + fopt.Length)));
+            fsp.CopyTo(
+                container,
+                8);
+            fopt.CopyTo(
+                container,
+                8 + fsp.Length);
+            return container;
+        }
+
         static byte[] BuildTextBoxShapeRecord(
             int shapeId,
             uint textIdentifier)
@@ -2448,6 +2558,7 @@ internal static class Program
         const int groupRectangleShapeId = 3010;
         const int groupEllipseShapeId = 3011;
         const int gradientShapeId = 3012;
+        const int multiStopGradientShapeId = 3013;
 
         var rectangle = BuildShapeRecord(
             rectangleShapeId,
@@ -2534,6 +2645,9 @@ internal static class Program
             (0x0181, 0x000000FF),
             (0x0183, 0x00FF0000),
             (0x018B, 45u << 16));
+        var multiStopGradient =
+            BuildMultiStopGradientShapeRecord(
+                multiStopGradientShapeId);
 
         var dgg = new byte[
             rectangle.Length +
@@ -2545,7 +2659,8 @@ internal static class Program
             textBox.Length +
             linkedTextBox.Length +
             group.Length +
-            gradient.Length];
+            gradient.Length +
+            multiStopGradient.Length];
         var dggOffset = 0;
         rectangle.CopyTo(
             dgg,
@@ -2584,6 +2699,10 @@ internal static class Program
             dggOffset);
         dggOffset += group.Length;
         gradient.CopyTo(
+            dgg,
+            dggOffset);
+        dggOffset += gradient.Length;
+        multiStopGradient.CopyTo(
             dgg,
             dggOffset);
 
@@ -2844,8 +2963,11 @@ internal static class Program
             gradientShape.Kind == DocumentShapeKind.Rectangle &&
             gradientShape.FillColor == null &&
             gradientShape.FillGradient != null &&
-            gradientShape.FillGradient.StartColor == "#FF0000" &&
-            gradientShape.FillGradient.EndColor == "#0000FF" &&
+            gradientShape.FillGradient.Stops.Count == 2 &&
+            gradientShape.FillGradient.Stops[0].Color == "#FF0000" &&
+            gradientShape.FillGradient.Stops[0].Position == 0 &&
+            gradientShape.FillGradient.Stops[1].Color == "#0000FF" &&
+            gradientShape.FillGradient.Stops[1].Position == 1 &&
             gradientShape.FillGradient.AngleDegrees == 45.0,
             "DOC OfficeArt msofillShade должен сохранять двухцветный linear gradient.");
 
@@ -2892,6 +3014,57 @@ internal static class Program
             gradientHtml,
             "stop-color=\"#0000FF\"",
             "DOC OfficeArt gradient end color");
+
+        Assert(
+            shapes.TryGetValue(
+                multiStopGradientShapeId,
+                out var multiStopGradientShape) &&
+            multiStopGradientShape.FillGradient != null &&
+            multiStopGradientShape.FillGradient.Stops.Count == 3 &&
+            multiStopGradientShape.FillGradient.Stops[0].Color == "#FF0000" &&
+            multiStopGradientShape.FillGradient.Stops[0].Position == 0 &&
+            multiStopGradientShape.FillGradient.Stops[1].Color == "#00FF00" &&
+            multiStopGradientShape.FillGradient.Stops[1].Position == 0.5 &&
+            multiStopGradientShape.FillGradient.Stops[2].Color == "#0000FF" &&
+            multiStopGradientShape.FillGradient.Stops[2].Position == 1 &&
+            multiStopGradientShape.FillGradient.AngleDegrees == 90.0,
+            "DOC OfficeArt fillShadeColors должен сохранять упорядоченные MSOSHADECOLOR stops.");
+
+        var multiStopGradientBlocks = DocDocumentReader.BuildParagraphs(
+            "\u0008\r",
+            [
+                new DocDocumentReader.DocFloatingShapeAnchor(
+                    0,
+                    multiStopGradientShapeId,
+                    0,
+                    0,
+                    1440,
+                    720,
+                    1,
+                    2,
+                    2,
+                    2,
+                    false,
+                    false)
+            ],
+            new Dictionary<int, DocumentImage>(),
+            shapes);
+        var multiStopGradientHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC OfficeArt multi-stop gradient",
+                Blocks = multiStopGradientBlocks
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            multiStopGradientHtml,
+            "offset=\"50%\" stop-color=\"#00FF00\"",
+            "DOC OfficeArt multi-stop gradient midpoint");
+        AssertContains(
+            multiStopGradientHtml,
+            "gradientTransform=\"rotate(-90 50 50)\"",
+            "DOC OfficeArt multi-stop fillAngle renderer");
 
         Assert(
             shapes.TryGetValue(
