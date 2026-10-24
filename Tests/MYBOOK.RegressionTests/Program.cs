@@ -54,6 +54,7 @@ internal static class Program
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
+            ("PDF Indexed matte", TestPdfIndexedMatte),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),
@@ -8548,6 +8549,37 @@ internal static class Program
                 "href=\"file:",
                 StringComparison.OrdinalIgnoreCase),
             "DOCX renderer не должен выпускать file: hyperlink.");
+    }
+
+    private static void TestPdfIndexedMatte()
+    {
+        var rgb = PdfImageColorConverter.ConvertIndexedToRgb(
+            [0x80],
+            width: 1,
+            height: 1,
+            bitsPerComponent: 2,
+            highValue: 3,
+            rgbPalette:
+            [
+                0, 0, 0,
+                255, 0, 0,
+                0, 255, 0,
+                0, 0, 255
+            ],
+            decodeMinimum: 0,
+            decodeMaximum: 3,
+            alphaSamples: [128],
+            matteIndex: 1);
+
+        Assert(
+            rgb.SequenceEqual(
+                new byte[]
+                {
+                    0,
+                    0,
+                    255
+                }),
+            "PDF Indexed /SMask /Matte должен распремультиплицировать decoded index до palette lookup.");
     }
 
     private static void TestPdfLzwDecoder()

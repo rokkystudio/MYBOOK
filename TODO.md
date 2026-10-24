@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.4.11
+Текущая версия: 1.4.12
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -50,7 +50,7 @@
 
 - [ ] ExtGState: стандартные `/BM` blend modes теперь проходят через graphics state/q/Q и fixed-page model; массив `/BM` выбирает первый поддерживаемый mode, SVG использует точный `mix-blend-mode`. `/OP`, `/op` и `/OPM` сохраняются через graphics state и экспортируются как device-dependent metadata без ложной браузерной эмуляции. `/SMask /None` корректно сбрасывает state, dictionary soft mask отмечается как активная и также восстанавливается через q/Q. Осталось реальное compositing содержимого ExtGState soft-mask group; Image XObject `/SMask` уже рендерится отдельно.
 - [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
-- [ ] Image XObject: `/SMask /Matte` для decoded 8-bit Gray/RGB/CMYK уже распремультиплицируется по alpha samples с проверкой component count; Indexed+Matte и Matte поверх DCT/JPEG остаются unsupported, потому что требуют decoded source samples. Остались Indexed/JPEG, нестандартный `/Decode` поверх DCT/JPEG и дополнительные ColorSpace.
+- [ ] Image XObject: `/SMask /Matte` для decoded 8-bit Gray/RGB/CMYK распремультиплицируется по alpha samples; Indexed+Matte теперь тоже поддерживается строго в Indexed color space: decoded palette index распремультиплицируется до RGB palette lookup, `/Matte` валидируется как один index-component. Matte поверх DCT/JPEG остаётся unsupported, потому что требует decoded JPEG source samples. Остались Indexed/JPEG, нестандартный `/Decode` поверх DCT/JPEG и дополнительные ColorSpace.
 - [ ] Image filters: `RunLengthDecode`/`RL` поддерживается для обычных streams и Image XObject с обязательным EOD marker 128 и строгой проверкой literal/repeat runs; LZW с `EarlyChange` 0/1 и predictor parameters тоже поддерживается. Остались CCITT, JPX и JBIG2.
 - [ ] Шифрование/password-protected PDF: Standard Security Handler RC4 `V=1/2`, `R=2/3` поддерживает проверку пустого user password, file/object key derivation и дешифровку обычных indirect strings/streams до filter decoding; encryption dictionary не дешифруется. Encrypted object streams поддерживаются: сам `/ObjStm` дешифруется по object key до stream filters, после чего содержащиеся compressed objects парсятся как plaintext без повторной дешифровки; xref streams остаются незашифрованными. `V=4/R=4` crypt filters поддерживают раздельные `StrF`/`StmF`, `Identity`, `V2` и `AESV2`; AES использует CBC/PKCS#7, 16-byte IV prefix и `sAlT` object-key derivation. Явный stream `/Crypt` обязан быть первым filter, `/Name` выбирает crypt filter и использует его key напрямую без object-key step; `/Name` по умолчанию `Identity`. `EncryptMetadata=false` участвует в file-key derivation и оставляет `/Type /Metadata` stream plaintext. Остались ввод пароля, owner-password authentication и Standard Security Handler revisions 5/6 (`AESV3`).
 
