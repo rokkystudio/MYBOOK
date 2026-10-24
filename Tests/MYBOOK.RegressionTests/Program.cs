@@ -2726,8 +2726,38 @@ internal static class Program
             textboxBreaks[1].ContentLength == 3,
             "DOC PlcfTxbxBkd должен разделять linked textbox chain на дискретные Tbkd ranges.");
 
-        textBoxShape!.Text = "Hello";
-        linkedTextBoxShape!.Text = "World";
+        textBoxShape!.TextBlocks =
+        [
+            new DocumentParagraph
+            {
+                Alignment = DocumentParagraphAlignment.Center,
+                Inlines =
+                [
+                    new DocumentInline
+                    {
+                        Text = "Hello",
+                        FontFamily = "Arial",
+                        FontSizePoints = 14,
+                        TextColor = "#112233",
+                        Bold = true
+                    }
+                ]
+            }
+        ];
+        linkedTextBoxShape!.TextBlocks =
+        [
+            new DocumentParagraph
+            {
+                Inlines =
+                [
+                    new DocumentInline
+                    {
+                        Text = "World",
+                        Italic = true
+                    }
+                ]
+            }
+        ];
         var textBoxBlocks = DocDocumentReader.BuildParagraphs(
             "\u0008\r",
             [
@@ -2767,6 +2797,18 @@ internal static class Program
             textBoxHtml,
             "Hello",
             "DOC OfficeArt textbox story text");
+        AssertContains(
+            textBoxHtml,
+            "text-align:center;",
+            "DOC OfficeArt textbox paragraph formatting");
+        AssertContains(
+            textBoxHtml,
+            "font-family:&#39;Arial&#39;;font-size:14pt;color:#112233;",
+            "DOC OfficeArt textbox character formatting");
+        AssertContains(
+            textBoxHtml,
+            "<strong>Hello</strong>",
+            "DOC OfficeArt textbox bold formatting");
     }
 
     private static void TestDocHeaderStoryTable()
