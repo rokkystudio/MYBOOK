@@ -2576,7 +2576,9 @@ internal static class Program
             (0x01C0, 0x0000AAFF),
             (0x01CB, 12700),
             (0x01D0, 1),
-            (0x01D1, 5));
+            (0x01D1, 5),
+            (0x01D6, 0),
+            (0x01D7, 1));
 
         var diamond = BuildShapeRecord(
             diamondShapeId,
@@ -2742,7 +2744,9 @@ internal static class Program
             lineShape.StrokeWidthPoints == 1.0 &&
             lineShape.RotationDegrees == 45.0 &&
             lineShape.StartArrowhead == DocumentShapeArrowhead.Triangle &&
-            lineShape.EndArrowhead == DocumentShapeArrowhead.Open,
+            lineShape.EndArrowhead == DocumentShapeArrowhead.Open &&
+            lineShape.LineJoin == DocumentShapeLineJoin.Bevel &&
+            lineShape.LineCap == DocumentShapeLineCap.Square,
             "DOC OfficeArt line должен сохранять FSP flips, rotation, arrowheads и line properties.");
 
         Assert(
@@ -2869,6 +2873,10 @@ internal static class Program
             lineHtml,
             "data-shape-start-arrowhead=\"triangle\" data-shape-end-arrowhead=\"open\"",
             "DOC OfficeArt arrowhead metadata");
+        AssertContains(
+            lineHtml,
+            "data-shape-line-join=\"bevel\" data-shape-line-cap=\"square\" stroke-linejoin=\"bevel\" stroke-linecap=\"square\"",
+            "DOC OfficeArt line join/cap metadata and SVG rendering");
         AssertContains(
             lineHtml,
             "transform:rotate(45deg) scale(-1,-1);transform-origin:center;",
