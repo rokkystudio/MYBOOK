@@ -2447,6 +2447,7 @@ internal static class Program
         const int groupShapeId = 3009;
         const int groupRectangleShapeId = 3010;
         const int groupEllipseShapeId = 3011;
+        const int gradientShapeId = 3012;
 
         var rectangle = BuildShapeRecord(
             rectangleShapeId,
@@ -2525,6 +2526,14 @@ internal static class Program
                 1000),
             groupRectangle,
             groupEllipse);
+        var gradient = BuildShapeRecord(
+            gradientShapeId,
+            1,
+            0,
+            (0x0180, 4),
+            (0x0181, 0x000000FF),
+            (0x0183, 0x00FF0000),
+            (0x018B, 45u << 16));
 
         var dgg = new byte[
             rectangle.Length +
@@ -2535,7 +2544,8 @@ internal static class Program
             custom.Length +
             textBox.Length +
             linkedTextBox.Length +
-            group.Length];
+            group.Length +
+            gradient.Length];
         var dggOffset = 0;
         rectangle.CopyTo(
             dgg,
@@ -2570,6 +2580,10 @@ internal static class Program
             dggOffset);
         dggOffset += linkedTextBox.Length;
         group.CopyTo(
+            dgg,
+            dggOffset);
+        dggOffset += group.Length;
+        gradient.CopyTo(
             dgg,
             dggOffset);
 
@@ -2822,6 +2836,62 @@ internal static class Program
             customHtml,
             "<path d=\"M0 0 L100 0 C100 25 50 100 0 100 Z\"",
             "DOC OfficeArt custom mixed path SVG");
+
+        Assert(
+            shapes.TryGetValue(
+                gradientShapeId,
+                out var gradientShape) &&
+            gradientShape.Kind == DocumentShapeKind.Rectangle &&
+            gradientShape.FillColor == null &&
+            gradientShape.FillGradient != null &&
+            gradientShape.FillGradient.StartColor == "#FF0000" &&
+            gradientShape.FillGradient.EndColor == "#0000FF" &&
+            gradientShape.FillGradient.AngleDegrees == 45.0,
+            "DOC OfficeArt msofillShade должен сохранять двухцветный linear gradient.");
+
+        var gradientBlocks = DocDocumentReader.BuildParagraphs(
+            "\u0008\r",
+            [
+                new DocDocumentReader.DocFloatingShapeAnchor(
+                    0,
+                    gradientShapeId,
+                    0,
+                    0,
+                    1440,
+                    720,
+                    1,
+                    2,
+                    2,
+                    2,
+                    false,
+                    false)
+            ],
+            new Dictionary<int, DocumentImage>(),
+            shapes);
+        var gradientHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "DOC OfficeArt gradient",
+                Blocks = gradientBlocks
+            },
+            CreateRenderTheme());
+
+        AssertContains(
+            gradientHtml,
+            "<linearGradient",
+            "DOC OfficeArt gradient SVG definition");
+        AssertContains(
+            gradientHtml,
+            "gradientTransform=\"rotate(-45 50 50)\"",
+            "DOC OfficeArt fillAngle renderer");
+        AssertContains(
+            gradientHtml,
+            "stop-color=\"#FF0000\"",
+            "DOC OfficeArt gradient start color");
+        AssertContains(
+            gradientHtml,
+            "stop-color=\"#0000FF\"",
+            "DOC OfficeArt gradient end color");
 
         Assert(
             shapes.TryGetValue(
