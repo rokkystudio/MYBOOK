@@ -11,6 +11,7 @@ using System.Windows.Media;
 using Rectangle = System.Windows.Shapes.Rectangle;
 using FlagCatalog = Flags.Flags;
 using Microsoft.Win32;
+using Microsoft.Web.WebView2.Core;
 using Book.Documents;
 using Book.Rendering;
 using MYBOOK.Services;
@@ -36,6 +37,7 @@ public partial class MainWindow : Window
 
     private bool readerInitialized_;
     private bool generatedDocumentOpen_;
+    private string? localHtmlVirtualHost_;
     private bool navigationPanelOpen_;
     private bool synchronizingPageSelection_;
     private bool fullScreen_;
@@ -211,6 +213,44 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OpenLocalHtmlDocument(
+        string fullPath)
+    {
+        var core =
+            Reader.CoreWebView2
+            ?? throw new InvalidOperationException(
+                "WebView2 не удалось инициализировать.");
+
+        ClearLocalHtmlMapping();
+
+        var mapping =
+            HtmlLocalResourceService.CreateMapping(
+                fullPath);
+
+        core.SetVirtualHostNameToFolderMapping(
+            mapping.HostName,
+            mapping.RootDirectory,
+            CoreWebView2HostResourceAccessKind.Deny);
+
+        localHtmlVirtualHost_ =
+            mapping.HostName;
+        Reader.Source =
+            mapping.DocumentUri;
+    }
+
+    private void ClearLocalHtmlMapping()
+    {
+        if (localHtmlVirtualHost_ == null)
+        {
+            return;
+        }
+
+        Reader.CoreWebView2?
+            .ClearVirtualHostNameToFolderMapping(
+                localHtmlVirtualHost_);
+        localHtmlVirtualHost_ = null;
+    }
+
     /// <summary>
     /// Открывает поддерживаемый документ.
     /// FB2, EPUB, TXT, Markdown, RTF, DOC, DOCX и PDF преобразуются в нейтральную модель MYBOOK,
@@ -233,13 +273,16 @@ public partial class MainWindow : Window
 
             if (format.OpenDirectlyInWebView)
             {
-                Reader.Source = new Uri(fullPath, UriKind.Absolute);
+                OpenLocalHtmlDocument(
+                    fullPath);
                 generatedDocumentOpen_ = false;
                 UpdateNavigationPanel(null);
                 Title = Path.GetFileNameWithoutExtension(fullPath) + " — MYBOOK";
             }
             else
             {
+                ClearLocalHtmlMapping();
+
                 var document = SupportedFormatRegistry.ReadDocument(
                     fullPath);
 
