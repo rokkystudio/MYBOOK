@@ -8665,6 +8665,25 @@ internal static class Program
             "AES explicit marker",
             "PDF AESV2 explicit Crypt filter decrypt");
 
+        var runLengthPath = Path.Combine(
+            directory,
+            "regression-runlength.pdf");
+        CreateRunLengthPdf(
+            runLengthPath,
+            "PDF RunLength marker");
+
+        var runLengthModel =
+            SupportedFormatRegistry.ReadDocument(
+                runLengthPath);
+        var runLengthPage = runLengthModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+
+        AssertContains(
+            runLengthPage.Text,
+            "PDF RunLength marker",
+            "PDF RunLengthDecode content stream");
+
         var lzwPath = Path.Combine(
             directory,
             "regression-lzw.pdf");
@@ -9764,6 +9783,102 @@ internal static class Program
             $"<< /Size {objects.Length + 1} /Root 1 0 R >>\n" +
             "startxref\n" +
             xref +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
+    }
+
+    private static void CreateRunLengthPdf(
+        string path,
+        string text)
+    {
+        var encoding = Encoding.ASCII;
+        var content = encoding.GetBytes(
+            "BT\n" +
+            "/F1 12 Tf\n" +
+            "1 0 0 1 20 100 Tm\n" +
+            "(" + EscapePdfString(text) + ") Tj\n" +
+            "ET\n");
+
+        if (content.Length > 128)
+        {
+            throw new InvalidOperationException(
+                "RunLength PDF fixture content превышает один literal run.");
+        }
+
+        var compressed = new byte[
+            content.Length +
+            2];
+        compressed[0] =
+            checked((byte)(content.Length - 1));
+        content.CopyTo(
+            compressed,
+            1);
+        compressed[^1] = 128;
+
+        using var memory = new MemoryStream();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        var offsets = new List<long>();
+
+        void BeginObject(int objectNumber)
+        {
+            offsets.Add(memory.Position);
+            Write(
+                $"{objectNumber} 0 obj\n");
+        }
+
+        Write("%PDF-1.4\n");
+
+        BeginObject(1);
+        Write("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        BeginObject(2);
+        Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 200] >>\nendobj\n");
+
+        BeginObject(3);
+        Write("<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n");
+
+        BeginObject(4);
+        Write(
+            $"<< /Length {compressed.Length} /Filter /RunLengthDecode >>\nstream\n");
+        memory.Write(
+            compressed,
+            0,
+            compressed.Length);
+        Write("\nendstream\nendobj\n");
+
+        BeginObject(5);
+        Write("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
+
+        var xref = memory.Position;
+        Write("xref\n0 6\n0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n" +
+            "<< /Size 6 /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
             "\n%%EOF\n");
 
         File.WriteAllBytes(
