@@ -8643,6 +8643,28 @@ internal static class Program
             "Encrypted object stream marker",
             "PDF encrypted object stream decrypt");
 
+        var aesEncryptedPath = Path.Combine(
+            directory,
+            "regression-aesv2.pdf");
+        CreateAesV2EncryptedPdf(
+            aesEncryptedPath);
+
+        var aesEncryptedModel =
+            SupportedFormatRegistry.ReadDocument(
+                aesEncryptedPath);
+        var aesEncryptedPage = aesEncryptedModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+
+        AssertContains(
+            aesEncryptedPage.Text,
+            "AES default marker",
+            "PDF AESV2 default StmF decrypt");
+        AssertContains(
+            aesEncryptedPage.Text,
+            "AES explicit marker",
+            "PDF AESV2 explicit Crypt filter decrypt");
+
         var lzwPath = Path.Combine(
             directory,
             "regression-lzw.pdf");
@@ -9357,6 +9379,317 @@ internal static class Program
         Write(
             "startxref\n" +
             xrefOffset.ToString(CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
+    }
+
+    private static void CreateAesV2EncryptedPdf(
+        string path)
+    {
+        var encoding = Encoding.ASCII;
+        byte[] passwordPadding =
+        [
+            0x28, 0xBF, 0x4E, 0x5E, 0x4E, 0x75, 0x8A, 0x41,
+            0x64, 0x00, 0x4E, 0x56, 0xFF, 0xFA, 0x01, 0x08,
+            0x2E, 0x2E, 0x00, 0xB6, 0xD0, 0x68, 0x3E, 0x80,
+            0x2F, 0x0C, 0xA9, 0xFE, 0x64, 0x53, 0x69, 0x7A
+        ];
+
+        static byte[] Rc4(
+            ReadOnlySpan<byte> data,
+            ReadOnlySpan<byte> key)
+        {
+            var state = Enumerable
+                .Range(0, 256)
+                .Select(value => checked((byte)value))
+                .ToArray();
+            var j = 0;
+
+            for (var i = 0; i < 256; i++)
+            {
+                j =
+                    (j + state[i] + key[i % key.Length]) &
+                    0xFF;
+                (state[i], state[j]) =
+                    (state[j], state[i]);
+            }
+
+            var output = new byte[data.Length];
+            var x = 0;
+            j = 0;
+
+            for (var index = 0; index < data.Length; index++)
+            {
+                x =
+                    (x + 1) &
+                    0xFF;
+                j =
+                    (j + state[x]) &
+                    0xFF;
+                (state[x], state[j]) =
+                    (state[j], state[x]);
+                output[index] =
+                    checked((byte)(
+                        data[index] ^
+                        state[(state[x] + state[j]) & 0xFF]));
+            }
+
+            return output;
+        }
+
+        static byte[] CreateObjectKey(
+            byte[] fileKey,
+            int objectNumber)
+        {
+            var material = new byte[
+                fileKey.Length +
+                9];
+            fileKey.CopyTo(
+                material,
+                0);
+            material[fileKey.Length] =
+                checked((byte)(objectNumber & 0xFF));
+            material[fileKey.Length + 1] =
+                checked((byte)((objectNumber >> 8) & 0xFF));
+            material[fileKey.Length + 2] =
+                checked((byte)((objectNumber >> 16) & 0xFF));
+            material[^4] = 0x73;
+            material[^3] = 0x41;
+            material[^2] = 0x6C;
+            material[^1] = 0x54;
+            return MD5.HashData(material)[..16];
+        }
+
+        static byte[] AesEncrypt(
+            ReadOnlySpan<byte> data,
+            ReadOnlySpan<byte> key,
+            byte ivSeed)
+        {
+            var iv = Enumerable
+                .Range(0, 16)
+                .Select(value => checked((byte)(ivSeed + value)))
+                .ToArray();
+
+            using var aes = Aes.Create();
+            aes.Key = key.ToArray();
+            aes.IV = iv;
+            aes.Mode = CipherMode.CBC;
+            aes.Padding = PaddingMode.PKCS7;
+
+            using var encryptor =
+                aes.CreateEncryptor();
+            var encrypted =
+                encryptor.TransformFinalBlock(
+                    data.ToArray(),
+                    0,
+                    data.Length);
+            var result = new byte[
+                iv.Length +
+                encrypted.Length];
+            iv.CopyTo(
+                result,
+                0);
+            encrypted.CopyTo(
+                result,
+                iv.Length);
+            return result;
+        }
+
+        static byte[] CreateOwnerEntry(
+            byte[] padding)
+        {
+            var hash = MD5.HashData(padding);
+            for (var index = 0; index < 50; index++)
+            {
+                hash = MD5.HashData(hash);
+            }
+
+            var key = hash[..16];
+            var value = Rc4(
+                padding,
+                key);
+
+            for (var iteration = 1; iteration <= 19; iteration++)
+            {
+                var iterationKey =
+                    key.Select(
+                            item =>
+                                checked((byte)(item ^ iteration)))
+                        .ToArray();
+                value = Rc4(
+                    value,
+                    iterationKey);
+            }
+
+            return value;
+        }
+
+        var owner =
+            CreateOwnerEntry(
+                passwordPadding);
+        var fileId =
+            MD5.HashData(
+                encoding.GetBytes(
+                    "MYBOOK AESV2 fixture"));
+        const int permissions = -4;
+        var keyMaterial = new byte[
+            passwordPadding.Length +
+            owner.Length +
+            4 +
+            fileId.Length +
+            4];
+        passwordPadding.CopyTo(
+            keyMaterial,
+            0);
+        owner.CopyTo(
+            keyMaterial,
+            passwordPadding.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            keyMaterial.AsSpan(
+                passwordPadding.Length + owner.Length,
+                4),
+            permissions);
+        fileId.CopyTo(
+            keyMaterial,
+            passwordPadding.Length + owner.Length + 4);
+        keyMaterial[^4] = 0xFF;
+        keyMaterial[^3] = 0xFF;
+        keyMaterial[^2] = 0xFF;
+        keyMaterial[^1] = 0xFF;
+
+        var hash = MD5.HashData(
+            keyMaterial);
+        for (var index = 0; index < 50; index++)
+        {
+            hash = MD5.HashData(hash);
+        }
+        var fileKey = hash[..16];
+
+        var userSeed = new byte[
+            passwordPadding.Length +
+            fileId.Length];
+        passwordPadding.CopyTo(
+            userSeed,
+            0);
+        fileId.CopyTo(
+            userSeed,
+            passwordPadding.Length);
+        var userValue = Rc4(
+            MD5.HashData(
+                userSeed),
+            fileKey);
+        for (var iteration = 1; iteration <= 19; iteration++)
+        {
+            var iterationKey =
+                fileKey.Select(
+                        item =>
+                            checked((byte)(item ^ iteration)))
+                    .ToArray();
+            userValue = Rc4(
+                userValue,
+                iterationKey);
+        }
+
+        var user = new byte[32];
+        userValue.CopyTo(
+            user,
+            0);
+
+        var defaultContent = encoding.GetBytes(
+            "BT\n/F1 12 Tf\n1 0 0 1 20 120 Tm\n(AES default marker) Tj\nET\n");
+        var explicitContent = encoding.GetBytes(
+            "BT\n/F1 12 Tf\n1 0 0 1 20 90 Tm\n(AES explicit marker) Tj\nET\n");
+        var encryptedDefault =
+            AesEncrypt(
+                defaultContent,
+                CreateObjectKey(
+                    fileKey,
+                    4),
+                0x10);
+        var encryptedExplicit =
+            AesEncrypt(
+                explicitContent,
+                fileKey,
+                0x30);
+
+        using var memory = new MemoryStream();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        var offsets = new List<long>();
+        void BeginObject(int number)
+        {
+            offsets.Add(memory.Position);
+            Write(
+                $"{number} 0 obj\n");
+        }
+
+        Write("%PDF-1.7\n");
+
+        BeginObject(1);
+        Write("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        BeginObject(2);
+        Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 200] >>\nendobj\n");
+
+        BeginObject(3);
+        Write("<< /Type /Page /Parent 2 0 R /Contents [4 0 R 5 0 R] /Resources << /Font << /F1 6 0 R >> >> >>\nendobj\n");
+
+        BeginObject(4);
+        Write(
+            $"<< /Length {encryptedDefault.Length} >>\nstream\n");
+        memory.Write(
+            encryptedDefault,
+            0,
+            encryptedDefault.Length);
+        Write("\nendstream\nendobj\n");
+
+        BeginObject(5);
+        Write(
+            $"<< /Length {encryptedExplicit.Length} /Filter /Crypt /DecodeParms << /Name /StdCF >> >>\nstream\n");
+        memory.Write(
+            encryptedExplicit,
+            0,
+            encryptedExplicit.Length);
+        Write("\nendstream\nendobj\n");
+
+        BeginObject(6);
+        Write("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
+
+        BeginObject(7);
+        Write(
+            $"<< /Filter /Standard /V 4 /R 4 /Length 128 /O <{Convert.ToHexString(owner)}> /U <{Convert.ToHexString(user)}> /P {permissions} /EncryptMetadata false /CF << /StdCF << /Type /CryptFilter /CFM /AESV2 /Length 16 >> >> /StmF /StdCF /StrF /StdCF >>\nendobj\n");
+
+        var xref = memory.Position;
+        Write("xref\n0 8\n0000000000 65535 f \n");
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        var idHex =
+            Convert.ToHexString(
+                fileId);
+        Write(
+            "trailer\n" +
+            $"<< /Size 8 /Root 1 0 R /Encrypt 7 0 R /ID [<{idHex}> <{idHex}>] >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
             "\n%%EOF\n");
 
         File.WriteAllBytes(
