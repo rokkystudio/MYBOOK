@@ -8605,6 +8605,27 @@ internal static class Program
             page.PageNumber,
             "PDF page number");
 
+        var encryptedPath = Path.Combine(
+            directory,
+            "regression-encrypted.pdf");
+        CreateEncryptedPdf(
+            encryptedPath);
+
+        try
+        {
+            SupportedFormatRegistry.ReadDocument(
+                encryptedPath);
+            throw new InvalidOperationException(
+                "Encrypted PDF должен завершаться явной unsupported-ошибкой.");
+        }
+        catch (InvalidDataException exception)
+        {
+            AssertContains(
+                exception.Message,
+                "encrypted PDF пока не поддерживается",
+                "PDF encryption detection");
+        }
+
         var lzwPath = Path.Combine(
             directory,
             "regression-lzw.pdf");
@@ -8921,6 +8942,66 @@ internal static class Program
             "\n%%EOF\n");
 
         File.WriteAllBytes(path, memory.ToArray());
+    }
+
+    private static void CreateEncryptedPdf(
+        string path)
+    {
+        var encoding = Encoding.ASCII;
+        var content =
+            "BT\n" +
+            "/F1 12 Tf\n" +
+            "1 0 0 1 20 100 Tm\n" +
+            "(Encrypted marker) Tj\n" +
+            "ET\n";
+
+        var objects = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 200] >>",
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            $"<< /Length {encoding.GetByteCount(content)} >>\nstream\n{content}endstream",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            "<< /Filter /Standard /V 2 /R 3 /Length 128 /O <00112233445566778899AABBCCDDEEFF> /U <FFEEDDCCBBAA99887766554433221100> /P -4 >>"
+        };
+
+        using var memory = new MemoryStream();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        Write("%PDF-1.4\n");
+        var offsets = new List<long>();
+
+        for (var index = 0; index < objects.Length; index++)
+        {
+            offsets.Add(memory.Position);
+            Write($"{index + 1} 0 obj\n{objects[index]}\nendobj\n");
+        }
+
+        var xref = memory.Position;
+        Write("xref\n" + $"0 {objects.Length + 1}\n" + "0000000000 65535 f \n");
+        foreach (var offset in offsets)
+        {
+            Write(offset.ToString("0000000000", CultureInfo.InvariantCulture) + " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n" +
+            $"<< /Size {objects.Length + 1} /Root 1 0 R /Encrypt 6 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
     }
 
     private static void CreateSimplePdf(

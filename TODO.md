@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.4.6
+Текущая версия: 1.4.7
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -50,9 +50,9 @@
 
 - [ ] ExtGState: стандартные `/BM` blend modes теперь проходят через graphics state/q/Q и fixed-page model; массив `/BM` выбирает первый поддерживаемый mode, SVG использует точный `mix-blend-mode`. `/OP`, `/op` и `/OPM` сохраняются через graphics state и экспортируются как device-dependent metadata без ложной браузерной эмуляции. `/SMask /None` корректно сбрасывает state, dictionary soft mask отмечается как активная и также восстанавливается через q/Q. Осталось реальное compositing содержимого ExtGState soft-mask group; Image XObject `/SMask` уже рендерится отдельно.
 - [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
-- [ ] Image XObject: Indexed/JPEG + `/Matte`, нестандартный `/Decode` поверх DCT/JPEG и дополнительные ColorSpace.
+- [ ] Image XObject: `/SMask /Matte` для decoded 8-bit Gray/RGB/CMYK уже распремультиплицируется по alpha samples с проверкой component count; Indexed+Matte и Matte поверх DCT/JPEG остаются unsupported, потому что требуют decoded source samples. Остались Indexed/JPEG, нестандартный `/Decode` поверх DCT/JPEG и дополнительные ColorSpace.
 - [ ] Image filters: CCITT, JPX и JBIG2; LZW с `EarlyChange` 0/1 и predictor parameters уже поддерживается для streams и Image XObject.
-- [ ] Шифрование/password-protected PDF.
+- [ ] Шифрование/password-protected PDF: trailer `/Encrypt` теперь распознаётся сразу после xref-chain и выдаёт явную unsupported-ошибку до разрешения catalog/objects. Осталась собственно Standard Security Handler decrypt/password support.
 
 ## DjVu
 
