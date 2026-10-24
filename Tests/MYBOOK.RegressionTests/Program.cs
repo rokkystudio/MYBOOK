@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO;
 using System.IO.Compression;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using Book.Diagnostics;
 using Book.Documents;
@@ -8611,20 +8612,17 @@ internal static class Program
         CreateEncryptedPdf(
             encryptedPath);
 
-        try
-        {
+        var encryptedModel =
             SupportedFormatRegistry.ReadDocument(
                 encryptedPath);
-            throw new InvalidOperationException(
-                "Encrypted PDF должен завершаться явной unsupported-ошибкой.");
-        }
-        catch (InvalidDataException exception)
-        {
-            AssertContains(
-                exception.Message,
-                "encrypted PDF пока не поддерживается",
-                "PDF encryption detection");
-        }
+        var encryptedPage = encryptedModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+
+        AssertContains(
+            encryptedPage.Text,
+            "Encrypted marker",
+            "PDF Standard Security Handler R2 empty-password decrypt");
 
         var lzwPath = Path.Combine(
             directory,
@@ -8948,22 +8946,94 @@ internal static class Program
         string path)
     {
         var encoding = Encoding.ASCII;
-        var content =
+        var content = encoding.GetBytes(
             "BT\n" +
             "/F1 12 Tf\n" +
             "1 0 0 1 20 100 Tm\n" +
             "(Encrypted marker) Tj\n" +
-            "ET\n";
+            "ET\n");
+        byte[] passwordPadding =
+        [
+            0x28, 0xBF, 0x4E, 0x5E, 0x4E, 0x75, 0x8A, 0x41,
+            0x64, 0x00, 0x4E, 0x56, 0xFF, 0xFA, 0x01, 0x08,
+            0x2E, 0x2E, 0x00, 0xB6, 0xD0, 0x68, 0x3E, 0x80,
+            0x2F, 0x0C, 0xA9, 0xFE, 0x64, 0x53, 0x69, 0x7A
+        ];
+        var ownerKey = MD5.HashData(passwordPadding)[..5];
+        var owner = Rc4(passwordPadding, ownerKey);
+        var fileId = MD5.HashData(encoding.GetBytes("MYBOOK encrypted fixture"));
+        const int permissions = -4;
+        var keyMaterial = new byte[
+            passwordPadding.Length +
+            owner.Length +
+            4 +
+            fileId.Length];
+        passwordPadding.CopyTo(
+            keyMaterial,
+            0);
+        owner.CopyTo(
+            keyMaterial,
+            passwordPadding.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            keyMaterial.AsSpan(
+                passwordPadding.Length + owner.Length,
+                4),
+            permissions);
+        fileId.CopyTo(
+            keyMaterial,
+            passwordPadding.Length + owner.Length + 4);
+        var fileKey = MD5.HashData(keyMaterial)[..5];
+        var user = Rc4(passwordPadding, fileKey);
 
-        var objects = new[]
+        var objectKeyMaterial = new byte[fileKey.Length + 5];
+        fileKey.CopyTo(
+            objectKeyMaterial,
+            0);
+        objectKeyMaterial[fileKey.Length] = 4;
+        var objectKey = MD5.HashData(objectKeyMaterial)[..10];
+        var encryptedContent = Rc4(content, objectKey);
+
+        static byte[] Rc4(
+            ReadOnlySpan<byte> data,
+            ReadOnlySpan<byte> key)
         {
-            "<< /Type /Catalog /Pages 2 0 R >>",
-            "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 200] >>",
-            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
-            $"<< /Length {encoding.GetByteCount(content)} >>\nstream\n{content}endstream",
-            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-            "<< /Filter /Standard /V 2 /R 3 /Length 128 /O <00112233445566778899AABBCCDDEEFF> /U <FFEEDDCCBBAA99887766554433221100> /P -4 >>"
-        };
+            var state = Enumerable
+                .Range(0, 256)
+                .Select(value => checked((byte)value))
+                .ToArray();
+            var j = 0;
+
+            for (var i = 0; i < 256; i++)
+            {
+                j =
+                    (j + state[i] + key[i % key.Length]) &
+                    0xFF;
+                (state[i], state[j]) =
+                    (state[j], state[i]);
+            }
+
+            var output = new byte[data.Length];
+            var x = 0;
+            j = 0;
+
+            for (var index = 0; index < data.Length; index++)
+            {
+                x =
+                    (x + 1) &
+                    0xFF;
+                j =
+                    (j + state[x]) &
+                    0xFF;
+                (state[x], state[j]) =
+                    (state[j], state[x]);
+                output[index] =
+                    checked((byte)(
+                        data[index] ^
+                        state[(state[x] + state[j]) & 0xFF]));
+            }
+
+            return output;
+        }
 
         using var memory = new MemoryStream();
 
@@ -8979,22 +9049,51 @@ internal static class Program
         Write("%PDF-1.4\n");
         var offsets = new List<long>();
 
-        for (var index = 0; index < objects.Length; index++)
+        void WriteObject(
+            int objectNumber,
+            string value)
         {
             offsets.Add(memory.Position);
-            Write($"{index + 1} 0 obj\n{objects[index]}\nendobj\n");
+            Write($"{objectNumber} 0 obj\n{value}\nendobj\n");
         }
 
+        WriteObject(
+            1,
+            "<< /Type /Catalog /Pages 2 0 R >>");
+        WriteObject(
+            2,
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 200] >>");
+        WriteObject(
+            3,
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>");
+
+        offsets.Add(memory.Position);
+        Write(
+            $"4 0 obj\n<< /Length {encryptedContent.Length} >>\nstream\n");
+        memory.Write(
+            encryptedContent,
+            0,
+            encryptedContent.Length);
+        Write("\nendstream\nendobj\n");
+
+        WriteObject(
+            5,
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+        WriteObject(
+            6,
+            $"<< /Filter /Standard /V 1 /R 2 /O <{Convert.ToHexString(owner)}> /U <{Convert.ToHexString(user)}> /P {permissions} >>");
+
         var xref = memory.Position;
-        Write("xref\n" + $"0 {objects.Length + 1}\n" + "0000000000 65535 f \n");
+        Write("xref\n0 7\n0000000000 65535 f \n");
         foreach (var offset in offsets)
         {
             Write(offset.ToString("0000000000", CultureInfo.InvariantCulture) + " 00000 n \n");
         }
 
+        var idHex = Convert.ToHexString(fileId);
         Write(
             "trailer\n" +
-            $"<< /Size {objects.Length + 1} /Root 1 0 R /Encrypt 6 0 R >>\n" +
+            $"<< /Size 7 /Root 1 0 R /Encrypt 6 0 R /ID [<{idHex}> <{idHex}>] >>\n" +
             "startxref\n" +
             xref.ToString(CultureInfo.InvariantCulture) +
             "\n%%EOF\n");
@@ -9003,7 +9102,6 @@ internal static class Program
             path,
             memory.ToArray());
     }
-
     private static void CreateSimplePdf(
         string path,
         string text)

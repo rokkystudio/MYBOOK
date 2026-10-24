@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.4.7
+Текущая версия: 1.4.8
 
 Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
 
@@ -52,7 +52,7 @@
 - [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
 - [ ] Image XObject: `/SMask /Matte` для decoded 8-bit Gray/RGB/CMYK уже распремультиплицируется по alpha samples с проверкой component count; Indexed+Matte и Matte поверх DCT/JPEG остаются unsupported, потому что требуют decoded source samples. Остались Indexed/JPEG, нестандартный `/Decode` поверх DCT/JPEG и дополнительные ColorSpace.
 - [ ] Image filters: CCITT, JPX и JBIG2; LZW с `EarlyChange` 0/1 и predictor parameters уже поддерживается для streams и Image XObject.
-- [ ] Шифрование/password-protected PDF: trailer `/Encrypt` теперь распознаётся сразу после xref-chain и выдаёт явную unsupported-ошибку до разрешения catalog/objects. Осталась собственно Standard Security Handler decrypt/password support.
+- [ ] Шифрование/password-protected PDF: Standard Security Handler RC4 `V=1/2`, `R=2/3` поддерживает проверку пустого user password, file/object key derivation и дешифровку обычных indirect strings/streams до filter decoding; encryption dictionary не дешифруется. Encrypted object streams пока явно отклоняются. Остались ввод пароля, owner-password authentication, `R>=4` crypt filters/AES и encrypted object-stream support.
 
 ## DjVu
 
