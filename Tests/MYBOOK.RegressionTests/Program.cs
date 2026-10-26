@@ -4587,6 +4587,26 @@ internal static class Program
                 .SequenceEqual(["ン", "イ"]),
             "DOC irohaFullWidth должен повторять документированный 48-символьный sequence.");
         Assert(
+            BuildSimpleListMarkers(0x2D, "\0", 2)
+                .SequenceEqual(["א", "ב"]),
+            "DOC hebrew1 должен начинаться с Hebrew numerals 1, 2.");
+        Assert(
+            BuildSimpleListMarkers(0x2D, "\0", 2, 10)
+                .SequenceEqual(["י", "יא"]),
+            "DOC hebrew1 должен использовать additive tens.");
+        Assert(
+            BuildSimpleListMarkers(0x2D, "\0", 2, 15)
+                .SequenceEqual(["טו", "טז"]),
+            "DOC hebrew1 должен использовать традиционные формы 15 и 16.");
+        Assert(
+            BuildSimpleListMarkers(0x2D, "\0", 2, 123)
+                .SequenceEqual(["קכג", "קכד"]),
+            "DOC hebrew1 должен форматировать 123/124 как קכג/קכד.");
+        Assert(
+            BuildSimpleListMarkers(0x2D, "\0", 2, 399)
+                .SequenceEqual(["שצט", null]),
+            "DOC hebrew1 должен ограничиваться стандартным диапазоном до 399.");
+        Assert(
             BuildSimpleListMarkers(0x2F, "\0", 2)
                 .SequenceEqual(["\u200Fא", "\u200Fב"]),
             "DOC hebrew2 должен добавлять Word RTL marker перед Hebrew alphabet symbol.");
