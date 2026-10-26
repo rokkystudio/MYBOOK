@@ -60,6 +60,7 @@ internal static class Program
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
+            ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
             ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
             ("PDF LZW decoder", TestPdfLzwDecoder),
@@ -9283,6 +9284,78 @@ internal static class Program
                 "href=\"file:",
                 StringComparison.OrdinalIgnoreCase),
             "DOCX renderer не должен выпускать file: hyperlink.");
+    }
+
+    private static void TestPdfSaslPrep()
+    {
+        Assert(
+            string.Equals(
+                PdfSaslPrep.Prepare("I\u00ADX"),
+                "IX",
+                StringComparison.Ordinal) &&
+            string.Equals(
+                PdfSaslPrep.Prepare("\u00AA"),
+                "a",
+                StringComparison.Ordinal) &&
+            string.Equals(
+                PdfSaslPrep.Prepare("\u2168"),
+                "IX",
+                StringComparison.Ordinal),
+            "PDF SASLprep должен проходить RFC 4013 mapping/NFKC examples.");
+
+        Assert(
+            string.Equals(
+                PdfSaslPrep.Prepare("cafe\u0301"),
+                "caf\u00E9",
+                StringComparison.Ordinal) &&
+            string.Equals(
+                PdfSaslPrep.Prepare("\uFF21\uFF22"),
+                "AB",
+                StringComparison.Ordinal) &&
+            string.Equals(
+                PdfSaslPrep.Prepare("a\u00A0b"),
+                "a b",
+                StringComparison.Ordinal),
+            "PDF SASLprep должен использовать Unicode 3.2 NFKC и non-ASCII space mapping.");
+
+        var prohibitedRejected = false;
+        try
+        {
+            PdfSaslPrep.Prepare("\u0007");
+        }
+        catch (ArgumentException)
+        {
+            prohibitedRejected = true;
+        }
+
+        var bidiRejected = false;
+        try
+        {
+            PdfSaslPrep.Prepare("\u06271");
+        }
+        catch (ArgumentException)
+        {
+            bidiRejected = true;
+        }
+
+        Assert(
+            prohibitedRejected &&
+            bidiRejected &&
+            string.Equals(
+                PdfSaslPrep.Prepare("\u06271\u0628"),
+                "\u06271\u0628",
+                StringComparison.Ordinal),
+            "PDF SASLprep должен применять prohibited и BiDi rules RFC 4013.");
+
+        var truncated =
+            PdfSaslPrep.PasswordBytes(
+                new string('a', 126) +
+                "\u00E9");
+
+        Assert(
+            truncated.Length == 127 &&
+            truncated[126] == 0xC3,
+            "PDF AES-256 password должен обрезаться после UTF-8 encoding ровно до 127 bytes.");
     }
 
     private static void TestPdfIndexedMatte()
