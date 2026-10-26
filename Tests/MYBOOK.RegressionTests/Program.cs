@@ -201,10 +201,10 @@ internal static class Program
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
-            \trowd\trqc\trleft720\trgaph60\trhdr\trkeep\trrh-480\trbrdrt\brdrdash\brdrw60\brdrcf2\trbrdrl\brdrs\brdrw20\brdrcf2\trbrdrb\brdrdb\brdrw40\brdrcf2\trbrdrr\brdrdot\brdrw30\brdrcf2\trbrdrh\brdrs\brdrw20\brdrcf2\trbrdrv\brdrdot\brdrw20\brdrcf2\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
-            \trowd\trqr\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
-            \trowd\trql\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
-            \trowd\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
+            \trowd\trqc\trleft720\trgaph60\trftsWidth2\trwWidth5000\trhdr\trkeep\trrh-480\trbrdrt\brdrdash\brdrw60\brdrcf2\trbrdrl\brdrs\brdrw20\brdrcf2\trbrdrb\brdrdb\brdrw40\brdrcf2\trbrdrr\brdrdot\brdrw30\brdrcf2\trbrdrh\brdrs\brdrw20\brdrcf2\trbrdrv\brdrdot\brdrw20\brdrcf2\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
+            \trowd\trqr\trftsWidth3\trwWidth1440\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
+            \trowd\trql\trftsWidth1\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
+            \trowd\trftsWidth0\trwWidth777\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
             \trowd\clftsWidth0\clwWidth777\cellx600\clftsWidth1\clwWidth999\cellx1200\clftsWidth2\clwWidth1250\cellx1800\clftsWidth3\clwWidth600\cellx2400\intbl NullWidth\cell AutoWidth\cell PercentWidth\cell TwipsWidth\cell\row
             \trowd\clbrdrt\brdrhair\brdrw10\brdrcf1\cellx600\clbrdrt\brdrdashd\brdrw20\brdrcf1\cellx1200\clbrdrt\brdrdashdd\brdrw20\brdrcf1\cellx1800\clbrdrt\brdrtriple\brdrw30\brdrcf1\cellx2400\intbl Hair\cell DotDash\cell DotDotDash\cell Triple\cell\row
             \pard Between RTF tables\par
@@ -437,6 +437,25 @@ internal static class Program
             table.Rows[1].Alignment == DocumentTableAlignment.Right &&
             table.Rows[2].Alignment == DocumentTableAlignment.Left,
             "RTF trql/trqc/trqr, trleft и trgaph должны сохраняться на уровне строки.");
+
+        Assert(
+            table.Rows[0].PreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Percent,
+                Value: 100
+            } &&
+            table.Rows[1].PreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Points,
+                Value: 72
+            } &&
+            table.Rows[2].PreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Auto,
+                Value: null
+            } &&
+            table.Rows[3].PreferredWidth == null,
+            "RTF trftsWidth/trwWidth должны сохранять preferred row width с точными units.");
 
         var borderedRow = table.Rows[0];
 
@@ -762,6 +781,21 @@ internal static class Program
             html,
             "data-row-alignment=\"right\"",
             "RTF rendered right row alignment metadata");
+
+        AssertContains(
+            html,
+            "data-preferred-width-kind=\"percent\" data-preferred-width-value=\"100\"",
+            "RTF rendered preferred row width percent metadata");
+
+        AssertContains(
+            html,
+            "data-preferred-width-kind=\"points\" data-preferred-width-value=\"72\"",
+            "RTF rendered preferred row width points metadata");
+
+        AssertContains(
+            html,
+            "data-preferred-width-kind=\"auto\"",
+            "RTF rendered preferred row width auto metadata");
 
         AssertContains(
             html,
