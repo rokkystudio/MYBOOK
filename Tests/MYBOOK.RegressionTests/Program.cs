@@ -4567,13 +4567,25 @@ internal static class Program
                 .SequenceEqual(["Я", null]),
             "DOC russianUpper не должен синтезировать неподтверждённый rollover после 32 символов.");
         Assert(
+            BuildSimpleListMarkers(0x0D, "\0", 2)
+                .SequenceEqual(["ｲ", "ﾛ"]),
+            "DOC iroha должен использовать документированный half-width Iroha sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x0D, "\0", 2, 24)
+                .SequenceEqual(["ｳ", "ヰ"]),
+            "DOC iroha должен сохранять full-width archaic Wi внутри half-width sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x0D, "\0", 2, 48)
+                .SequenceEqual(["ﾝ", "ｲ"]),
+            "DOC iroha должен повторять 48-символьный sequence после ン.");
+        Assert(
             BuildSimpleListMarkers(0x15, "\0", 2)
                 .SequenceEqual(["イ", "ロ"]),
             "DOC irohaFullWidth должен начинаться с И-Ро-Ха sequence.");
         Assert(
-            BuildSimpleListMarkers(0x15, "\0", 2, 47)
-                .SequenceEqual(["ス", null]),
-            "DOC irohaFullWidth не должен синтезировать неподтверждённое значение после 47 символов.");
+            BuildSimpleListMarkers(0x15, "\0", 2, 48)
+                .SequenceEqual(["ン", "イ"]),
+            "DOC irohaFullWidth должен повторять документированный 48-символьный sequence.");
         Assert(
             BuildSimpleListMarkers(0x2F, "\0", 2)
                 .SequenceEqual(["\u200Fא", "\u200Fב"]),
