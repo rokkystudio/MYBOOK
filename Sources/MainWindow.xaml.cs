@@ -14,6 +14,7 @@ using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using Book.Documents;
 using Book.Formats;
+using Book.Formats.Pdf;
 using Book.Rendering;
 using MYBOOK.Services;
 using MYBOOK.UI;
@@ -282,8 +283,14 @@ public partial class MainWindow : Window
             {
                 ClearLocalHtmlMapping();
 
-                var document = SupportedFormatRegistry.ReadDocument(
-                    fullPath);
+                var document =
+                    ReadDocumentWithPasswordPrompt(
+                        fullPath);
+
+                if (document == null)
+                {
+                    return;
+                }
 
                 UpdateNavigationPanel(document);
 
@@ -317,6 +324,56 @@ public partial class MainWindow : Window
         catch (Exception error)
         {
             ShowOpenError(error);
+        }
+    }
+
+    /// <summary>
+    /// Читает документ и, только для password-protected PDF, предлагает
+    /// повторный ввод пароля до успешной аутентификации или отмены.
+    /// Пароль не сохраняется в settings и не добавляется в recent metadata.
+    /// </summary>
+    private DocumentModel? ReadDocumentWithPasswordPrompt(
+        string fullPath)
+    {
+        try
+        {
+            return SupportedFormatRegistry.ReadDocument(
+                fullPath);
+        }
+        catch (PdfPasswordException)
+            when (string.Equals(
+                Path.GetExtension(fullPath),
+                ".pdf",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            // Empty password не подошёл; ниже запрашивается явный password.
+        }
+
+        var previousPasswordRejected = false;
+
+        while (true)
+        {
+            var dialog =
+                new PdfPasswordWindow(
+                    this,
+                    Path.GetFileName(fullPath),
+                    previousPasswordRejected);
+
+            if (dialog.ShowDialog() != true)
+            {
+                return null;
+            }
+
+            try
+            {
+                return PdfDocumentReader.Read(
+                    fullPath,
+                    dialog.Password);
+            }
+            catch (PdfPasswordException)
+            {
+                previousPasswordRejected = true;
+            }
         }
     }
 

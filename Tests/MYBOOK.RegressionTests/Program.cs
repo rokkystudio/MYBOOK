@@ -9356,6 +9356,36 @@ internal static class Program
             truncated.Length == 127 &&
             truncated[126] == 0xC3,
             "PDF AES-256 password должен обрезаться после UTF-8 encoding ровно до 127 bytes.");
+
+        var legacyPassword =
+            PdfPasswordEncoding.EncodeLegacy(
+                "A\u2022\u20AC\u00E9");
+
+        Assert(
+            legacyPassword.SequenceEqual(
+                new byte[]
+                {
+                    0x41,
+                    0x80,
+                    0xA0,
+                    0xE9
+                }),
+            "PDF legacy password должен кодироваться точным PDFDocEncoding.");
+
+        var unsupportedLegacyCharacterRejected = false;
+        try
+        {
+            PdfPasswordEncoding.EncodeLegacy(
+                "\u0416");
+        }
+        catch (InvalidDataException)
+        {
+            unsupportedLegacyCharacterRejected = true;
+        }
+
+        Assert(
+            unsupportedLegacyCharacterRejected,
+            "PDF legacy password не должен эвристически заменять символы вне PDFDocEncoding.");
     }
 
     private static void TestPdfIndexedMatte()

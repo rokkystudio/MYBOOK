@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.8
+Версия профиля: 1.5.9
 
 ## Ready for use
 
@@ -76,10 +76,10 @@ MYBOOK считает готовыми к обычному пользовате�
 - DeviceCMYK DCT post-processing и дополнительные редкие ColorSpace остаются вне профиля.
 - CCITT Group 3/Group 4 filters входят в профиль; JPX и JBIG2 filters остаются вне профиля.
 - Revision 5/6 Unicode passwords проходят SASLprep на фиксированных Unicode 3.2 tables, UTF-8 и truncation до 127 bytes; R6 user/owner authentication использует Algorithm 2.B hardened hash и AESV3. Legacy revisions сохраняют точный byte-password API.
-- Password prompt/UI не является частью format reader profile.
+- Password-protected PDF открывается через локализованный password prompt; неверный пароль запрашивается повторно, пароль не сохраняется. R2-R4 string passwords кодируются точным PDFDocEncoding, R5/R6 — SASLprep/UTF-8.
 
 ## Future formats
 
 DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
-поддерживаемый формат MYBOOK 1.5.8. Его reader является отдельной будущей
+поддерживаемый формат MYBOOK 1.5.9. Его reader является отдельной будущей
 функциональностью и должен пройти те же readiness gates до добавления в реестр.

@@ -46,6 +46,10 @@ internal static class LocalizationService
         { "tooltip_minimize", "Minimize" },
         { "tooltip_maximize", "Maximize / restore" },
         { "open_error", "Unable to open document" },
+        { "pdf_password_title", "PDF password" },
+        { "pdf_password_prompt", "Enter the password for “{0}”." },
+        { "pdf_password_wrong", "The password is incorrect. Try again or cancel." },
+        { "cancel", "Cancel" },
         { "association_error", "Unable to change file association" },
         { "supported_documents", "Supported documents" }
     };
@@ -82,6 +86,10 @@ internal static class LocalizationService
         { "tooltip_minimize", "Свернуть" },
         { "tooltip_maximize", "Развернуть / восстановить" },
         { "open_error", "Не удалось открыть документ" },
+        { "pdf_password_title", "Пароль PDF" },
+        { "pdf_password_prompt", "Введите пароль для «{0}»." },
+        { "pdf_password_wrong", "Пароль неверен. Повторите ввод или отмените открытие." },
+        { "cancel", "Отмена" },
         { "association_error", "Не удалось изменить привязку формата" },
         { "supported_documents", "Поддерживаемые документы" }
     };
