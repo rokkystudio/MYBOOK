@@ -1,0 +1,89 @@
+# MYBOOK format support
+
+Версия профиля: 1.5.0
+
+## Ready for use
+
+MYBOOK считает готовыми к обычному пользовательскому чтению все форматы,
+которые присутствуют в `SupportedFormatRegistry`:
+
+| Расширение | Профиль поддержки |
+| --- | --- |
+| `.fb2` | FictionBook 2: метаданные, body, текст, структура, таблицы, ссылки, anchors и встроенные изображения. |
+| `.epub` | EPUB 2/3: package/manifest/spine, XHTML, CSS/resources, изображения/SVG, navigation/NCX, landmarks/page-list и note semantics. |
+| `.html`, `.htm` | Локальный HTML открывается напрямую через изолированное virtual-host mapping WebView2. |
+| `.txt` | Обычный текст как preformatted document. |
+| `.md` | Markdown через фиксированный Markdig pipeline с advanced extensions. |
+| `.rtf` | Основной RTF reading profile: Unicode/codepages, formatting, links/fields, tables/nesting, raster/vector pictures, Symbol charset и явно объявленные OEM codepages. |
+| `.doc` | Word 97–2003 Binary/CFB reading profile и RTF-файлы с расширением .doc; текст, стили, списки, таблицы, sections, notes, headers/footers, fields, images и поддерживаемый OfficeArt. |
+| `.docx` | Word OpenXML flow document: styles, lists, tables, images, relationships, hyperlinks, bookmarks и section metadata. |
+| `.pdf` | PDF fixed-page reading profile: classic/xref streams, incremental updates, object streams, text/fonts, paths, images, links/outlines, encryption profiles и поддерживаемые stream filters. |
+
+“Ready for use” означает, что зарегистрированный формат проходит единый путь
+от открытия пользовательского файла до модели и итогового рендера, имеет
+контролируемый отказ на повреждённом/неподдерживаемом вводе и покрыт
+регрессионными fixtures. Это не означает реализацию каждого редкого элемента
+соответствующей спецификации.
+
+## Readiness gates
+
+Перед выпуском профиля выполняются следующие проверки:
+
+- Release build без warnings/errors.
+- Полный regression suite.
+- Все поддерживаемые файлы из локального `Books` corpus открываются; reader-backed
+  документы дополнительно проходят полный `reader -> DocumentModel -> HTML renderer` путь.
+- DOC/PDF проходят детерминированный malformed-input набор.
+- Входные файлы имеют общий размерный предел; EPUB/DOCX имеют limits на ZIP entries,
+  размер распакованных parts и compression ratio.
+- XML для FB2/EPUB/DOCX читается без обработки DTD и внешних сущностей и с
+  ограничением размера XML.
+- RTF nesting и PDF page-tree nesting ограничены.
+- Декодированные PDF Flate/LZW/RunLength streams имеют отдельный предел.
+- Unsupported конструкции, для которых нельзя гарантировать корректную
+  интерпретацию, завершаются явной ошибкой вместо приблизительного рендера.
+
+## Known fidelity limits
+
+Эти пункты не блокируют обычное чтение, но остаются backlog для расширения
+совместимости и точности.
+
+### DOCX
+
+- Нет полноценного pagination/page-layout engine; документ читается как flow content.
+
+### DOC
+
+- Редкие list/table style и locale-specific numbering variants.
+- Часть редких OfficeArt connector/fill/arrow presets.
+- Некоторые header/footer, note, field и section layout semantics требуют
+  полноценного pagination engine.
+- Legacy Symbol/OEM byte mapping и старые до-Word-97 Binary variants не входят
+  в готовый профиль.
+- Нет полноценного pagination/page-layout engine.
+
+### RTF
+
+- Редкие row/cell и paragraph controls.
+- Отрицательное picture crop-extension и scale без goal-size сохраняются без
+  недокументированного угадывания DPI.
+- Редкие charset/codepage combinations за пределами точных известных mappings.
+- Некоторые декоративные border styles имеют CSS fallback, а не pixel-identical Word rendering.
+
+### PDF
+
+- ExtGState soft-mask group compositing не реализован полностью.
+- Predefined named Type0 CMap без embedded Encoding stream не интерпретируется
+  как Identity: reader выдаёт явную unsupported-ошибку.
+- DeviceCMYK DCT post-processing и дополнительные редкие ColorSpace остаются вне профиля.
+- CCITT, JPX и JBIG2 filters остаются вне профиля.
+- Revision 6 non-empty password preprocessing требует полноценного Unicode
+  password API/SASLprep path; пустой R6 password и поддерживаемые legacy/R5
+  password paths работают.
+- Password prompt/UI не является частью format reader profile.
+
+## Future formats
+
+DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
+поддерживаемый формат MYBOOK 1.5.0. Его reader является отдельной будущей
+функциональностью и должен пройти те же readiness gates до добавления в реестр.

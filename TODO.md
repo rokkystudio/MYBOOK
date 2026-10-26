@@ -1,19 +1,17 @@
 # MYBOOK TODO
 
-Текущая версия: 1.4.26
+Текущая версия: 1.5.0
 
-Текущая цель: полностью завершить чтение, нейтральную модель и рендер всех уже поддерживаемых форматов. Задачи интерфейса и оболочки не имеют приоритета до закрытия форматных блоков.
+Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
-В этом файле перечислены только незавершённые задачи.
+В этом файле перечислены только незавершённые задачи и будущие форматы.
 
 ## Архитектура и тесты
 
 - [ ] Добавить общий слой пользовательских render overrides для всех потоковых форматов: полное или частичное переопределение семейства шрифта, размера, начертания, цвета текста и фона без потери исходной модели документа.
 - [ ] Добавить независимые коррекции яркости, контраста и насыщенности для текста, фона и изображений, включая изображения внутри страницы, с нейтральными значениями без визуального изменения исходного документа.
 - [ ] Сохранять исходные встроенные шрифты/цвета/стили форматов в модели независимо от пользовательских render overrides, чтобы настройки чтения применялись только на этапе рендера.
-- [ ] Автоматизировать regression-тесты на открытых corpus-файлах из `Books`.
-- [ ] Добавить fuzz tests для бинарных readers DOC/PDF/DjVu.
-- [ ] Ввести ограничения памяти, размера потоков и глубины вложенности для недоверенных документов.
+- [ ] Расширить fuzz/mutation corpus для DOC/PDF за пределы детерминированного malformed-input набора и подключить его к длительному quality-прогону.
 
 ## DOCX
 
@@ -38,7 +36,7 @@
 - [ ] Таблицы: cell borders через `clbrdr*` и row outer/inside borders через `trbrdrt`/`trbrdrl`/`trbrdrb`/`trbrdrr`/`trbrdrh`/`trbrdrv` сохраняются с width/color/spacing/shadow/frame. Поддерживаются `brdrs`, `brdrdb`, `brdrdot`, `brdrdash`, `brdrhair`, `brdrdashd`/`brdrdashdot`, `brdrdashdd`/`brdrdashdotdot`, `brdrtriple`; точные Word border type codes сохраняются в модели, HTML использует доступный CSS fallback для hairline/dot-dash/triple. Cell shading через `clshdng`/`clcfpat`/`clcbpat` сохраняется в нейтральной модели; точные 0%/100% fills визуально рендерятся, промежуточные patterned fills сохраняют процент и цвета как metadata. Horizontal `clmgf`/`clmrg` и vertical `clvmgf`/`clvmrg` merges сохраняются как `ColumnSpan`/`RowSpan`; `cellx` задаёт фактическую ширину ячеек; `trhdr`, `trkeep`, `trrh`, `clvertal*`, twips-padding через `clpad*` + unit 3, `clNoWrap` и `clFitText` поддерживаются. Nested tables через `itap`, `nestcell`, `nestrow` и `nesttableprops` поддерживаются с рекурсивными `DocumentTable` внутри cell blocks, собственными row/cell definitions и vertical merge state по каждому depth. `clftsWidth`/`clwWidth` сохраняют preferred cell width строго по RTF units: null использует `cellx`, auto не задаёт preferred value, percent хранится в 1/50 процента, twips переводятся в points; свойства также работают в nested cell definitions и экспортируются HTML metadata. Row-level `trql`/`trqc`/`trqr`, signed `trleft` и `trgaph` сохраняются отдельно в `DocumentTableRow` и экспортируются как metadata без ложного CSS table-layout эквивалента. `trftsWidth`/`trwWidth` сохраняют preferred row width отдельно для каждой строки: null использует `cellx`, auto не задаёт preferred value, percent хранится в 1/50 процента, twips переводятся в points. Cell text flow через `cltxlrtb`, `cltxtbrl`, `cltxbtlr`, `cltxlrtbv` и `cltxtbrlv` теперь сохраняется в общей `DocumentTableCell.TextFlow` модели, проходит через horizontal/vertical merges и nested cell definitions и экспортируется HTML metadata. Cell shading теперь поддерживает `clshdng` и все 12 стандартных `clbg*`/`clbgdk*` stripe/cross patterns с foreground/background colors; explicit hatch pattern визуализируется общим Ipat renderer даже при наличии `clshdng`, а percentage остаётся metadata. `clshdrawnil` явно сбрасывает shading. Диагональные borders `cldglu`/`cldgll` сохраняются отдельно со всеми border properties и экспортируются как HTML metadata без ложной CSS-диагонали. Row direction через `rtlrow`/`ltrrow`, row padding `trpadd*`, inter-cell spacing `trspd*`, row shading `trshdng`/`trcfpat`/`trcbpat` со всеми 12 hatch-pattern controls и `clhidemark` сохраняются в нейтральной модели; layout-sensitive padding/spacing/direction экспортируются как точные HTML metadata, row shading визуализируется общим shading renderer. Полный документированный набор Word border styles от thick и thin/thick gap variants до wave/double-wave, dash-small-gap, dash-dot-stroked, emboss/engrave и inset/outset сохраняет точные border type codes; CSS renderer продолжает использовать только доступный визуальный fallback. Остались редкие row/cell properties без прямого нейтрального представления и точное CSS/SVG-воспроизведение декоративных border styles.
 - [ ] Изображения: PNG/JPEG, стандартный BI_RGB `dibitmap`, `emfblip` и `wmetafileN` поддерживаются; WMF сохраняет mapping mode 1..8 в нейтральной модели/HTML metadata, EMF/WMF payload валидируется по file signature. `picw`/`pich` сохраняются как исходные pixel-размеры, `picwgoal`/`pichgoal` вместе с `picscalex`/`picscaley` задают точные target-размеры в points и применяются HTML renderer. `piccropl`/`piccropt`/`piccropr`/`piccropb` сохраняются как signed crop offsets; положительные crop offsets теперь визуально применяются через CSS `clip-path`, отрицательные остаются metadata, потому что расширение canvas нельзя корректно воспроизвести без layout/canvas перерасчёта. Остались дополнительные варианты `pict`, отрицательное crop-extension rendering и scale без goal-размера (сохраняется как metadata без угадывания DPI).
 - [ ] Стили абзацев: `tx` tab stops с `tql`/`tqc`/`tqr`/`tqdec` alignment и `tldot`/`tlhyph`/`tlul`/`tlth`/`tleq` leaders сохраняются в нейтральной модели и HTML metadata; символы `tab` сохраняются в reflow. `pagebb` сохраняется как page-break-before и применяется HTML renderer, `outlinelevel` сохраняется в нейтральной модели и HTML metadata. Paragraph shading через `shading`/`cfpat`/`cbpat` и все 12 `bg*`/`bgdk*` stripe/cross patterns теперь сохраняется в `DocumentParagraph.Shading` и визуализируется общим Ipat renderer. Остались точное позиционирование custom tab stops в layout и другие редкие paragraph controls; alignment, indents, spacing, `slmult`, keep/keep-next, widow control и bidi direction уже поддерживаются.
-- [ ] Расширенные Unicode/codepage edge cases: Symbol/OEM charsets, редкие charset/codepage combinations и malformed fallback; известные `fcharset` mapping и DBCS hex sequences уже поддерживаются.
+- [ ] Расширенные Unicode/codepage edge cases: Symbol charset сохраняется через Windows private-use mapping `U+F000+byte`, `fcharset255` поддерживается при явно объявленной OEM codepage, известные `fcharset` mappings и DBCS hex sequences поддерживаются. Остались редкие charset/codepage combinations и malformed producer-specific fallback.
 
 ## Markdown / TXT / HTML
 
@@ -48,12 +46,12 @@
 ## PDF
 
 - [ ] ExtGState: стандартные `/BM` blend modes теперь проходят через graphics state/q/Q и fixed-page model; массив `/BM` выбирает первый поддерживаемый mode, SVG использует точный `mix-blend-mode`. `/OP`, `/op` и `/OPM` сохраняются через graphics state и экспортируются как device-dependent metadata без ложной браузерной эмуляции. `/SMask /None` корректно сбрасывает state, dictionary soft mask отмечается как активная и также восстанавливается через q/Q. Осталось реальное compositing содержимого ExtGState soft-mask group; Image XObject `/SMask` уже рендерится отдельно.
-- [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream.
+- [ ] Predefined named Type0 CMap без встроенного `/Encoding` stream: non-Identity имена сейчас намеренно завершаются явной unsupported-ошибкой, чтобы не выдавать неверное Identity-подобное code→CID mapping. Осталась реализация точных predefined CMap tables.
 - [ ] Image XObject: `/SMask /Matte` для decoded 8-bit Gray/RGB/CMYK распремультиплицируется по alpha samples; Indexed+Matte поддерживается строго в Indexed color space: decoded palette index распремультиплицируется до RGB palette lookup, `/Matte` валидируется как один index-component. DCT/JPEG теперь декодируется в точные 8-bit samples, когда post-processing действительно нужен: для DeviceGray/DeviceRGB поддерживаются нестандартный `/Decode` и `/SMask /Matte`, grayscale DCT разрешён как `/SMask`, а 8-bit Indexed+DCT проходит через grayscale sample decode и palette lookup. JPEG geometry сверяется с `/Width`/`/Height`; обычный DCT без post-processing сохраняется как исходный JPEG. DeviceCMYK DCT, требующий decoded samples, остаётся явным unsupported, чтобы не подменять PDF/JPEG color-transform semantics приближением. Остались дополнительные ColorSpace и CMYK DCT post-processing.
 - [ ] Image filters: `RunLengthDecode`/`RL` поддерживается для обычных streams и Image XObject с обязательным EOD marker 128 и строгой проверкой literal/repeat runs; LZW с `EarlyChange` 0/1 и predictor parameters тоже поддерживается. Остались CCITT, JPX и JBIG2.
 - [ ] Шифрование/password-protected PDF: Standard Security Handler RC4 `V=1/2`, `R=2/3`, `V=4/R=4` и AESV3 `V=5/R=5` поддерживают не только пустой пароль, но и точные caller-provided password bytes для user/owner authentication. Legacy owner password восстанавливает padded user password из `/O` и затем заново вычисляет file key; R5 проверяет 48-byte `U/O`, validation/key salts и `/UE`/`/OE`. `PdfDocumentReader.Read(path, passwordBytes)` передаёт пароль в security handler без эвристического string→byte преобразования. Encrypted object streams поддерживаются; xref streams остаются незашифрованными. `V=4/R=4` crypt filters поддерживают `StrF`/`StmF`, `Identity`, `V2`, `AESV2`, явный первый `/Crypt` и `EncryptMetadata=false`. Revision 6 (`V=5/R=6`) поддерживает пустой пароль через Algorithm 2.B hardened hash и AESV3, но non-empty R6 password bytes пока намеренно отклоняются до реализации обязательного SASLprep/UTF-8 preprocessing. Остался пользовательский prompt/UI для ввода пароля и полный non-empty R6 preprocessing.
 
-## DjVu
+## DjVu — будущий формат, не зарегистрирован в SupportedFormatRegistry
 
 - [ ] IFF/DjVu container.
 - [ ] `FORM:DJVU` / `FORM:DJVM`.
@@ -88,13 +86,11 @@
 - [ ] Single-file/self-contained стратегия.
 - [ ] Проверка наличия WebView2 Runtime и понятное сообщение пользователю.
 
-## Финальное тестирование форматов
+## Расширенное тестирование совместимости
 
-- [ ] После полного завершения reader/model/renderer каждого поддерживаемого формата провести отдельный финальный regression-прогон на реальных документах, а не только на синтетических fixtures.
-- [ ] Для сложных форматов PDF, DOCX, DOC, EPUB и DjVu собрать расширенный corpus с документами из разных генераторов, версий спецификаций и с редкими/пограничными возможностями.
-- [ ] Проверить для каждого полностью готового формата не только извлечение текста, но и структуру, стили, изображения, таблицы, ссылки, навигацию, встроенные ресурсы и итоговый HTML/SVG/page rendering.
-- [ ] Выполнить визуальное сравнение сложных документов с эталонным отображением и добавить найденные расхождения как постоянные regression fixtures.
-- [ ] Перед признанием формата полностью готовым прогнать malformed/truncated/unsupported edge cases и убедиться, что ошибки явные и не приводят к скрыто повреждённому рендеру.
+- [ ] Для PDF, DOCX, DOC и EPUB расширить corpus документами из разных генераторов и версий спецификаций, особенно с редкими возможностями, которые перечислены в fidelity backlog.
+- [ ] Выполнить визуальное сравнение сложных DOC/RTF/DOCX/PDF документов с эталонным отображением и добавить найденные расхождения как постоянные regression fixtures.
+- [ ] Для каждой новой реализованной advanced-возможности добавлять malformed/unsupported regression, сохраняя правило явного отказа вместо приблизительной интерпретации.
 
 ## Тестовый корпус
 

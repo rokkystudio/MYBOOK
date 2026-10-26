@@ -13,6 +13,7 @@ using FlagCatalog = Flags.Flags;
 using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using Book.Documents;
+using Book.Formats;
 using Book.Rendering;
 using MYBOOK.Services;
 using MYBOOK.UI;
@@ -263,10 +264,8 @@ public partial class MainWindow : Window
             await EnsureReaderAsync();
 
             var fullPath = Path.GetFullPath(path);
-            if (!File.Exists(fullPath))
-            {
-                throw new FileNotFoundException("Файл документа не найден.", fullPath);
-            }
+            DocumentInputGuard.ValidateFile(
+                fullPath);
 
             var format = SupportedFormatRegistry.GetByPath(
                 fullPath);

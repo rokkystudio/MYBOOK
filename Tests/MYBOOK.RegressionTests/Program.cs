@@ -8,8 +8,10 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Book.Diagnostics;
 using Book.Documents;
+using Book.Formats;
 using Book.Formats.Doc;
 using Book.Formats.Pdf;
+using Book.Formats.Rtf;
 using Book.Rendering;
 using MYBOOK.Services;
 
@@ -33,6 +35,8 @@ internal static class Program
         var tests = new (string Name, Action Test)[]
         {
             ("Supported format registry", TestSupportedFormatRegistry),
+            ("Document input guard", () => TestDocumentInputGuard(temporaryDirectory)),
+            ("Binary malformed inputs", () => TestBinaryMalformedInputs(temporaryDirectory)),
             ("TXT reader", () => TestTextReader(temporaryDirectory)),
             ("Markdown reader", () => TestMarkdownReader(temporaryDirectory)),
             ("RTF reader", () => TestRtfReader(temporaryDirectory)),
@@ -61,7 +65,8 @@ internal static class Program
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),
-            (".doc corpus dispatch", () => TestDocCorpusDispatch(repositoryRoot))
+            (".doc corpus dispatch", () => TestDocCorpusDispatch(repositoryRoot)),
+            ("Supported corpus smoke", () => TestSupportedCorpusSmoke(repositoryRoot))
         };
 
         var failures = 0;
@@ -142,6 +147,174 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// Проверяет общие resource limits и безопасную XML-конфигурацию readers.
+    /// </summary>
+    private static void TestDocumentInputGuard(string directory)
+    {
+        var oversizedPath = Path.Combine(
+            directory,
+            "oversized.txt");
+
+        using (var stream = new FileStream(
+                   oversizedPath,
+                   FileMode.Create,
+                   FileAccess.Write,
+                   FileShare.None))
+        {
+            stream.SetLength(
+                DocumentInputGuard.MaximumFileBytes +
+                1);
+        }
+
+        var oversizedRejected = false;
+
+        try
+        {
+            SupportedFormatRegistry.ReadDocument(
+                oversizedPath);
+        }
+        catch (InvalidDataException)
+        {
+            oversizedRejected = true;
+        }
+
+        Assert(
+            oversizedRejected,
+            "Общий file-size limit должен срабатывать до чтения oversized документа.");
+
+        var externalEntityPath = Path.Combine(
+            directory,
+            "xml-external-entity.txt");
+        File.WriteAllText(
+            externalEntityPath,
+            "EXTERNAL ENTITY MUST NOT BE READ",
+            Encoding.UTF8);
+
+        var xml = $"""
+            <?xml version="1.0"?>
+            <!DOCTYPE root SYSTEM "{new Uri(externalEntityPath).AbsoluteUri}">
+            <root>safe</root>
+            """;
+
+        using var input = new MemoryStream(
+            Encoding.UTF8.GetBytes(xml));
+        var document = DocumentInputGuard.LoadXml(
+            input,
+            "Input guard regression");
+
+        AssertEqual(
+            "safe",
+            document.Root?.Value ?? string.Empty,
+            "XML DTD должен игнорироваться без external resolution");
+
+        var deepRtfPath = Path.Combine(
+            directory,
+            "deep-nesting.rtf");
+        File.WriteAllText(
+            deepRtfPath,
+            "{\\rtf1" +
+            new string('{', 1025) +
+            "x" +
+            new string('}', 1025) +
+            "}",
+            Encoding.ASCII);
+
+        var deepRtfRejected = false;
+
+        try
+        {
+            RtfDocumentReader.Read(
+                deepRtfPath);
+        }
+        catch (InvalidDataException)
+        {
+            deepRtfRejected = true;
+        }
+
+        Assert(
+            deepRtfRejected,
+            "RTF group-depth limit должен отклонять чрезмерно вложенный документ.");
+    }
+
+    /// <summary>
+    /// Передаёт детерминированные повреждённые бинарные документы в DOC/PDF readers
+    /// и требует контролируемого отказа без runtime-specific аварий.
+    /// </summary>
+    private static void TestBinaryMalformedInputs(string directory)
+    {
+        static void AssertControlled(
+            Action action,
+            string context)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception error)
+                when (error is InvalidDataException or
+                      EndOfStreamException or
+                      IOException or
+                      NotSupportedException or
+                      ArgumentException)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"{context}: повреждённый документ был принят без ожидаемого структурного отказа.");
+        }
+
+        var random = new Random(0x4D59424F);
+
+        for (var index = 0; index < 32; index++)
+        {
+            var docBytes = new byte[
+                512 +
+                index * 17];
+            random.NextBytes(docBytes);
+
+            new byte[]
+            {
+                0xD0, 0xCF, 0x11, 0xE0,
+                0xA1, 0xB1, 0x1A, 0xE1
+            }.CopyTo(
+                docBytes,
+                0);
+
+            var docPath = Path.Combine(
+                directory,
+                $"malformed-{index:00}.doc");
+            File.WriteAllBytes(
+                docPath,
+                docBytes);
+
+            AssertControlled(
+                () => SupportedFormatRegistry.ReadDocument(
+                    docPath),
+                $"DOC malformed fixture {index}");
+
+            var pdfBytes = new byte[
+                96 +
+                index * 13];
+            random.NextBytes(pdfBytes);
+            "%PDF-1.7\n"u8.CopyTo(
+                pdfBytes);
+
+            var pdfPath = Path.Combine(
+                directory,
+                $"malformed-{index:00}.pdf");
+            File.WriteAllBytes(
+                pdfPath,
+                pdfBytes);
+
+            AssertControlled(
+                () => SupportedFormatRegistry.ReadDocument(
+                    pdfPath),
+                $"PDF malformed fixture {index}");
+        }
+    }
+
     private static void TestTextReader(string directory)
     {
         var path = Path.Combine(
@@ -191,7 +364,7 @@ internal static class Program
 
         var rtf = """
             {\rtf1\ansi\ansicpg1252\uc1
-            {\fonttbl{\f0 Arial;}{\f1\fcharset204 Times New Roman;}{\f2\fcharset128 MS Gothic;}}
+            {\fonttbl{\f0 Arial;}{\f1\fcharset204 Times New Roman;}{\f2\fcharset128 MS Gothic;}{\f3\fcharset2 Symbol;}{\f4\fcharset255 Terminal;}}
             {\colortbl;\red255\green0\blue0;\red255\green255\blue0;}
             {\*\bkmkstart bookmark}
             \qc\li720\ri360\fi-180\sb240\sa120\sl360\bgdkcross\shading5000\cfpat1\cbpat2\f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
@@ -200,6 +373,8 @@ internal static class Program
             \pard\tqr\tldot\tx1440\tqc\tlhyph\tx2880\tqdec\tleq\tx4320 Tabs\tab One\tab Two\tab Three\par
             \pard Unicode \u1046?\par
             \f2 \'82\'a0\par
+            {\f3 \'41}\par
+            {\pc\f4 \'82}\par
             \f0 \strike strike\strike0 \super sup\nosupersub \sub sub\nosupersub\par
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
@@ -253,6 +428,16 @@ internal static class Program
             text,
             "あ",
             "RTF DBCS font charset switching");
+
+        AssertContains(
+            text,
+            "",
+            "RTF Symbol charset private-use mapping");
+
+        AssertContains(
+            text,
+            "é",
+            "RTF explicitly declared OEM codepage");
 
         var paragraphs = model.Blocks
             .OfType<DocumentParagraph>()
@@ -9019,6 +9204,31 @@ internal static class Program
             page.PageNumber,
             "PDF page number");
 
+        var namedCMapPath = Path.Combine(
+            directory,
+            "regression-named-cmap.pdf");
+        CreateNamedCMapPdf(
+            namedCMapPath);
+
+        var namedCMapRejected = false;
+
+        try
+        {
+            SupportedFormatRegistry.ReadDocument(
+                namedCMapPath);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "predefined named CMap",
+                StringComparison.Ordinal))
+        {
+            namedCMapRejected = true;
+        }
+
+        Assert(
+            namedCMapRejected,
+            "PDF predefined named Type0 CMap должен завершаться явной unsupported-ошибкой вместо Identity-подобного декодирования.");
+
         var encryptedPath = Path.Combine(
             directory,
             "regression-encrypted.pdf");
@@ -9328,6 +9538,97 @@ internal static class Program
         Assert(
             !string.IsNullOrWhiteSpace(FlattenText(model)),
             ".doc corpus dispatch должен вернуть текст.");
+    }
+
+    /// <summary>
+    /// Открывает весь локальный Books corpus через тот же registry, что использует UI,
+    /// и проверяет полный reader → neutral model → HTML renderer pipeline.
+    /// Direct HTML проверяется отдельно как существующий непустой пользовательский файл.
+    /// </summary>
+    private static void TestSupportedCorpusSmoke(string repositoryRoot)
+    {
+        var booksDirectory = Path.Combine(
+            repositoryRoot,
+            "Books");
+        var files = Directory
+            .EnumerateFiles(
+                booksDirectory,
+                "*",
+                SearchOption.AllDirectories)
+            .OrderBy(
+                path => path,
+                StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var supportedFiles = files
+            .Where(path =>
+            {
+                try
+                {
+                    SupportedFormatRegistry.GetByPath(path);
+                    return true;
+                }
+                catch (InvalidDataException)
+                {
+                    return false;
+                }
+            })
+            .ToArray();
+
+        Assert(
+            supportedFiles.Length > 0,
+            "Books corpus не содержит поддерживаемых документов.");
+
+        var renderedCount = 0;
+        var directHtmlCount = 0;
+        var theme = CreateRenderTheme();
+
+        foreach (var path in supportedFiles)
+        {
+            var format = SupportedFormatRegistry.GetByPath(path);
+
+            if (format.OpenDirectlyInWebView)
+            {
+                var info = new FileInfo(path);
+
+                Assert(
+                    info.Exists &&
+                    info.Length > 0,
+                    $"Direct HTML corpus file пуст или отсутствует: {path}.");
+
+                directHtmlCount++;
+                continue;
+            }
+
+            var model = SupportedFormatRegistry.ReadDocument(path);
+
+            Assert(
+                !string.IsNullOrWhiteSpace(model.Title),
+                $"Corpus reader не вернул title: {path}.");
+
+            Assert(
+                model.Blocks.Count > 0,
+                $"Corpus reader не вернул blocks: {path}.");
+
+            var html = DocumentHtmlRenderer.Render(
+                model,
+                theme);
+
+            Assert(
+                html.Contains(
+                    "<!DOCTYPE html>",
+                    StringComparison.OrdinalIgnoreCase),
+                $"Corpus renderer не вернул HTML document: {path}.");
+
+            renderedCount++;
+        }
+
+        Assert(
+            renderedCount > 0,
+            "Corpus smoke не проверил ни одного reader-backed документа.");
+
+        Console.WriteLine(
+            $"CORPUS supported={supportedFiles.Length} rendered={renderedCount} direct-html={directHtmlCount}");
     }
 
     private static string FlattenText(DocumentModel model)
@@ -10304,6 +10605,83 @@ internal static class Program
         Write(
             "trailer\n" +
             "<< /Size 7 /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
+    }
+
+    /// <summary>
+    /// Создаёт PDF с Type0 font, использующим predefined named CMap,
+    /// чтобы reader не мог молча интерпретировать его как Identity.
+    /// </summary>
+    private static void CreateNamedCMapPdf(string path)
+    {
+        var encoding = Encoding.ASCII;
+        var content =
+            "BT\n" +
+            "/F1 12 Tf\n" +
+            "1 0 0 1 20 100 Tm\n" +
+            "<0041> Tj\n" +
+            "ET\n";
+
+        var objects = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 200] >>",
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            $"<< /Length {encoding.GetByteCount(content)} >>\nstream\n{content}endstream",
+            "<< /Type /Font /Subtype /Type0 /BaseFont /TestCID /Encoding /UniJIS-UCS2-H /DescendantFonts [6 0 R] >>",
+            "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /TestCID /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 0 >> /DW 1000 >>"
+        };
+
+        using var memory = new MemoryStream();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        Write("%PDF-1.4\n");
+        var offsets = new List<long>();
+
+        for (var index = 0;
+             index < objects.Length;
+             index++)
+        {
+            offsets.Add(memory.Position);
+            Write(
+                $"{index + 1} 0 obj\n" +
+                objects[index] +
+                "\nendobj\n");
+        }
+
+        var xref = memory.Position;
+        Write(
+            "xref\n" +
+            $"0 {objects.Length + 1}\n" +
+            "0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n" +
+            $"<< /Size {objects.Length + 1} /Root 1 0 R >>\n" +
             "startxref\n" +
             xref.ToString(
                 CultureInfo.InvariantCulture) +
