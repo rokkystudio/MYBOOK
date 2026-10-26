@@ -9657,24 +9657,64 @@ internal static class Program
         CreateNamedCMapPdf(
             namedCMapPath);
 
-        var namedCMapRejected = false;
-
-        try
-        {
+        var namedCMapModel =
             SupportedFormatRegistry.ReadDocument(
                 namedCMapPath);
-        }
-        catch (InvalidDataException error)
-            when (error.Message.Contains(
-                "predefined named CMap",
-                StringComparison.Ordinal))
-        {
-            namedCMapRejected = true;
-        }
+        var namedCMapPage =
+            namedCMapModel.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single();
+
+        AssertContains(
+            namedCMapPage.Text,
+            "A",
+            "PDF predefined UniJIS-UCS2-H должен декодироваться через code-to-CID и Adobe-Japan1-UCS2 без /ToUnicode.");
+
+        var horizontalCMap =
+            PdfPredefinedCMapRegistry.Get(
+                "90ms-RKSJ-H");
+        var horizontalPosition = 0;
 
         Assert(
-            namedCMapRejected,
-            "PDF predefined named Type0 CMap должен завершаться явной unsupported-ошибкой вместо Identity-подобного декодирования.");
+            horizontalCMap.TryReadCid(
+                [0x81, 0x41],
+                ref horizontalPosition,
+                out var horizontalCid,
+                out var horizontalLength) &&
+            horizontalCid == 634 &&
+            horizontalLength == 2 &&
+            horizontalPosition == 2,
+            "PDF predefined horizontal CMap должен читать canonical Adobe code-to-CID mapping.");
+
+        var verticalCMap =
+            PdfPredefinedCMapRegistry.Get(
+                "90ms-RKSJ-V");
+        var verticalPosition = 0;
+
+        Assert(
+            verticalCMap.TryReadCid(
+                [0x81, 0x41],
+                ref verticalPosition,
+                out var verticalCid,
+                out var verticalLength) &&
+            verticalCid == 7887 &&
+            verticalLength == 2 &&
+            verticalPosition == 2,
+            "PDF predefined vertical CMap должен применять usecmap inheritance и vertical override.");
+
+        var cidUnicodeDecoder =
+            PdfCidUnicodeRegistry.TryGet(
+                "Adobe",
+                "Japan1");
+
+        Assert(
+            cidUnicodeDecoder != null &&
+            string.Equals(
+                cidUnicodeDecoder.Decode(
+                    [0x00, 0x22]),
+                "A",
+                StringComparison.Ordinal),
+            "PDF Adobe-Japan1 CID-to-Unicode resource должен декодировать CID 34 как A.");
 
         var encryptedPath = Path.Combine(
             directory,

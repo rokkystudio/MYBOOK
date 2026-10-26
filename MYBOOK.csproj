@@ -8,9 +8,9 @@
         <UseWPF>true</UseWPF>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
         <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-        <Version>1.5.6</Version>
-        <AssemblyVersion>1.5.6.0</AssemblyVersion>
-        <FileVersion>1.5.6.0</FileVersion>
+        <Version>1.5.7</Version>
+        <AssemblyVersion>1.5.7.0</AssemblyVersion>
+        <FileVersion>1.5.7.0</FileVersion>
         <InformationalVersion>1.2.44</InformationalVersion>
     </PropertyGroup>
 
@@ -59,6 +59,15 @@
         <Resource Include="..\SHARED\NeoUI\Assets\**\*.png">
             <Link>Shared\NeoUI\Assets\%(Filename)%(Extension)</Link>
         </Resource>
+
+        <EmbeddedResource Include="..\SHARED\Book\Formats\Pdf\Resources\CMaps\*"
+                          Exclude="..\SHARED\Book\Formats\Pdf\Resources\CMaps\*.md">
+            <LogicalName>Book.Formats.Pdf.CMaps.%(Filename)</LogicalName>
+        </EmbeddedResource>
+
+        <EmbeddedResource Include="..\SHARED\Book\Formats\Pdf\Resources\CidToUnicode\Adobe-*-UCS2">
+            <LogicalName>Book.Formats.Pdf.CidToUnicode.%(Filename)</LogicalName>
+        </EmbeddedResource>
     </ItemGroup>
 
     <ItemGroup>

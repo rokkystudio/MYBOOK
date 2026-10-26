@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.6
+Версия профиля: 1.5.7
 
 ## Ready for use
 
@@ -72,8 +72,7 @@ MYBOOK считает готовыми к обычному пользовате�
 ### PDF
 
 - ExtGState soft-mask group compositing не реализован полностью.
-- Predefined named Type0 CMap без embedded Encoding stream не интерпретируется
-  как Identity: reader выдаёт явную unsupported-ошибку.
+- Predefined Type0 CMaps для public Adobe CJK/KR collections входят в профиль: canonical Adobe resources дают code→CID, включая `usecmap` inheritance; без `/ToUnicode` CID→Unicode берётся из canonical `Registry-Ordering-UCS2` mapping resources.
 - DeviceCMYK DCT post-processing и дополнительные редкие ColorSpace остаются вне профиля.
 - CCITT Group 3/Group 4 filters входят в профиль; JPX и JBIG2 filters остаются вне профиля.
 - Revision 6 non-empty password preprocessing требует полноценного Unicode
@@ -84,5 +83,5 @@ MYBOOK считает готовыми к обычному пользовате�
 ## Future formats
 
 DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
-поддерживаемый формат MYBOOK 1.5.6. Его reader является отдельной будущей
+поддерживаемый формат MYBOOK 1.5.7. Его reader является отдельной будущей
 функциональностью и должен пройти те же readiness gates до добавления в реестр.
