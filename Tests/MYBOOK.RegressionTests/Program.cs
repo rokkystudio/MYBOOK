@@ -1268,6 +1268,104 @@ internal static class Program
                 "href=\"file:",
                 StringComparison.OrdinalIgnoreCase),
             "RTF renderer не должен выпускать unsafe file: hyperlink.");
+
+        var dpiPath = Path.Combine(
+            directory,
+            "regression-rtf-dpi-scale.rtf");
+        var dpiPng = EncodePngFixture(
+            [0, 0, 0, 255],
+            width: 1,
+            height: 1,
+            PixelFormats.Bgra32,
+            stride: 4,
+            dpiX: 144,
+            dpiY: 72);
+        var dpiRtf =
+            "{\\rtf1\\ansi " +
+            "{\\pict\\pngblip\\picw1\\pich1\\picscalex50\\picscaley200 " +
+            Convert.ToHexString(dpiPng) +
+            "}\\par}";
+
+        File.WriteAllText(
+            dpiPath,
+            dpiRtf,
+            Encoding.ASCII);
+
+        var dpiModel =
+            SupportedFormatRegistry.ReadDocument(
+                dpiPath);
+        var dpiImage = dpiModel.Blocks
+            .OfType<DocumentParagraph>()
+            .SelectMany(paragraph => paragraph.Inlines)
+            .Select(inline => inline.Image)
+            .Single(image => image != null)!;
+
+        Assert(
+            dpiImage.WidthPoints is { } widthPoints &&
+            dpiImage.HeightPoints is { } heightPoints &&
+            Math.Abs(widthPoints - 0.25) <= 0.01 &&
+            Math.Abs(heightPoints - 2.0) <= 0.02,
+            "RTF scale без goal-size должен использовать только явно сохранённую raster DPI metadata.");
+
+        var pngDpi =
+            RtfRasterMetricsReader.TryReadDpi(
+                dpiPng,
+                "image/png");
+
+        Assert(
+            pngDpi is { } &&
+            Math.Abs(pngDpi.Value.DpiX - 144) <= 0.05 &&
+            Math.Abs(pngDpi.Value.DpiY - 72) <= 0.05,
+            "RTF PNG pHYs density должна читаться без default DPI.");
+
+        var densityJpeg = EncodeJpegFixture(
+            [64, 128, 192],
+            width: 1,
+            height: 1,
+            PixelFormats.Rgb24,
+            stride: 3,
+            dpiX: 150,
+            dpiY: 75);
+        var jpegDpi =
+            RtfRasterMetricsReader.TryReadDpi(
+                densityJpeg,
+                "image/jpeg");
+
+        Assert(
+            jpegDpi is { } &&
+            Math.Abs(jpegDpi.Value.DpiX - 150) <= 0.5 &&
+            Math.Abs(jpegDpi.Value.DpiY - 75) <= 0.5,
+            "RTF JPEG JFIF/EXIF density должна читаться из container metadata.");
+
+        var bmpHeader = new byte[54];
+        bmpHeader[0] = (byte)'B';
+        bmpHeader[1] = (byte)'M';
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            bmpHeader.AsSpan(
+                14,
+                4),
+            40);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            bmpHeader.AsSpan(
+                38,
+                4),
+            5906);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            bmpHeader.AsSpan(
+                42,
+                4),
+            2953);
+
+        var bmpDpi =
+            RtfRasterMetricsReader.TryReadDpi(
+                bmpHeader,
+                "image/bmp");
+
+        Assert(
+            bmpDpi is { } &&
+            Math.Abs(bmpDpi.Value.DpiX - 150) <= 0.1 &&
+            Math.Abs(bmpDpi.Value.DpiY - 75) <= 0.1,
+            "RTF BMP pixels-per-meter density должна преобразовываться в DPI.");
     }
 
     private static void TestDocRtfDispatch(string directory)
@@ -10704,13 +10802,15 @@ internal static class Program
         int width,
         int height,
         PixelFormat format,
-        int stride)
+        int stride,
+        double dpiX = 96,
+        double dpiY = 96)
     {
         var bitmap = BitmapSource.Create(
             width,
             height,
-            96,
-            96,
+            dpiX,
+            dpiY,
             format,
             null,
             pixels,
@@ -10719,6 +10819,36 @@ internal static class Program
         {
             QualityLevel = 100
         };
+        encoder.Frames.Add(
+            BitmapFrame.Create(bitmap));
+
+        using var output = new MemoryStream();
+        encoder.Save(output);
+        return output.ToArray();
+    }
+
+    /// <summary>
+    /// Кодирует PNG fixture с явно сохранённой физической DPI metadata.
+    /// </summary>
+    private static byte[] EncodePngFixture(
+        byte[] pixels,
+        int width,
+        int height,
+        PixelFormat format,
+        int stride,
+        double dpiX,
+        double dpiY)
+    {
+        var bitmap = BitmapSource.Create(
+            width,
+            height,
+            dpiX,
+            dpiY,
+            format,
+            null,
+            pixels,
+            stride);
+        var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(
             BitmapFrame.Create(bitmap));
 
