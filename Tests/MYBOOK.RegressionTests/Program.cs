@@ -191,7 +191,7 @@ internal static class Program
             {\fonttbl{\f0 Arial;}{\f1\fcharset204 Times New Roman;}{\f2\fcharset128 MS Gothic;}}
             {\colortbl;\red255\green0\blue0;\red255\green255\blue0;}
             {\*\bkmkstart bookmark}
-            \qc\li720\ri360\fi-180\sb240\sa120\sl360\f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
+            \qc\li720\ri360\fi-180\sb240\sa120\sl360\bgdkcross\shading5000\cfpat1\cbpat2\f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
             \pard\sl360\slmult1\keep\keepn\widctl\rtlpar Paragraph controls\par
             \pard\pagebb\outlinelevel3 Page break outline\par
             \pard\tqr\tldot\tx1440\tqc\tlhyph\tx2880\tqdec\tleq\tx4320 Tabs\tab One\tab Two\tab Three\par
@@ -206,7 +206,9 @@ internal static class Program
             \trowd\trql\trftsWidth1\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\trftsWidth0\trwWidth777\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
             \trowd\cltxtbrl\clftsWidth0\clwWidth777\cellx600\cltxbtlr\clftsWidth1\clwWidth999\cellx1200\cltxlrtbv\clftsWidth2\clwWidth1250\cellx1800\cltxtbrlv\clftsWidth3\clwWidth600\cellx2400\intbl NullWidth\cell AutoWidth\cell PercentWidth\cell TwipsWidth\cell\row
-            \trowd\clbrdrt\brdrhair\brdrw10\brdrcf1\cellx600\clbrdrt\brdrdashd\brdrw20\brdrcf1\cellx1200\clbrdrt\brdrdashdd\brdrw20\brdrcf1\cellx1800\clbrdrt\brdrtriple\brdrw30\brdrcf1\cellx2400\intbl Hair\cell DotDash\cell DotDotDash\cell Triple\cell\row
+            \trowd\clbgdkhor\clcfpat1\clcbpat2\cellx400\clbgdkvert\clcfpat1\clcbpat2\cellx800\clbgdkfdiag\clcfpat1\clcbpat2\cellx1200\clbgdkbdiag\clcfpat1\clcbpat2\cellx1600\clbgdkcross\clshdng5000\clcfpat1\clcbpat2\cellx2000\clbgdkdcross\clcfpat1\clcbpat2\cellx2400\intbl DkH\cell DkV\cell DkFD\cell DkBD\cell DkCross\cell DkDCross\cell\row
+            \trowd\clbghoriz\clcfpat1\clcbpat2\cellx400\clbgvert\clcfpat1\clcbpat2\cellx800\clbgfdiag\clcfpat1\clcbpat2\cellx1200\clbgbdiag\clcfpat1\clcbpat2\cellx1600\clbgcross\clcfpat1\clcbpat2\cellx2000\clbgdcross\clcfpat1\clcbpat2\cellx2400\clbgcross\clcfpat1\clcbpat2\clshdrawnil\cellx2800\intbl H\cell V\cell FD\cell BD\cell Cross\cell DCross\cell Reset\cell\row
+            \trowd\clbrdrt\brdrhair\brdrw10\brdrcf1\cldglu\brdrs\brdrw20\brdrcf2\brsp10\brdrsh\brdrframe\cellx600\clbrdrt\brdrdashd\brdrw20\brdrcf1\cldgll\brdrdb\brdrw40\brdrcf2\cellx1200\clbrdrt\brdrdashdd\brdrw20\brdrcf1\cellx1800\clbrdrt\brdrtriple\brdrw30\brdrcf1\cellx2400\intbl Hair\cell DotDash\cell DotDotDash\cell Triple\cell\row
             \pard Between RTF tables\par
             \trowd\cellx4000
             \intbl\itap1 Outer before\par
@@ -275,6 +277,16 @@ internal static class Program
             formattedParagraph.SpaceAfterPoints == 6 &&
             formattedParagraph.LineSpacingPoints == 18,
             "RTF paragraph alignment, indents и spacing должны сохраняться.");
+
+        Assert(
+            formattedParagraph.Shading is
+            {
+                Pattern: 0x0012,
+                FillPercentage: 50,
+                ForegroundColor: "#FF0000",
+                BackgroundColor: "#FFFF00"
+            },
+            "RTF paragraph shading должен сохранять hatch pattern, percentage и оба цвета.");
 
         var controlledParagraph = paragraphs.First(paragraph =>
             paragraph.Inlines.Any(inline =>
@@ -411,7 +423,7 @@ internal static class Program
         var table = tables[0];
 
         Assert(
-            table.Rows.Count == 6 &&
+            table.Rows.Count == 8 &&
             table.Rows[0].Cells.Count == 2 &&
             table.Rows[0].Cells[0].Inlines.Any(inline =>
                 inline.Text.Contains(
@@ -619,11 +631,45 @@ internal static class Program
             "RTF cltx* controls должны сохранять все пять документированных cell text-flow режимов.");
 
         Assert(
-            table.Rows[5].Cells.Count == 4 &&
-            table.Rows[5].Cells[0].BorderTop?.Type == 0x05 &&
-            table.Rows[5].Cells[1].BorderTop?.Type == 0x08 &&
-            table.Rows[5].Cells[2].BorderTop?.Type == 0x09 &&
-            table.Rows[5].Cells[3].BorderTop?.Type == 0x0A,
+            table.Rows[5].Cells.Select(cell => cell.Shading?.Pattern)
+                .SequenceEqual(new ushort?[] { 0x000E, 0x000F, 0x0010, 0x0011, 0x0012, 0x0013 }) &&
+            table.Rows[6].Cells.Take(6).Select(cell => cell.Shading?.Pattern)
+                .SequenceEqual(new ushort?[] { 0x0014, 0x0015, 0x0016, 0x0017, 0x0018, 0x0019 }) &&
+            table.Rows[6].Cells[6].Shading == null,
+            "RTF cell patterned shading должен сохранять все 12 stripe/cross Ipat patterns и clshdrawnil reset.");
+
+        Assert(
+            table.Rows[5].Cells[4].Shading is
+            {
+                Pattern: 0x0012,
+                FillPercentage: 50
+            },
+            "RTF explicit hatch pattern должен сохранять clshdng metadata без потери pattern.");
+
+        Assert(
+            table.Rows[7].Cells[0].BorderDiagonalDown is
+            {
+                Type: 0x01,
+                WidthPoints: 1,
+                Color: "#FFFF00",
+                SpacingPoints: 0.5,
+                Shadow: true,
+                Frame: true
+            } &&
+            table.Rows[7].Cells[1].BorderDiagonalUp is
+            {
+                Type: 0x03,
+                WidthPoints: 2,
+                Color: "#FFFF00"
+            },
+            "RTF cldglu/cldgll должны сохранять диагональные cell borders со всеми border properties.");
+
+        Assert(
+            table.Rows[7].Cells.Count == 4 &&
+            table.Rows[7].Cells[0].BorderTop?.Type == 0x05 &&
+            table.Rows[7].Cells[1].BorderTop?.Type == 0x08 &&
+            table.Rows[7].Cells[2].BorderTop?.Type == 0x09 &&
+            table.Rows[7].Cells[3].BorderTop?.Type == 0x0A,
             "RTF brdrhair, brdrdashd, brdrdashdd и brdrtriple должны сохранять точные border type codes.");
 
         var pngImage = model.Blocks
@@ -834,6 +880,26 @@ internal static class Program
             html,
             "data-text-flow=\"tbrlv\"",
             "RTF rendered vertical top-to-bottom right-to-left cell text-flow metadata");
+
+        AssertContains(
+            html,
+            "data-shading-pattern=\"18\"",
+            "RTF rendered dark cross pattern metadata");
+
+        AssertContains(
+            html,
+            "background-image:repeating-linear-gradient(0deg,#FF0000 0 2px,transparent 2px 4px),repeating-linear-gradient(90deg,#FF0000 0 2px,transparent 2px 4px)",
+            "RTF rendered explicit hatch pattern должен иметь приоритет над clshdng percentage.");
+
+        AssertContains(
+            html,
+            "data-border-diagonal-down-type=\"1\" data-border-diagonal-down-width-pt=\"1\" data-border-diagonal-down-color=\"#FFFF00\" data-border-diagonal-down-spacing-pt=\"0.5\" data-border-diagonal-down-shadow=\"true\" data-border-diagonal-down-frame=\"true\"",
+            "RTF rendered cldglu border metadata");
+
+        AssertContains(
+            html,
+            "data-border-diagonal-up-type=\"3\" data-border-diagonal-up-width-pt=\"2\" data-border-diagonal-up-color=\"#FFFF00\"",
+            "RTF rendered cldgll border metadata");
 
         AssertContains(
             html,
