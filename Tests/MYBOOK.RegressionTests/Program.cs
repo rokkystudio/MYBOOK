@@ -400,7 +400,7 @@ internal static class Program
             \intbl\itap1 Outer after\cell\row
             \pard\itap0
             {\pict\pngblip\bliptag-123{\*\blipuid 00112233445566778899AABBCCDDEEFF}\picw1\pich1\picwgoal1440\pichgoal720\picscalex50\picscaley200\piccropl120\piccropt-40\piccropr60\piccropb20 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
-            {\pict\dibitmap0 280000000100000001000000010018000000000004000000000000000000000000000000000000000000FF00}\par
+            {\pict\dibitmap0\wbmbitspixel24\wbmplanes1\wbmwidthbytes4 280000000100000001000000010018000000000004000000000000000000000000000000000000000000FF00}\par
             {\pict\emfblip 0100000000000000000000000000000000000000000000000000000000000000000000000000000020454D46}\par
             {\pict\wmetafile8 000009000000000000000000000000000000}\par
             }
@@ -987,8 +987,11 @@ internal static class Program
             bmpImage != null &&
             bmpImage.Data.Length > 14 &&
             bmpImage.Data[0] == (byte)'B' &&
-            bmpImage.Data[1] == (byte)'M',
-            "RTF dibitmap должен преобразовываться в полноценный BMP.");
+            bmpImage.Data[1] == (byte)'M' &&
+            bmpImage.BitmapBitsPerPixel == 24 &&
+            bmpImage.BitmapPlanes == 1 &&
+            bmpImage.BitmapBytesPerScanLine == 4,
+            "RTF dibitmap должен преобразовываться в полноценный BMP и сохранять bitmap metadata.");
 
         var emfImage = model.Blocks
             .OfType<DocumentParagraph>()
@@ -1306,6 +1309,11 @@ internal static class Program
 
         AssertContains(
             html,
+            "data-bitmap-bits-per-pixel=\"24\" data-bitmap-planes=\"1\" data-bitmap-bytes-per-scan-line=\"4\"",
+            "RTF rendered bitmap metadata");
+
+        AssertContains(
+            html,
             "href=\"https://example.com/rtf\"",
             "RTF rendered external hyperlink");
 
@@ -1445,6 +1453,41 @@ internal static class Program
         Assert(
             malformedUidRejected,
             "RTF malformed blipuid должен завершаться контролируемой structural error.");
+
+        foreach (var unsupportedPictureType in new[]
+        {
+            "wbitmap0",
+            "macpict",
+            "pmmmetafile1"
+        })
+        {
+            var unsupportedPath = Path.Combine(
+                directory,
+                $"regression-rtf-unsupported-{unsupportedPictureType}.rtf");
+            File.WriteAllText(
+                unsupportedPath,
+                $"{{\\rtf1\\ansi {{\\pict\\{unsupportedPictureType} 00}}\\par}}",
+                Encoding.ASCII);
+
+            var rejected = false;
+
+            try
+            {
+                SupportedFormatRegistry.ReadDocument(
+                    unsupportedPath);
+            }
+            catch (NotSupportedException error)
+                when (error.Message.Contains(
+                    "RTF",
+                    StringComparison.Ordinal))
+            {
+                rejected = true;
+            }
+
+            Assert(
+                rejected,
+                $"RTF {unsupportedPictureType} должен завершаться явной unsupported-ошибкой вместо тихого пропуска.");
+        }
     }
 
     private static void TestDocRtfDispatch(string directory)
