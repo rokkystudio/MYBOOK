@@ -201,14 +201,15 @@ internal static class Program
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
-            \trowd\trqc\trleft720\trgaph60\trftsWidth2\trwWidth5000\trhdr\trkeep\trrh-480\trbrdrt\brdrdash\brdrw60\brdrcf2\trbrdrl\brdrs\brdrw20\brdrcf2\trbrdrb\brdrdb\brdrw40\brdrcf2\trbrdrr\brdrdot\brdrw30\brdrcf2\trbrdrh\brdrs\brdrw20\brdrcf2\trbrdrv\brdrdot\brdrw20\brdrcf2\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
-            \trowd\trqr\trftsWidth3\trwWidth1440\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
+            \trowd\trqc\trleft720\trgaph60\rtlrow\trpaddl100\trpaddfl3\trpaddr120\trpaddfr3\trpaddt80\trpaddft3\trpaddb60\trpaddfb3\trspdl40\trspdfl3\trspdr60\trspdfr3\trspdt20\trspdft3\trspdb30\trspdfb3\trbgcross\trshdng5000\trcfpat1\trcbpat2\trftsWidth2\trwWidth5000\trhdr\trkeep\trrh-480\trbrdrt\brdrdash\brdrw60\brdrcf2\trbrdrl\brdrs\brdrw20\brdrcf2\trbrdrb\brdrdb\brdrw40\brdrcf2\trbrdrr\brdrdot\brdrw30\brdrcf2\trbrdrh\brdrs\brdrw20\brdrcf2\trbrdrv\brdrdot\brdrw20\brdrcf2\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clhidemark\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
+            \trowd\trqr\ltrrow\trftsWidth3\trwWidth1440\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
             \trowd\trql\trftsWidth1\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\trftsWidth0\trwWidth777\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
             \trowd\cltxtbrl\clftsWidth0\clwWidth777\cellx600\cltxbtlr\clftsWidth1\clwWidth999\cellx1200\cltxlrtbv\clftsWidth2\clwWidth1250\cellx1800\cltxtbrlv\clftsWidth3\clwWidth600\cellx2400\intbl NullWidth\cell AutoWidth\cell PercentWidth\cell TwipsWidth\cell\row
             \trowd\clbgdkhor\clcfpat1\clcbpat2\cellx400\clbgdkvert\clcfpat1\clcbpat2\cellx800\clbgdkfdiag\clcfpat1\clcbpat2\cellx1200\clbgdkbdiag\clcfpat1\clcbpat2\cellx1600\clbgdkcross\clshdng5000\clcfpat1\clcbpat2\cellx2000\clbgdkdcross\clcfpat1\clcbpat2\cellx2400\intbl DkH\cell DkV\cell DkFD\cell DkBD\cell DkCross\cell DkDCross\cell\row
             \trowd\clbghoriz\clcfpat1\clcbpat2\cellx400\clbgvert\clcfpat1\clcbpat2\cellx800\clbgfdiag\clcfpat1\clcbpat2\cellx1200\clbgbdiag\clcfpat1\clcbpat2\cellx1600\clbgcross\clcfpat1\clcbpat2\cellx2000\clbgdcross\clcfpat1\clcbpat2\cellx2400\clbgcross\clcfpat1\clcbpat2\clshdrawnil\cellx2800\intbl H\cell V\cell FD\cell BD\cell Cross\cell DCross\cell Reset\cell\row
             \trowd\clbrdrt\brdrhair\brdrw10\brdrcf1\cldglu\brdrs\brdrw20\brdrcf2\brsp10\brdrsh\brdrframe\cellx600\clbrdrt\brdrdashd\brdrw20\brdrcf1\cldgll\brdrdb\brdrw40\brdrcf2\cellx1200\clbrdrt\brdrdashdd\brdrw20\brdrcf1\cellx1800\clbrdrt\brdrtriple\brdrw30\brdrcf1\cellx2400\intbl Hair\cell DotDash\cell DotDotDash\cell Triple\cell\row
+            \trowd\clbrdrt\brdrth\cellx200\clbrdrt\brdrtnthsg\cellx400\clbrdrt\brdrthtnsg\cellx600\clbrdrt\brdrtnthtnsg\cellx800\clbrdrt\brdrtnthmg\cellx1000\clbrdrt\brdrthtnmg\cellx1200\clbrdrt\brdrtnthtnmg\cellx1400\clbrdrt\brdrtnthlg\cellx1600\clbrdrt\brdrthtnlg\cellx1800\clbrdrt\brdrtnthtnlg\cellx2000\clbrdrt\brdrwavy\cellx2200\clbrdrt\brdrwavydb\cellx2400\clbrdrt\brdrdashsm\cellx2600\clbrdrt\brdrdashdotstr\cellx2800\clbrdrt\brdremboss\cellx3000\clbrdrt\brdrengrave\cellx3200\clbrdrt\brdroutset\cellx3400\clbrdrt\brdrinset\cellx3600\intbl Thick\cell TTSG\cell TTSG2\cell TTTSG\cell TTMG\cell TTMG2\cell TTTMG\cell TTLG\cell TTLG2\cell TTTLG\cell Wavy\cell WavyDb\cell DashSm\cell DashDotStr\cell Emboss\cell Engrave\cell Outset\cell Inset\cell\row
             \pard Between RTF tables\par
             \trowd\cellx4000
             \intbl\itap1 Outer before\par
@@ -423,7 +424,7 @@ internal static class Program
         var table = tables[0];
 
         Assert(
-            table.Rows.Count == 8 &&
+            table.Rows.Count == 9 &&
             table.Rows[0].Cells.Count == 2 &&
             table.Rows[0].Cells[0].Inlines.Any(inline =>
                 inline.Text.Contains(
@@ -449,6 +450,26 @@ internal static class Program
             table.Rows[1].Alignment == DocumentTableAlignment.Right &&
             table.Rows[2].Alignment == DocumentTableAlignment.Left,
             "RTF trql/trqc/trqr, trleft и trgaph должны сохраняться на уровне строки.");
+
+        Assert(
+            table.Rows[0].RightToLeft == true &&
+            table.Rows[1].RightToLeft == false &&
+            table.Rows[0].PaddingLeftPoints == 5 &&
+            table.Rows[0].PaddingRightPoints == 6 &&
+            table.Rows[0].PaddingTopPoints == 4 &&
+            table.Rows[0].PaddingBottomPoints == 3 &&
+            table.Rows[0].CellSpacingLeftPoints == 2 &&
+            table.Rows[0].CellSpacingRightPoints == 3 &&
+            table.Rows[0].CellSpacingTopPoints == 1 &&
+            table.Rows[0].CellSpacingBottomPoints == 1.5 &&
+            table.Rows[0].Shading is
+            {
+                Pattern: 0x0018,
+                FillPercentage: 50,
+                ForegroundColor: "#FF0000",
+                BackgroundColor: "#FFFF00"
+            },
+            "RTF rtlrow/ltrrow, trpadd*, trspd* и row shading должны сохраняться в row model.");
 
         Assert(
             table.Rows[0].PreferredWidth is
@@ -519,6 +540,7 @@ internal static class Program
             table.Rows[0].Cells[0].VerticalAlignment ==
                 DocumentTableCellVerticalAlignment.Center &&
             table.Rows[0].Cells[0].NoWrap &&
+            table.Rows[0].Cells[0].HiddenEndOfCellMark &&
             table.Rows[0].Cells[1].WidthPoints == 70 &&
             table.Rows[0].Cells[1].VerticalAlignment ==
                 DocumentTableCellVerticalAlignment.Bottom &&
@@ -671,6 +693,33 @@ internal static class Program
             table.Rows[7].Cells[2].BorderTop?.Type == 0x09 &&
             table.Rows[7].Cells[3].BorderTop?.Type == 0x0A,
             "RTF brdrhair, brdrdashd, brdrdashdd и brdrtriple должны сохранять точные border type codes.");
+
+        Assert(
+            table.Rows[8].Cells.Count == 18 &&
+            table.Rows[8].Cells
+                .Select(cell => cell.BorderTop?.Type)
+                .SequenceEqual(new byte?[]
+                {
+                    0x02,
+                    0x0B,
+                    0x0C,
+                    0x0D,
+                    0x0E,
+                    0x0F,
+                    0x10,
+                    0x11,
+                    0x12,
+                    0x13,
+                    0x14,
+                    0x15,
+                    0x16,
+                    0x17,
+                    0x18,
+                    0x19,
+                    0x1A,
+                    0x1B
+                }),
+            "RTF decorative border controls должны сохранять полный набор Word border type codes 0x02/0x0B..0x1B.");
 
         var pngImage = model.Blocks
             .OfType<DocumentParagraph>()
