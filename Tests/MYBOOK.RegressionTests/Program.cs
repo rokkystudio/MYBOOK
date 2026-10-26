@@ -205,6 +205,7 @@ internal static class Program
             \trowd\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
             \trowd\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
+            \trowd\clftsWidth0\clwWidth777\cellx600\clftsWidth1\clwWidth999\cellx1200\clftsWidth2\clwWidth1250\cellx1800\clftsWidth3\clwWidth600\cellx2400\intbl NullWidth\cell AutoWidth\cell PercentWidth\cell TwipsWidth\cell\row
             \trowd\clbrdrt\brdrhair\brdrw10\brdrcf1\cellx600\clbrdrt\brdrdashd\brdrw20\brdrcf1\cellx1200\clbrdrt\brdrdashdd\brdrw20\brdrcf1\cellx1800\clbrdrt\brdrtriple\brdrw30\brdrcf1\cellx2400\intbl Hair\cell DotDash\cell DotDotDash\cell Triple\cell\row
             \pard Between RTF tables\par
             \trowd\cellx4000
@@ -410,7 +411,7 @@ internal static class Program
         var table = tables[0];
 
         Assert(
-            table.Rows.Count == 5 &&
+            table.Rows.Count == 6 &&
             table.Rows[0].Cells.Count == 2 &&
             table.Rows[0].Cells[0].Inlines.Any(inline =>
                 inline.Text.Contains(
@@ -559,10 +560,30 @@ internal static class Program
 
         Assert(
             table.Rows[4].Cells.Count == 4 &&
-            table.Rows[4].Cells[0].BorderTop?.Type == 0x05 &&
-            table.Rows[4].Cells[1].BorderTop?.Type == 0x08 &&
-            table.Rows[4].Cells[2].BorderTop?.Type == 0x09 &&
-            table.Rows[4].Cells[3].BorderTop?.Type == 0x0A,
+            table.Rows[4].Cells[0].PreferredWidth == null &&
+            table.Rows[4].Cells[1].PreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Auto,
+                Value: null
+            } &&
+            table.Rows[4].Cells[2].PreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Percent,
+                Value: 25
+            } &&
+            table.Rows[4].Cells[3].PreferredWidth is
+            {
+                Kind: DocumentPreferredWidthKind.Points,
+                Value: 30
+            },
+            "RTF clftsWidth/clwWidth должны сохранять null/auto/percent/twips preferred cell widths.");
+
+        Assert(
+            table.Rows[5].Cells.Count == 4 &&
+            table.Rows[5].Cells[0].BorderTop?.Type == 0x05 &&
+            table.Rows[5].Cells[1].BorderTop?.Type == 0x08 &&
+            table.Rows[5].Cells[2].BorderTop?.Type == 0x09 &&
+            table.Rows[5].Cells[3].BorderTop?.Type == 0x0A,
             "RTF brdrhair, brdrdashd, brdrdashdd и brdrtriple должны сохранять точные border type codes.");
 
         var pngImage = model.Blocks
@@ -768,6 +789,16 @@ internal static class Program
             html,
             "data-shading-fill-percentage=\"50\"",
             "RTF rendered patterned shading metadata");
+
+        AssertContains(
+            html,
+            "data-preferred-width-kind=\"percent\"",
+            "RTF rendered preferred cell width percent metadata");
+
+        AssertContains(
+            html,
+            "data-preferred-width-value=\"25\"",
+            "RTF rendered preferred cell width percent value");
 
         AssertContains(
             html,
