@@ -380,7 +380,7 @@ internal static class Program
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
-            \trowd\irow0\irowband0\tblind720\tblindtype3\tbllkhdrrows\tbllkhdrcols\tbllknorowband\tbllknocolband\trqc\trleft720\trgaph60\rtlrow\trpaddl100\trpaddfl3\trpaddr120\trpaddfr3\trpaddt80\trpaddft3\trpaddb60\trpaddfb3\trspdl40\trspdfl3\trspdr60\trspdfr3\trspdt20\trspdft3\trspdb30\trspdfb3\trbgcross\trshdng5000\trcfpat1\trcbpat2\trftsWidth2\trwWidth5000\trhdr\trkeep\trkeepfollow\trautofit1\trrh-480\trbrdrt\brdrdash\brdrw60\brdrcf2\trbrdrl\brdrs\brdrw20\brdrcf2\trbrdrb\brdrdb\brdrw40\brdrcf2\trbrdrr\brdrdot\brdrw30\brdrcf2\trbrdrh\brdrs\brdrw20\brdrcf2\trbrdrv\brdrdot\brdrw20\brdrcf2\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clhidemark\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
+            \trowd\irow0\irowband0\tblind720\tblindtype3\tbllkborder\tbllkshading\tbllkfont\tbllkcolor\tbllkbestfit\tbllkhdrrows\tbllklastrow\tbllkhdrcols\tbllklastcol\tbllknorowband\tbllknocolband\trqc\trleft720\trgaph60\rtlrow\trpaddl100\trpaddfl3\trpaddr120\trpaddfr3\trpaddt80\trpaddft3\trpaddb60\trpaddfb3\trspdl40\trspdfl3\trspdr60\trspdfr3\trspdt20\trspdft3\trspdb30\trspdfb3\trbgcross\trshdng5000\trcfpat1\trcbpat2\trftsWidth2\trwWidth5000\trhdr\trkeep\trkeepfollow\trautofit1\trrh-480\trbrdrt\brdrdash\brdrw60\brdrcf2\trbrdrl\brdrs\brdrw20\brdrcf2\trbrdrb\brdrdb\brdrw40\brdrcf2\trbrdrr\brdrdot\brdrw30\brdrcf2\trbrdrh\brdrs\brdrw20\brdrcf2\trbrdrv\brdrdot\brdrw20\brdrcf2\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clhidemark\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
             \trowd\irow1\irowband1\lastrow\trqr\ltrrow\trftsWidth3\trwWidth1440\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
             \trowd\trql\trftsWidth1\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\trftsWidth0\trwWidth777\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
@@ -647,8 +647,15 @@ internal static class Program
             table.Rows[0].IsLastRow == null &&
             table.Rows[0].TableIndentValue == 720 &&
             table.Rows[0].TableIndentUnit == 3 &&
+            table.Rows[0].LookBorder == true &&
+            table.Rows[0].LookShading == true &&
+            table.Rows[0].LookFont == true &&
+            table.Rows[0].LookColor == true &&
+            table.Rows[0].LookBestFit == true &&
             table.Rows[0].LookHeaderRows == true &&
+            table.Rows[0].LookLastRow == true &&
             table.Rows[0].LookHeaderColumns == true &&
+            table.Rows[0].LookLastColumn == true &&
             table.Rows[0].LookNoRowBand == true &&
             table.Rows[0].LookNoColumnBand == true &&
             table.Rows[1].RowIndex == 1 &&
@@ -1124,7 +1131,7 @@ internal static class Program
 
         AssertContains(
             html,
-            "data-row-index=\"0\" data-row-band-index=\"0\" data-table-indent-value=\"720\" data-table-indent-unit=\"3\" data-table-look-header-rows=\"true\" data-table-look-header-columns=\"true\" data-table-look-no-row-band=\"true\" data-table-look-no-column-band=\"true\"",
+            "data-row-index=\"0\" data-row-band-index=\"0\" data-table-indent-value=\"720\" data-table-indent-unit=\"3\" data-table-look-border=\"true\" data-table-look-shading=\"true\" data-table-look-font=\"true\" data-table-look-color=\"true\" data-table-look-best-fit=\"true\" data-table-look-header-rows=\"true\" data-table-look-last-row=\"true\" data-table-look-header-columns=\"true\" data-table-look-last-column=\"true\" data-table-look-no-row-band=\"true\" data-table-look-no-column-band=\"true\"",
             "RTF rendered row index, banding and table-look metadata");
 
         AssertContains(

@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.4
+Версия профиля: 1.5.5
 
 ## Ready for use
 
@@ -64,7 +64,7 @@ MYBOOK считает готовыми к обычному пользовате�
 
 ### RTF
 
-- Редкие row/cell и paragraph controls; row index/banding, last-row marker, table indent units и основные Word table-look flags уже сохраняются как metadata.
+- Редкие row/cell и paragraph controls; row index/banding, last-row marker, table indent units и документированные Word table-look flags для borders/shading/font/color/best-fit, first/last row/column и banding уже сохраняются как metadata.
 - Scale без goal-size использует только явно сохранённую PNG/JPEG/BMP physical-density metadata; при её отсутствии размер не угадывается. Отрицательное picture crop-extension пока сохраняется без layout/canvas расширения.
 - Редкие charset/codepage combinations за пределами точных известных mappings.
 - Некоторые декоративные border styles имеют CSS fallback, а не pixel-identical Word rendering.
@@ -84,5 +84,5 @@ MYBOOK считает готовыми к обычному пользовате�
 ## Future formats
 
 DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
-поддерживаемый формат MYBOOK 1.5.4. Его reader является отдельной будущей
+поддерживаемый формат MYBOOK 1.5.5. Его reader является отдельной будущей
 функциональностью и должен пройти те же readiness gates до добавления в реестр.
