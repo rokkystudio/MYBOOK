@@ -4,6 +4,8 @@ using System.IO.Compression;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Book.Diagnostics;
 using Book.Documents;
 using Book.Formats.Doc;
@@ -55,6 +57,7 @@ internal static class Program
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("PDF Indexed matte", TestPdfIndexedMatte),
+            ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),
@@ -8873,6 +8876,93 @@ internal static class Program
             "PDF Indexed /SMask /Matte должен распремультиплицировать decoded index до palette lookup.");
     }
 
+    private static void TestPdfJpegDecoder()
+    {
+        static bool Near(
+            byte actual,
+            int expected,
+            int tolerance)
+        {
+            return Math.Abs(
+                       actual -
+                       expected) <=
+                   tolerance;
+        }
+
+        var grayJpeg = EncodeJpegFixture(
+            [32, 224],
+            width: 2,
+            height: 1,
+            PixelFormats.Gray8,
+            stride: 2);
+        var gray = PdfJpegSampleDecoder.DecodeGray(
+            grayJpeg,
+            expectedWidth: 2,
+            expectedHeight: 1);
+
+        Assert(
+            gray.Length == 2 &&
+            Near(gray[0], 32, 4) &&
+            Near(gray[1], 224, 4),
+            "PDF DCTDecode grayscale JPEG должен декодироваться в 8-bit samples.");
+
+        var inverted = PdfImageColorConverter.ApplyComponentDecode(
+            gray,
+            components: 1,
+            new[] { 1.0, 0.0 });
+
+        Assert(
+            Near(inverted[0], 223, 4) &&
+            Near(inverted[1], 31, 4),
+            "PDF нестандартный /Decode должен применяться к decoded DCT samples.");
+
+        var rgbJpeg = EncodeJpegFixture(
+            [200, 50, 20],
+            width: 1,
+            height: 1,
+            PixelFormats.Rgb24,
+            stride: 3);
+        var rgb = PdfJpegSampleDecoder.DecodeRgb(
+            rgbJpeg,
+            expectedWidth: 1,
+            expectedHeight: 1);
+
+        Assert(
+            rgb.Length == 3 &&
+            Near(rgb[0], 200, 8) &&
+            Near(rgb[1], 50, 8) &&
+            Near(rgb[2], 20, 8),
+            "PDF DCTDecode RGB JPEG должен декодироваться в RGB samples.");
+
+        var matteRemoved = PdfImageColorConverter.RemoveMatte(
+            rgb,
+            components: 3,
+            alphaSamples: [255],
+            matte: [1.0, 1.0, 1.0]);
+
+        Assert(
+            matteRemoved.SequenceEqual(rgb),
+            "PDF /SMask /Matte должен работать с decoded DCT RGB samples.");
+
+        var geometryRejected = false;
+
+        try
+        {
+            PdfJpegSampleDecoder.DecodeGray(
+                grayJpeg,
+                expectedWidth: 3,
+                expectedHeight: 1);
+        }
+        catch (InvalidDataException)
+        {
+            geometryRejected = true;
+        }
+
+        Assert(
+            geometryRejected,
+            "PDF DCTDecode должен отклонять JPEG geometry, несовместимую с Image XObject.");
+    }
+
     private static void TestPdfLzwDecoder()
     {
         var expected = Enumerable
@@ -9026,6 +9116,45 @@ internal static class Program
             lzwPage.Text,
             "PDF LZW marker",
             "PDF LZW content stream");
+
+        var dctImagePath = Path.Combine(
+            directory,
+            "regression-dct-image.pdf");
+        CreateDctImagePdf(
+            dctImagePath);
+
+        var dctImageModel =
+            SupportedFormatRegistry.ReadDocument(
+                dctImagePath);
+        var dctImagePage = dctImageModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+        var dctImage = dctImagePage.ImageRuns.Single();
+
+        Assert(
+            string.Equals(
+                dctImage.ContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            dctImage.Data.Length > 8 &&
+            dctImage.Data.AsSpan(0, 8).SequenceEqual(
+                new byte[]
+                {
+                    137, 80, 78, 71,
+                    13, 10, 26, 10
+                }) &&
+            string.Equals(
+                dctImage.SoftMaskContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            dctImage.SoftMaskData is { Length: > 8 } &&
+            dctImage.SoftMaskData.AsSpan(0, 8).SequenceEqual(
+                new byte[]
+                {
+                    137, 80, 78, 71,
+                    13, 10, 26, 10
+                }),
+            "PDF DCT Image XObject должен декодировать нестандартный /Decode и DCT /SMask /Matte в PNG resources.");
 
         var extGStatePath = Path.Combine(
             directory,
@@ -10029,6 +10158,152 @@ internal static class Program
         Write(
             "trailer\n" +
             $"<< /Size 8 /Root 1 0 R /Encrypt 7 0 R /ID [<{idHex}> <{idHex}>] >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
+    }
+
+    /// <summary>
+    /// Кодирует raster fixture в JPEG с максимальным quality для PDF DCT regressions.
+    /// </summary>
+    private static byte[] EncodeJpegFixture(
+        byte[] pixels,
+        int width,
+        int height,
+        PixelFormat format,
+        int stride)
+    {
+        var bitmap = BitmapSource.Create(
+            width,
+            height,
+            96,
+            96,
+            format,
+            null,
+            pixels,
+            stride);
+        var encoder = new JpegBitmapEncoder
+        {
+            QualityLevel = 100
+        };
+        encoder.Frames.Add(
+            BitmapFrame.Create(bitmap));
+
+        using var output = new MemoryStream();
+        encoder.Save(output);
+        return output.ToArray();
+    }
+
+    /// <summary>
+    /// Создаёт одностраничный PDF с RGB DCT Image XObject, нестандартным /Decode
+    /// и grayscale DCT soft mask с /Matte.
+    /// </summary>
+    private static void CreateDctImagePdf(string path)
+    {
+        var encoding = Encoding.ASCII;
+        var imageJpeg = EncodeJpegFixture(
+            [64, 128, 192],
+            width: 1,
+            height: 1,
+            PixelFormats.Rgb24,
+            stride: 3);
+        var maskJpeg = EncodeJpegFixture(
+            [128],
+            width: 1,
+            height: 1,
+            PixelFormats.Gray8,
+            stride: 1);
+        var content = encoding.GetBytes(
+            "q\n" +
+            "20 0 0 20 20 20 cm\n" +
+            "/Im1 Do\n" +
+            "Q\n");
+
+        using var memory = new MemoryStream();
+        var offsets = new List<long>();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        void BeginObject(int number)
+        {
+            offsets.Add(memory.Position);
+            Write(
+                number.ToString(
+                    CultureInfo.InvariantCulture) +
+                " 0 obj\n");
+        }
+
+        Write("%PDF-1.4\n");
+
+        BeginObject(1);
+        Write("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        BeginObject(2);
+        Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>\nendobj\n");
+
+        BeginObject(3);
+        Write("<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>\nendobj\n");
+
+        BeginObject(4);
+        Write(
+            $"<< /Length {content.Length} >>\nstream\n");
+        memory.Write(
+            content,
+            0,
+            content.Length);
+        Write("endstream\nendobj\n");
+
+        BeginObject(5);
+        Write(
+            "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 " +
+            "/ColorSpace /DeviceRGB /BitsPerComponent 8 " +
+            "/Filter /DCTDecode /Decode [1 0 1 0 1 0] /SMask 6 0 R " +
+            $"/Length {imageJpeg.Length} >>\nstream\n");
+        memory.Write(
+            imageJpeg,
+            0,
+            imageJpeg.Length);
+        Write("\nendstream\nendobj\n");
+
+        BeginObject(6);
+        Write(
+            "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 " +
+            "/ColorSpace /DeviceGray /BitsPerComponent 8 " +
+            "/Filter /DCTDecode /Matte [1 1 1] " +
+            $"/Length {maskJpeg.Length} >>\nstream\n");
+        memory.Write(
+            maskJpeg,
+            0,
+            maskJpeg.Length);
+        Write("\nendstream\nendobj\n");
+
+        var xref = memory.Position;
+        Write("xref\n0 7\n0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n" +
+            "<< /Size 7 /Root 1 0 R >>\n" +
             "startxref\n" +
             xref.ToString(
                 CultureInfo.InvariantCulture) +
