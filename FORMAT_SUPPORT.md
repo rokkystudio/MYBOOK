@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.0
+Версия профиля: 1.5.1
 
 ## Ready for use
 
@@ -76,7 +76,7 @@ MYBOOK считает готовыми к обычному пользовате�
 - Predefined named Type0 CMap без embedded Encoding stream не интерпретируется
   как Identity: reader выдаёт явную unsupported-ошибку.
 - DeviceCMYK DCT post-processing и дополнительные редкие ColorSpace остаются вне профиля.
-- CCITT, JPX и JBIG2 filters остаются вне профиля.
+- CCITT Group 3/Group 4 filters входят в профиль; JPX и JBIG2 filters остаются вне профиля.
 - Revision 6 non-empty password preprocessing требует полноценного Unicode
   password API/SASLprep path; пустой R6 password и поддерживаемые legacy/R5
   password paths работают.
@@ -85,5 +85,5 @@ MYBOOK считает готовыми к обычному пользовате�
 ## Future formats
 
 DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
-поддерживаемый формат MYBOOK 1.5.0. Его reader является отдельной будущей
+поддерживаемый формат MYBOOK 1.5.1. Его reader является отдельной будущей
 функциональностью и должен пройти те же readiness gates до добавления в реестр.

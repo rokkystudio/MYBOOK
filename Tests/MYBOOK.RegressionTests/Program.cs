@@ -63,6 +63,7 @@ internal static class Program
             ("PDF Indexed matte", TestPdfIndexedMatte),
             ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
             ("PDF LZW decoder", TestPdfLzwDecoder),
+            ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),
             (".doc corpus dispatch", () => TestDocCorpusDispatch(repositoryRoot)),
@@ -368,7 +369,7 @@ internal static class Program
             {\colortbl;\red255\green0\blue0;\red255\green255\blue0;}
             {\*\bkmkstart bookmark}
             \qc\li720\ri360\fi-180\sb240\sa120\sl360\bgdkcross\shading5000\cfpat1\cbpat2\f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
-            \pard\sl360\slmult1\keep\keepn\widctl\rtlpar Paragraph controls\par
+            \pard\sl360\slmult1\keep\keepn\widctl\rtlpar\hyphpar\sbauto1\saauto1\contextualspace\mirrorindents\nosnaplinegrid\suppressline Paragraph controls\par
             \pard\pagebb\outlinelevel3 Page break outline\par
             \pard\tqr\tldot\tx1440\tqc\tlhyph\tx2880\tqdec\tleq\tx4320 Tabs\tab One\tab Two\tab Three\par
             \pard Unicode \u1046?\par
@@ -379,7 +380,7 @@ internal static class Program
             {\field{\*\fldinst HYPERLINK "https://example.com/rtf"}{\fldrslt External RTF link}}\par
             {\field{\*\fldinst HYPERLINK \l "bookmark"}{\fldrslt Internal RTF link}}\par
             {\field{\*\fldinst HYPERLINK "file:///C:/secret.txt"}{\fldrslt Unsafe RTF link}}\par
-            \trowd\trqc\trleft720\trgaph60\rtlrow\trpaddl100\trpaddfl3\trpaddr120\trpaddfr3\trpaddt80\trpaddft3\trpaddb60\trpaddfb3\trspdl40\trspdfl3\trspdr60\trspdfr3\trspdt20\trspdft3\trspdb30\trspdfb3\trbgcross\trshdng5000\trcfpat1\trcbpat2\trftsWidth2\trwWidth5000\trhdr\trkeep\trrh-480\trbrdrt\brdrdash\brdrw60\brdrcf2\trbrdrl\brdrs\brdrw20\brdrcf2\trbrdrb\brdrdb\brdrw40\brdrcf2\trbrdrr\brdrdot\brdrw30\brdrcf2\trbrdrh\brdrs\brdrw20\brdrcf2\trbrdrv\brdrdot\brdrw20\brdrcf2\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clhidemark\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
+            \trowd\trqc\trleft720\trgaph60\rtlrow\trpaddl100\trpaddfl3\trpaddr120\trpaddfr3\trpaddt80\trpaddft3\trpaddb60\trpaddfb3\trspdl40\trspdfl3\trspdr60\trspdfr3\trspdt20\trspdft3\trspdb30\trspdfb3\trbgcross\trshdng5000\trcfpat1\trcbpat2\trftsWidth2\trwWidth5000\trhdr\trkeep\trkeepfollow\trautofit1\trrh-480\trbrdrt\brdrdash\brdrw60\brdrcf2\trbrdrl\brdrs\brdrw20\brdrcf2\trbrdrb\brdrdb\brdrw40\brdrcf2\trbrdrr\brdrdot\brdrw30\brdrcf2\trbrdrh\brdrs\brdrw20\brdrcf2\trbrdrv\brdrdot\brdrw20\brdrcf2\clvertalc\clpadl100\clpadfl3\clpadr120\clpadfr3\clpadt80\clpadft3\clpadb60\clpadfb3\clNoWrap\clhidemark\clbrdrt\brdrs\brdrw20\brdrcf1\clbrdrl\brdrdot\brdrw30\brdrcf1\clbrdrb\brdrdb\brdrw40\brdrcf1\clbrdrr\brdrdash\brdrw20\brdrcf1\clshdng10000\clcfpat2\clcbpat1\cellx1000\clvertalb\clFitText\cellx2400\intbl Cell A\cell Cell B\cell\row
             \trowd\trqr\ltrrow\trftsWidth3\trwWidth1440\clmgf\clshdng5000\clcfpat1\clcbpat2\cellx1000\clmrg\cellx2000\intbl Merged RTF cell\cell\cell\row
             \trowd\trql\trftsWidth1\clvmgf\cellx1000\cellx2000\intbl Vertical RTF cell\cell Row 3 B\cell\row
             \trowd\trftsWidth0\trwWidth777\clvmrg\cellx1000\cellx2000\intbl\cell Row 4 B\cell\row
@@ -488,8 +489,15 @@ internal static class Program
             controlledParagraph.KeepTogether &&
             controlledParagraph.KeepWithNext &&
             controlledParagraph.WidowControl &&
-            controlledParagraph.RightToLeft,
-            "RTF slmult, keep, keepn, widctl и rtlpar должны сохраняться.");
+            controlledParagraph.RightToLeft &&
+            controlledParagraph.AutomaticHyphenation == true &&
+            controlledParagraph.SpaceBeforeAuto == true &&
+            controlledParagraph.SpaceAfterAuto == true &&
+            controlledParagraph.ContextualSpacing == true &&
+            controlledParagraph.MirrorIndents == true &&
+            controlledParagraph.SnapToDocumentGrid == false &&
+            controlledParagraph.SuppressLineNumber == true,
+            "RTF paragraph controls должны сохранять spacing, pagination и редкие layout flags.");
 
         var outlineParagraph = paragraphs.First(paragraph =>
             paragraph.Inlines.Any(inline =>
@@ -627,9 +635,11 @@ internal static class Program
         Assert(
             table.Rows[0].RepeatAsHeader &&
             table.Rows[0].PreventPageSplit &&
+            table.Rows[0].KeepWithNext &&
+            table.Rows[0].AutoFit == true &&
             table.Rows[0].HeightPoints == 24 &&
             table.Rows[0].HeightExact,
-            "RTF trhdr, trkeep и negative trrh должны сохранять свойства строки.");
+            "RTF trhdr, trkeep, trkeepfollow, trautofit и negative trrh должны сохранять свойства строки.");
 
         Assert(
             table.Rows[0].Alignment == DocumentTableAlignment.Center &&
@@ -1040,6 +1050,21 @@ internal static class Program
 
         AssertContains(
             html,
+            "data-automatic-hyphenation=\"true\"",
+            "RTF rendered automatic hyphenation metadata");
+
+        AssertContains(
+            html,
+            "data-snap-to-document-grid=\"false\"",
+            "RTF rendered document-grid metadata");
+
+        AssertContains(
+            html,
+            "data-suppress-line-number=\"true\"",
+            "RTF rendered line-number suppression metadata");
+
+        AssertContains(
+            html,
             "data-outline-level=\"3\"",
             "RTF rendered outline level metadata");
 
@@ -1062,6 +1087,16 @@ internal static class Program
             html,
             "data-row-alignment=\"center\"",
             "RTF rendered centered row alignment metadata");
+
+        AssertContains(
+            html,
+            "data-row-keep-with-next=\"true\"",
+            "RTF rendered keep-with-next row metadata");
+
+        AssertContains(
+            html,
+            "data-row-autofit=\"true\"",
+            "RTF rendered row AutoFit metadata");
 
         AssertContains(
             html,
@@ -9179,6 +9214,198 @@ internal static class Program
             "PDF LZW EarlyChange=0 должен корректно переживать переход 9→10 bits.");
     }
 
+    private static void TestPdfCcittDecoder(string directory)
+    {
+        const int width = 16;
+        const int height = 4;
+        const int stride = 2;
+
+        byte[] packed =
+        [
+            0b10101010, 0b01010101,
+            0b11110000, 0b00001111,
+            0b11001100, 0b00110011,
+            0b00000000, 0b11111111
+        ];
+
+        var source = BitmapSource.Create(
+            width,
+            height,
+            96,
+            96,
+            PixelFormats.BlackWhite,
+            null,
+            packed,
+            stride);
+
+        var encoder = new TiffBitmapEncoder
+        {
+            Compression = TiffCompressOption.Ccitt4
+        };
+        encoder.Frames.Add(
+            BitmapFrame.Create(source));
+
+        byte[] tiff;
+
+        using (var memory = new MemoryStream())
+        {
+            encoder.Save(memory);
+            tiff = memory.ToArray();
+        }
+
+        var ifdOffset = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(
+            tiff.AsSpan(
+                4,
+                4)));
+        var entryCount = BinaryPrimitives.ReadUInt16LittleEndian(
+            tiff.AsSpan(
+                ifdOffset,
+                2));
+        uint stripOffset = 0;
+        uint stripByteCount = 0;
+        ushort compression = 0;
+        ushort photometric = 0;
+
+        for (var index = 0;
+             index < entryCount;
+             index++)
+        {
+            var entryOffset =
+                ifdOffset +
+                2 +
+                index * 12;
+            var tag = BinaryPrimitives.ReadUInt16LittleEndian(
+                tiff.AsSpan(
+                    entryOffset,
+                    2));
+            var type = BinaryPrimitives.ReadUInt16LittleEndian(
+                tiff.AsSpan(
+                    entryOffset + 2,
+                    2));
+            var count = BinaryPrimitives.ReadUInt32LittleEndian(
+                tiff.AsSpan(
+                    entryOffset + 4,
+                    4));
+
+            if (count != 1)
+            {
+                continue;
+            }
+
+            var value = type == 3
+                ? BinaryPrimitives.ReadUInt16LittleEndian(
+                    tiff.AsSpan(
+                        entryOffset + 8,
+                        2))
+                : BinaryPrimitives.ReadUInt32LittleEndian(
+                    tiff.AsSpan(
+                        entryOffset + 8,
+                        4));
+
+            switch (tag)
+            {
+                case 259:
+                    compression = checked((ushort)value);
+                    break;
+
+                case 262:
+                    photometric = checked((ushort)value);
+                    break;
+
+                case 273:
+                    stripOffset = value;
+                    break;
+
+                case 279:
+                    stripByteCount = value;
+                    break;
+            }
+        }
+
+        AssertEqual(
+            (ushort)4,
+            compression,
+            "TIFF CCITT regression compression");
+
+        Assert(
+            stripOffset > 0 &&
+            stripByteCount > 0 &&
+            stripOffset + stripByteCount <= tiff.Length,
+            "TIFF CCITT regression strip должен быть валидным.");
+
+        var strip = tiff
+            .AsSpan(
+                checked((int)stripOffset),
+                checked((int)stripByteCount))
+            .ToArray();
+
+        var decoded = PdfCcittFaxDecoder.Decode(
+            strip,
+            width,
+            height,
+            k: -1,
+            endOfLine: false,
+            encodedByteAlign: false,
+            blackIs1: photometric == 0);
+
+        BitmapSource reference = source;
+        if (reference.Format != PixelFormats.Gray8)
+        {
+            reference = new FormatConvertedBitmap(
+                reference,
+                PixelFormats.Gray8,
+                null,
+                0);
+        }
+
+        var expected = new byte[
+            width *
+            height];
+        reference.CopyPixels(
+            expected,
+            width,
+            0);
+
+        Assert(
+            decoded.SequenceEqual(expected),
+            "PDF CCITTFaxDecode Group 4 должен совпадать с эталонным TIFF T.6 decode.");
+
+        var pdfPath = Path.Combine(
+            directory,
+            "regression-ccitt.pdf");
+        CreateCcittImagePdf(
+            pdfPath,
+            strip,
+            width,
+            height,
+            blackIs1: photometric == 0);
+
+        var model = SupportedFormatRegistry.ReadDocument(
+            pdfPath);
+        var image = model.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        Assert(
+            string.Equals(
+                image.ContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            image.Data.Length > 8 &&
+            image.Data.AsSpan(
+                    0,
+                    8)
+                .SequenceEqual(
+                    new byte[]
+                    {
+                        137, 80, 78, 71,
+                        13, 10, 26, 10
+                    }),
+            "PDF CCITTFaxDecode Image XObject должен пройти полный PDF reader pipeline в PNG.");
+    }
+
     private static void TestPdfReader(string directory)
     {
         var path = Path.Combine(
@@ -10498,6 +10725,102 @@ internal static class Program
         using var output = new MemoryStream();
         encoder.Save(output);
         return output.ToArray();
+    }
+
+    /// <summary>
+    /// Создаёт одностраничный PDF с Group 4 CCITT Image XObject.
+    /// </summary>
+    private static void CreateCcittImagePdf(
+        string path,
+        byte[] ccitt,
+        int width,
+        int height,
+        bool blackIs1)
+    {
+        var encoding = Encoding.ASCII;
+        var content = encoding.GetBytes(
+            "q\n" +
+            "40 0 0 20 20 20 cm\n" +
+            "/Im1 Do\n" +
+            "Q\n");
+
+        using var memory = new MemoryStream();
+        var offsets = new List<long>();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        void BeginObject(int number)
+        {
+            offsets.Add(memory.Position);
+            Write(
+                number.ToString(
+                    CultureInfo.InvariantCulture) +
+                " 0 obj\n");
+        }
+
+        Write("%PDF-1.4\n");
+
+        BeginObject(1);
+        Write("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        BeginObject(2);
+        Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>\nendobj\n");
+
+        BeginObject(3);
+        Write("<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>\nendobj\n");
+
+        BeginObject(4);
+        Write(
+            $"<< /Length {content.Length} >>\nstream\n");
+        memory.Write(
+            content,
+            0,
+            content.Length);
+        Write("endstream\nendobj\n");
+
+        BeginObject(5);
+        Write(
+            $"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} " +
+            "/ColorSpace /DeviceGray /BitsPerComponent 1 " +
+            "/Filter /CCITTFaxDecode " +
+            $"/DecodeParms << /K -1 /Columns {width} /Rows {height} /BlackIs1 {(blackIs1 ? "true" : "false")} >> " +
+            $"/Length {ccitt.Length} >>\nstream\n");
+        memory.Write(
+            ccitt,
+            0,
+            ccitt.Length);
+        Write("\nendstream\nendobj\n");
+
+        var xref = memory.Position;
+        Write("xref\n0 6\n0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n" +
+            "<< /Size 6 /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
     }
 
     /// <summary>
