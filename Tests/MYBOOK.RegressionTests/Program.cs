@@ -369,7 +369,7 @@ internal static class Program
             {\colortbl;\red255\green0\blue0;\red255\green255\blue0;}
             {\*\bkmkstart bookmark}
             \qc\li720\ri360\fi-180\sb240\sa120\sl360\bgdkcross\shading5000\cfpat1\cbpat2\f1\fs28\cf1\highlight2\b\i\ul Styled Привет\b0\i0\ulnone\highlight0\cf0\par
-            \pard\sl360\slmult1\keep\keepn\widctl\rtlpar\hyphpar\sbauto1\saauto1\contextualspace\mirrorindents\nosnaplinegrid\suppressline Paragraph controls\par
+            \pard\sl360\slmult1\keep\keepn\widctl\rtlpar\hyphpar\sbauto1\saauto1\contextualspace\mirrorindents\nosnaplinegrid\suppressline\adjustright\nocwrap\nooverflow\aspalpha\aspnum Paragraph controls\par
             \pard\pagebb\outlinelevel3 Page break outline\par
             \pard\tqr\tldot\tx1440\tqc\tlhyph\tx2880\tqdec\tleq\tx4320 Tabs\tab One\tab Two\tab Three\par
             \pard Unicode \u1046?\par
@@ -399,7 +399,7 @@ internal static class Program
             {\*\nesttableprops\trowd\cellx2000\nestrow}
             \intbl\itap1 Outer after\cell\row
             \pard\itap0
-            {\pict\pngblip\picw1\pich1\picwgoal1440\pichgoal720\picscalex50\picscaley200\piccropl120\piccropt-40\piccropr60\piccropb20 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
+            {\pict\pngblip\bliptag-123{\*\blipuid 00112233445566778899AABBCCDDEEFF}\picw1\pich1\picwgoal1440\pichgoal720\picscalex50\picscaley200\piccropl120\piccropt-40\piccropr60\piccropb20 89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\par
             {\pict\dibitmap0 280000000100000001000000010018000000000004000000000000000000000000000000000000000000FF00}\par
             {\pict\emfblip 0100000000000000000000000000000000000000000000000000000000000000000000000000000020454D46}\par
             {\pict\wmetafile8 000009000000000000000000000000000000}\par
@@ -496,7 +496,12 @@ internal static class Program
             controlledParagraph.ContextualSpacing == true &&
             controlledParagraph.MirrorIndents == true &&
             controlledParagraph.SnapToDocumentGrid == false &&
-            controlledParagraph.SuppressLineNumber == true,
+            controlledParagraph.SuppressLineNumber == true &&
+            controlledParagraph.AdjustRightIndentToGrid == true &&
+            controlledParagraph.DisableCharacterWrap == true &&
+            controlledParagraph.DisableOverflowPunctuation == true &&
+            controlledParagraph.AutoSpaceLatin == true &&
+            controlledParagraph.AutoSpaceNumbers == true,
             "RTF paragraph controls должны сохранять spacing, pagination и редкие layout flags.");
 
         var outlineParagraph = paragraphs.First(paragraph =>
@@ -942,9 +947,11 @@ internal static class Program
                 CropLeftPoints: 6,
                 CropTopPoints: -2,
                 CropRightPoints: 3,
-                CropBottomPoints: 1
+                CropBottomPoints: 1,
+                SourceTag: -123,
+                UniqueId: "00112233445566778899AABBCCDDEEFF"
             },
-            "RTF pict должен сохранять picw/pich, goal/scale geometry и signed piccrop* offsets.");
+            "RTF pict должен сохранять geometry, crop offsets, bliptag и blipuid без смешивания UID с image payload.");
 
         var bmpImage = model.Blocks
             .OfType<DocumentParagraph>()
@@ -1062,6 +1069,11 @@ internal static class Program
             html,
             "data-suppress-line-number=\"true\"",
             "RTF rendered line-number suppression metadata");
+
+        AssertContains(
+            html,
+            "data-adjust-right-indent-to-grid=\"true\" data-disable-character-wrap=\"true\" data-disable-overflow-punctuation=\"true\" data-auto-space-latin=\"true\" data-auto-space-numbers=\"true\"",
+            "RTF rendered rare East-Asian paragraph metadata");
 
         AssertContains(
             html,
@@ -1245,8 +1257,18 @@ internal static class Program
 
         AssertContains(
             html,
-            "data-pixel-width=\"1\" data-pixel-height=\"1\" data-scale-x-percent=\"50\" data-scale-y-percent=\"200\" data-crop-left-pt=\"6\" data-crop-top-pt=\"-2\" data-crop-right-pt=\"3\" data-crop-bottom-pt=\"1\" style=\"width:36pt;height:72pt;clip-path:inset(0pt 3pt 1pt 6pt);\"",
+            "data-pixel-width=\"1\" data-pixel-height=\"1\" data-scale-x-percent=\"50\" data-scale-y-percent=\"200\" data-crop-left-pt=\"6\" data-crop-top-pt=\"-2\" data-crop-right-pt=\"3\" data-crop-bottom-pt=\"1\"",
             "RTF rendered picture geometry and positive crop clipping");
+
+        AssertContains(
+            html,
+            "style=\"width:36pt;height:72pt;clip-path:inset(0pt 3pt 1pt 6pt);\"",
+            "RTF rendered positive crop clipping");
+
+        AssertContains(
+            html,
+            "data-image-source-tag=\"-123\" data-image-uid=\"00112233445566778899AABBCCDDEEFF\"",
+            "RTF rendered bliptag/blipuid metadata");
 
         AssertContains(
             html,
@@ -1366,6 +1388,34 @@ internal static class Program
             Math.Abs(bmpDpi.Value.DpiX - 150) <= 0.1 &&
             Math.Abs(bmpDpi.Value.DpiY - 75) <= 0.1,
             "RTF BMP pixels-per-meter density должна преобразовываться в DPI.");
+
+        var malformedUidPath = Path.Combine(
+            directory,
+            "regression-rtf-malformed-blipuid.rtf");
+        File.WriteAllText(
+            malformedUidPath,
+            "{\\rtf1\\ansi {\\pict\\pngblip{\\*\\blipuid 0011}" +
+            "89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C020000000B4944415478DA63FCFF1F0002EB01F56950DA2A0000000049454E44AE426082}\\par}",
+            Encoding.ASCII);
+
+        var malformedUidRejected = false;
+
+        try
+        {
+            SupportedFormatRegistry.ReadDocument(
+                malformedUidPath);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "blipuid",
+                StringComparison.Ordinal))
+        {
+            malformedUidRejected = true;
+        }
+
+        Assert(
+            malformedUidRejected,
+            "RTF malformed blipuid должен завершаться контролируемой structural error.");
     }
 
     private static void TestDocRtfDispatch(string directory)
