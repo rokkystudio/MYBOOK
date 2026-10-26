@@ -62,6 +62,7 @@ internal static class Program
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
+            ("PDF CIE color spaces", TestPdfCieColorSpaces),
             ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
@@ -9386,6 +9387,86 @@ internal static class Program
         Assert(
             unsupportedLegacyCharacterRejected,
             "PDF legacy password не должен эвристически заменять символы вне PDFDocEncoding.");
+    }
+
+    private static void TestPdfCieColorSpaces()
+    {
+        double[] d65 =
+        [
+            0.95047,
+            1.0,
+            1.08883
+        ];
+
+        var calGray =
+            PdfImageColorConverter.ConvertCieToRgb(
+                [255],
+                [0.0, 1.0],
+                new PdfCieColorSpace(
+                    PdfCieColorSpaceKind.CalGray,
+                    d65,
+                    [1.0],
+                    [
+                        1.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0,
+                        0.0, 0.0, 1.0
+                    ],
+                    [0.0, 1.0]));
+
+        Assert(
+            calGray.Length == 3 &&
+            calGray.All(value => value >= 254),
+            "PDF CalGray D65 white должен преобразовываться в sRGB white.");
+
+        var calRgb =
+            PdfImageColorConverter.ConvertCieToRgb(
+                [255, 0, 0],
+                [
+                    0.0, 1.0,
+                    0.0, 1.0,
+                    0.0, 1.0
+                ],
+                new PdfCieColorSpace(
+                    PdfCieColorSpaceKind.CalRgb,
+                    d65,
+                    [1.0, 1.0, 1.0],
+                    [
+                        0.4124564, 0.2126729, 0.0193339,
+                        0.3575761, 0.7151522, 0.1191920,
+                        0.1804375, 0.0721750, 0.9503041
+                    ],
+                    [0.0, 1.0]));
+
+        Assert(
+            calRgb.Length == 3 &&
+            calRgb[0] >= 254 &&
+            calRgb[1] <= 1 &&
+            calRgb[2] <= 1,
+            "PDF CalRGB sRGB-primary red должен сохранять красный primary.");
+
+        var lab =
+            PdfImageColorConverter.ConvertCieToRgb(
+                [255, 128, 128],
+                [
+                    0.0, 100.0,
+                    -128.0, 127.0,
+                    -128.0, 127.0
+                ],
+                new PdfCieColorSpace(
+                    PdfCieColorSpaceKind.Lab,
+                    d65,
+                    [1.0, 1.0, 1.0],
+                    [
+                        1.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0,
+                        0.0, 0.0, 1.0
+                    ],
+                    [-128.0, 127.0, -128.0, 127.0]));
+
+        Assert(
+            lab.Length == 3 &&
+            lab.All(value => value >= 252),
+            "PDF Lab L*=100 a*=0 b*=0 должен преобразовываться в near-white sRGB.");
     }
 
     private static void TestPdfIndexedMatte()
