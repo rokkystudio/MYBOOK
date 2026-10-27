@@ -10764,13 +10764,56 @@ internal static class Program
             includeReverseDecode: false,
             softMaskInData: 2);
 
+        var preblendedJpx = Convert.FromBase64String(
+            "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAABPanAyaAAAABZpaGRyAAAAAQAAAAIABAcHAAAAAAAPY29scgEAAAAAABAAAAAiY2RlZgAEAAAAAAABAAEAAAACAAIAAAADAAMAAQAAAAAAn2pwMmP/T/9RADIAAAAAAAIAAAABAAAAAAAAAAAAAAACAAAAAQAAAAAAAAAAAAQHAQEHAQEHAQEHAQH/UgAMAAAAAQAABAQAAf9cAARAQP9kACUAAUNyZWF0ZWQgYnkgT3BlbkpQRUcgdmVyc2lvbiAyLjUuNP+QAAoAAAAAACQAAf+T34AgC7KKf9+AEAef34AQCT/PtAgEH//Z");
+        var compensatedPath = Path.Combine(
+            directory,
+            "regression-jpx-preblended-compensated.pdf");
+        CreateJpxImagePdf(
+            compensatedPath,
+            preblendedJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            softMaskInData: 2,
+            matteSyntax: "[0 0 0]");
+
+        var compensatedImage = SupportedFormatRegistry
+            .ReadDocument(compensatedPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        using (var compensatedInput = new MemoryStream(compensatedImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                compensatedInput,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[8];
+            bgra.CopyPixels(pixels, 8, 0);
+
+            Assert(
+                pixels[2] == 255 &&
+                pixels[3] == 255 &&
+                pixels[4] == 0 &&
+                pixels[5] == 255 &&
+                pixels[6] == 0 &&
+                pixels[7] == 128,
+                "PDF JPX /SMaskInData=2 должен восстанавливать green из preblended samples по /Matte.");
+        }
+
         var preblendedRejected = false;
 
         try
         {
             SupportedFormatRegistry.ReadDocument(preblendedPath);
         }
-        catch (NotSupportedException error)
+        catch (InvalidDataException error)
             when (error.Message.Contains("SMaskInData=2", StringComparison.Ordinal))
         {
             preblendedRejected = true;
@@ -13381,7 +13424,8 @@ internal static class Program
         bool includeColorSpace,
         bool includeReverseDecode,
         string colorSpaceSyntax = "/DeviceRGB",
-        int? softMaskInData = null)
+        int? softMaskInData = null,
+        string? matteSyntax = null)
     {
         var encoding = Encoding.ASCII;
         var content =
@@ -13459,6 +13503,9 @@ internal static class Program
                 : string.Empty) +
             (softMaskInData != null
                 ? $"/SMaskInData {softMaskInData.Value} "
+                : string.Empty) +
+            (matteSyntax != null
+                ? $"/Matte {matteSyntax} "
                 : string.Empty) +
             "/Filter /JPXDecode " +
             $"/Length {jpx.Length} >>\nstream\n");
