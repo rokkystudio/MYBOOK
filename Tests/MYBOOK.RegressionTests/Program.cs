@@ -10687,35 +10687,123 @@ internal static class Program
             componentMismatchRejected,
             "PDF JPX explicit ColorSpace должен строго совпадать с числом decoded components.");
 
-        var alphaPath =
-            Path.Combine(
-                directory,
-                "regression-jpx-smaskindata.pdf");
+        var rgbaJpx = Convert.FromBase64String(
+            "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAABPanAyaAAAABZpaGRyAAAAAQAAAAIABAcHAAAAAAAPY29scgEAAAAAABAAAAAiY2RlZgAEAAAAAAABAAEAAAACAAIAAAADAAMAAQAAAAAAoGpwMmP/T/9RADIAAAAAAAIAAAABAAAAAAAAAAAAAAACAAAAAQAAAAAAAAAAAAQHAQEHAQEHAQEHAQH/UgAMAAAAAQAABAQAAf9cAARAQP9kACUAAUNyZWF0ZWQgYnkgT3BlbkpQRUcgdmVyc2lvbiAyLjUuNP+QAAoAAAAAACUAAf+T34AgC7KKf9+AGAWi3d+AEAk/z7QIBB//2Q==");
+
+        var alphaPath = Path.Combine(
+            directory,
+            "regression-jpx-smaskindata.pdf");
         CreateJpxImagePdf(
             alphaPath,
+            rgbaJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            softMaskInData: 1);
+
+        var alphaImage = SupportedFormatRegistry
+            .ReadDocument(alphaPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        using (var input = new MemoryStream(alphaImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                input,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[8];
+            bgra.CopyPixels(pixels, 8, 0);
+
+            Assert(
+                pixels[0] == 0 &&
+                pixels[1] == 0 &&
+                pixels[2] == 255 &&
+                pixels[3] == 255 &&
+                pixels[4] == 0 &&
+                pixels[5] == 255 &&
+                pixels[6] == 0 &&
+                pixels[7] == 128,
+                "PDF JPX /SMaskInData=1 должен сохранять RGBA samples и unassociated opacity.");
+        }
+
+        var implicitAlphaPath = Path.Combine(
+            directory,
+            "regression-jpx-implicit-alpha.pdf");
+        CreateJpxImagePdf(
+            implicitAlphaPath,
+            rgbaJpx,
+            includeColorSpace: false,
+            includeReverseDecode: false,
+            softMaskInData: 1);
+
+        var implicitAlphaImage = SupportedFormatRegistry
+            .ReadDocument(implicitAlphaPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        Assert(
+            implicitAlphaImage.Data.SequenceEqual(alphaImage.Data),
+            "PDF JPX embedded sRGB с /SMaskInData=1 должен давать те же RGBA samples.");
+
+        var preblendedPath = Path.Combine(
+            directory,
+            "regression-jpx-preblended-alpha.pdf");
+        CreateJpxImagePdf(
+            preblendedPath,
+            rgbaJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            softMaskInData: 2);
+
+        var preblendedRejected = false;
+
+        try
+        {
+            SupportedFormatRegistry.ReadDocument(preblendedPath);
+        }
+        catch (NotSupportedException error)
+            when (error.Message.Contains("SMaskInData=2", StringComparison.Ordinal))
+        {
+            preblendedRejected = true;
+        }
+
+        Assert(
+            preblendedRejected,
+            "PDF JPX preblended opacity без compensation должен оставаться unsupported.");
+
+        var invalidPath = Path.Combine(
+            directory,
+            "regression-jpx-smaskindata-mismatch.pdf");
+        CreateJpxImagePdf(
+            invalidPath,
             jpx,
             includeColorSpace: true,
             includeReverseDecode: false,
             softMaskInData: 1);
 
-        var alphaRejected = false;
+        var rejected = false;
 
         try
         {
-            SupportedFormatRegistry.ReadDocument(
-                alphaPath);
+            SupportedFormatRegistry.ReadDocument(invalidPath);
         }
-        catch (InvalidDataException error)
-            when (error.Message.Contains(
-                "SMaskInData",
-                StringComparison.Ordinal))
+        catch (InvalidDataException)
         {
-            alphaRejected = true;
+            rejected = true;
         }
 
         Assert(
-            alphaRejected,
-            "PDF JPX /SMaskInData=1 должен завершаться явным unsupported до реализации embedded opacity compositing.");
+            rejected,
+            "PDF JPX /SMaskInData=1 без embedded opacity channel должен завершаться ошибкой.");
     }
 
     private static void TestPdfJbig2Reader(
