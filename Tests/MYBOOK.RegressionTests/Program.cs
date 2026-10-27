@@ -10984,6 +10984,48 @@ internal static class Program
                 "PDF JPX DeviceN должен компенсировать три tint components до FunctionType 4.");
         }
 
+        var indexedJpxPath = Path.Combine(
+            directory,
+            "regression-jpx-indexed-preblended.pdf");
+        CreateJpxImagePdf(
+            indexedJpxPath,
+            separationJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            colorSpaceSyntax: "[/Indexed /DeviceRGB 1 <000000FF0000>]",
+            softMaskInData: 2,
+            matteSyntax: "[0]");
+
+        var indexedJpxImage = SupportedFormatRegistry
+            .ReadDocument(indexedJpxPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        using (var indexedInput = new MemoryStream(indexedJpxImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                indexedInput,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[8];
+            bgra.CopyPixels(pixels, 8, 0);
+
+            Assert(
+                pixels[2] == 255 &&
+                pixels[3] == 255 &&
+                pixels[4] == 0 &&
+                pixels[5] == 0 &&
+                pixels[6] == 255 &&
+                pixels[7] == 128,
+                "PDF JPX Indexed /SMaskInData=2 должен компенсировать palette index до lookup.");
+        }
+
         var preblendedRejected = false;
 
         try
