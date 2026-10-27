@@ -66,6 +66,7 @@ internal static class Program
             ("PDF ICC color space", () => TestPdfIccColorSpace(temporaryDirectory)),
             ("PDF Separation color space", () => TestPdfSeparationColorSpace(temporaryDirectory)),
             ("PDF sampled and stitching functions", TestPdfSampledAndStitchingFunctions),
+            ("PDF calculator function", TestPdfCalculatorFunction),
             ("PDF DeviceN color space", () => TestPdfDeviceNColorSpace(temporaryDirectory)),
             ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
             ("PDF LZW decoder", TestPdfLzwDecoder),
@@ -9560,28 +9561,106 @@ internal static class Program
             pixel.B <= 5,
             "PDF Separation FunctionType 2 tint=1 должен преобразовываться через alternate DeviceRGB в red.");
 
-        var unsupportedPath = Path.Combine(
+        var calculatorPath = Path.Combine(
             directory,
             "regression-separation-function4.pdf");
 
         CreateRawImagePdf(
-            unsupportedPath,
+            calculatorPath,
             colorSpaceSyntax:
-                "[/Separation /SpotUnsupported /DeviceRGB " +
-                "<< /FunctionType 4 /Domain [0 1] /Range [0 1 0 1 0 1] >>]",
-            [255],
-            profileData: null);
+                "[/Separation /SpotCalculator /DeviceRGB 6 0 R]",
+            imageSamples: [255],
+            profileData: null,
+            calculatorProgramData:
+                Encoding.ASCII.GetBytes(
+                    "{ 0.5 gt { 1 0 0 } { 0 1 0 } ifelse }"));
+
+        var calculatorModel =
+            SupportedFormatRegistry.ReadDocument(
+                calculatorPath);
+        var calculatorImage =
+            calculatorModel.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var calculatorPixel =
+            DecodeRgb24Pixel(
+                calculatorImage.Data);
+
+        Assert(
+            calculatorPixel.R >= 250 &&
+            calculatorPixel.G <= 5 &&
+            calculatorPixel.B <= 5,
+            "PDF Separation FunctionType 4 должен выполнять calculator program end-to-end.");
+    }
+
+    private static void TestPdfCalculatorFunction()
+    {
+        var calculator =
+            new PdfCalculatorFunction(
+                domain: [0.0, 1.0],
+                range:
+                [
+                    0.0, 1.0,
+                    0.0, 1.0,
+                    0.0, 1.0
+                ],
+                programData:
+                    Encoding.ASCII.GetBytes(
+                        "{ dup 0.5 gt { pop 1 0 0 } { pop 0 1 0 } ifelse }"));
+
+        var red =
+            calculator.Evaluate([0.75]);
+        var green =
+            calculator.Evaluate([0.25]);
+
+        Assert(
+            red[0] > 0.999 &&
+            red[1] < 0.001 &&
+            red[2] < 0.001 &&
+            green[0] < 0.001 &&
+            green[1] > 0.999 &&
+            green[2] < 0.001,
+            "PDF FunctionType 4 должен выполнять comparison и ifelse.");
+
+        var arithmetic =
+            new PdfCalculatorFunction(
+                domain: [0.0, 1.0],
+                range:
+                [
+                    0.0, 1.0,
+                    0.0, 1.0
+                ],
+                programData:
+                    Encoding.ASCII.GetBytes(
+                        "{ dup mul 7 3 and 1 bitshift 2 div }"));
+
+        var arithmeticResult =
+            arithmetic.Evaluate([0.5]);
+
+        Assert(
+            Math.Abs(arithmeticResult[0] - 0.25) < 0.001 &&
+            Math.Abs(arithmeticResult[1] - 1.0) < 0.001,
+            "PDF FunctionType 4 должен выполнять arithmetic, stack и bitwise operators.");
 
         var rejected = false;
 
         try
         {
-            SupportedFormatRegistry.ReadDocument(
-                unsupportedPath);
+            var unsupported =
+                new PdfCalculatorFunction(
+                    domain: [0.0, 1.0],
+                    range: [0.0, 1.0],
+                    programData:
+                        Encoding.ASCII.GetBytes(
+                            "{ mysteryop }"));
+
+            unsupported.Evaluate([0.5]);
         }
         catch (InvalidDataException error)
             when (error.Message.Contains(
-                "FunctionType 4",
+                "mysteryop",
                 StringComparison.Ordinal))
         {
             rejected = true;
@@ -9589,7 +9668,7 @@ internal static class Program
 
         Assert(
             rejected,
-            "PDF Separation с неподдерживаемым FunctionType должен завершаться явной structural error.");
+            "PDF FunctionType 4 неизвестный operator должен завершаться явной structural error.");
     }
 
     private static void TestPdfSampledAndStitchingFunctions()
@@ -11544,7 +11623,8 @@ internal static class Program
         string colorSpaceSyntax,
         byte[] imageSamples,
         byte[]? profileData,
-        byte[]? functionData = null)
+        byte[]? functionData = null,
+        byte[]? calculatorProgramData = null)
     {
         var encoding = Encoding.ASCII;
         var content = encoding.GetBytes(
@@ -11647,6 +11727,21 @@ internal static class Program
                 functionData,
                 0,
                 functionData.Length);
+            Write("\nendstream");
+            EndObject();
+        }
+        else if (calculatorProgramData != null)
+        {
+            StartObject(6);
+            Write(
+                "<< /FunctionType 4 " +
+                "/Domain [0 1] " +
+                "/Range [0 1 0 1 0 1] " +
+                $"/Length {calculatorProgramData.Length} >>\nstream\n");
+            memory.Write(
+                calculatorProgramData,
+                0,
+                calculatorProgramData.Length);
             Write("\nendstream");
             EndObject();
         }
