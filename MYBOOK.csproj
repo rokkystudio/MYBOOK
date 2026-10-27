@@ -8,9 +8,9 @@
         <UseWPF>true</UseWPF>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
         <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-        <Version>1.5.27</Version>
-        <AssemblyVersion>1.5.27.0</AssemblyVersion>
-        <FileVersion>1.5.27.0</FileVersion>
+        <Version>1.5.28</Version>
+        <AssemblyVersion>1.5.28.0</AssemblyVersion>
+        <FileVersion>1.5.28.0</FileVersion>
         <InformationalVersion>1.2.44</InformationalVersion>
     </PropertyGroup>
 
@@ -78,6 +78,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="BitMiracle.LibJpeg.NET" Version="1.5.324" />
         <PackageReference Include="CoreJ2K"
                           Version="2.4.1.108" />
         <PackageReference Include="Markdig"

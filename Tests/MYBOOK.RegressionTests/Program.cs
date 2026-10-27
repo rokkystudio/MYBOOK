@@ -9553,6 +9553,73 @@ internal static class Program
             calRgbPixel.G <= 20 &&
             calRgbPixel.B <= 20,
             "PDF CalRGB+DCTDecode ColorTransform=1 должен пройти JPEG YUV→RGB sample decode до CalRGB conversion.");
+
+        var redJpeg = EncodeJpegFixture(
+            [255, 0, 0],
+            width: 1,
+            height: 1,
+            PixelFormats.Rgb24,
+            stride: 3);
+        var raw = PdfJpegSampleDecoder.DecodeRawThreeComponents(
+            redJpeg,
+            1,
+            1);
+        var converted = PdfJpegSampleDecoder.DecodeRgb(
+            redJpeg,
+            1,
+            1);
+
+        Assert(
+            raw.Length == 3 &&
+            raw[0] >= 65 && raw[0] <= 90 &&
+            raw[1] >= 70 && raw[1] <= 100 &&
+            raw[2] >= 240 &&
+            converted[0] >= 240 && converted[1] <= 20,
+            "PDF raw JPEG samples должны сохранять JPEG Y/Cb/Cr components без RGB color conversion.");
+
+        var rawCalRgbPath = Path.Combine(
+            directory,
+            "regression-calrgb-dct-transform0.pdf");
+        CreateCieDctImagePdf(
+            rawCalRgbPath,
+            colorSpaceSyntax:
+                "[/CalRGB << /WhitePoint [0.95047 1 1.08883] >>]",
+            jpegPixels: [255, 0, 0],
+            PixelFormats.Rgb24,
+            stride: 3,
+            colorTransform: 0);
+
+        var rawCalRgbPixel = DecodeRgb24Pixel(
+            SupportedFormatRegistry.ReadDocument(rawCalRgbPath)
+                .Blocks.OfType<DocumentFixedPage>().Single()
+                .ImageRuns.Single().Data);
+
+        Assert(
+            rawCalRgbPixel.R < 240,
+            "PDF CalRGB+DCTDecode ColorTransform=0 должен использовать исходные JPEG components, а не decoded RGB.");
+
+        var rawLabPath = Path.Combine(
+            directory,
+            "regression-lab-dct-transform0.pdf");
+        CreateCieDctImagePdf(
+            rawLabPath,
+            colorSpaceSyntax:
+                "[/Lab << /WhitePoint [0.95047 1 1.08883] /Range [-128 127 -128 127] >>]",
+            jpegPixels: [255, 0, 0],
+            PixelFormats.Rgb24,
+            stride: 3,
+            colorTransform: 0);
+
+        var rawLabPixel = DecodeRgb24Pixel(
+            SupportedFormatRegistry.ReadDocument(rawLabPath)
+                .Blocks.OfType<DocumentFixedPage>().Single()
+                .ImageRuns.Single().Data);
+
+        Assert(
+            rawLabPixel.R != rawCalRgbPixel.R ||
+            rawLabPixel.G != rawCalRgbPixel.G ||
+            rawLabPixel.B != rawCalRgbPixel.B,
+            "PDF Lab+DCTDecode ColorTransform=0 должен применять Lab conversion к raw JPEG components.");
     }
 
     private static void TestPdfIccColorSpace(
