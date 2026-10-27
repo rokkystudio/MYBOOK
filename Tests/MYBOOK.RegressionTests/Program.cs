@@ -11182,6 +11182,42 @@ internal static class Program
                                 : (byte)255))),
             "PDF JBIG2 decoder должен точно воспроизводить upstream jbig2enc -p fixture в Gray8 polarity.");
 
+        // T.88 symbol dictionary segment, SDHUFF=1, with zero exported/new symbols.
+        // No valid raster is implied: unsupported Huffman coding must never
+        // be silently interpreted as an arithmetic dictionary.
+        var huffmanDictionary = new byte[]
+        {
+            0, 0, 0, 1, // segment number
+            0,          // segment type: symbol dictionary
+            0,          // no referred segments
+            1,          // page association
+            0, 0, 0, 10, // data length
+            0, 1,       // SDHUFF bit
+            0, 0, 0, 0, // SDNUMEXSYMS
+            0, 0, 0, 0  // SDNUMNEWSYMS
+        };
+
+        var huffmanRejected = false;
+
+        try
+        {
+            PdfJbig2SampleDecoder.Decode(
+                huffmanDictionary,
+                Array.Empty<byte>(),
+                32,
+                16);
+        }
+        catch (NotSupportedException error)
+            when (error.Message.Contains("Huffman", StringComparison.OrdinalIgnoreCase) ||
+                  error.Message.Contains("SDHUFF", StringComparison.OrdinalIgnoreCase))
+        {
+            huffmanRejected = true;
+        }
+
+        Assert(
+            huffmanRejected,
+            "PDF JBIG2 SDHUFF должен завершаться явным unsupported, а не возвращать правдоподобный raster.");
+
         var plainPath =
             Path.Combine(
                 directory,
