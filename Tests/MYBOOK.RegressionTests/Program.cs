@@ -76,6 +76,7 @@ internal static class Program
             ("PDF ICC CMYK DCT reader", () => TestPdfIccCmykDctReader(temporaryDirectory)),
             ("PDF JPX reader", () => TestPdfJpxReader(temporaryDirectory)),
             ("PDF JBIG2 reader", () => TestPdfJbig2Reader(temporaryDirectory)),
+            ("PDF ImageMask stencil", () => TestPdfImageMaskStencil(temporaryDirectory)),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
@@ -13014,6 +13015,142 @@ internal static class Program
         File.WriteAllBytes(
             path,
             memory.ToArray());
+    }
+
+    /// <summary>
+    /// Проверяет ImageMask с независимыми nonstroking colors,
+    /// построчным bit packing и обратным PDF /Decode.
+    /// </summary>
+    private static void TestPdfImageMaskStencil(string directory)
+    {
+        foreach (var inverted in new[] { false, true })
+        {
+            var path = Path.Combine(
+                directory,
+                inverted
+                    ? "regression-stencil-inverse.pdf"
+                    : "regression-stencil.pdf");
+
+            var encoding = Encoding.ASCII;
+            var content = encoding.GetBytes(
+                "q 2 0 0 2 10 10 cm 1 0 0 rg /Im1 Do Q\n" +
+                "q 2 0 0 2 20 10 cm 0 0 1 rg /Im1 Do Q\n");
+            var samples = new byte[] { 0x40, 0x80 };
+            using var output = new MemoryStream();
+            var offsets = new List<long>();
+
+            void Write(string value)
+            {
+                var bytes = encoding.GetBytes(value);
+                output.Write(bytes, 0, bytes.Length);
+            }
+
+            void BeginObject(int number)
+            {
+                Assert(
+                    number == offsets.Count + 1,
+                    "PDF ImageMask fixture object order.");
+                offsets.Add(output.Position);
+                Write($"{number} 0 obj\n");
+            }
+
+            void EndObject() => Write("\nendobj\n");
+
+            Write("%PDF-1.4\n");
+            BeginObject(1);
+            Write("<< /Type /Catalog /Pages 2 0 R >>");
+            EndObject();
+            BeginObject(2);
+            Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>");
+            EndObject();
+            BeginObject(3);
+            Write("<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>");
+            EndObject();
+            BeginObject(4);
+            Write($"<< /Length {content.Length} >>\nstream\n");
+            output.Write(content, 0, content.Length);
+            Write("\nendstream");
+            EndObject();
+            BeginObject(5);
+            Write(
+                "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 " +
+                "/ImageMask true /BitsPerComponent 1 " +
+                (inverted ? "/Decode [1 0] " : string.Empty) +
+                $"/Length {samples.Length} >>\nstream\n");
+            output.Write(samples, 0, samples.Length);
+            Write("\nendstream");
+            EndObject();
+
+            var xref = output.Position;
+            Write($"xref\n0 {offsets.Count + 1}\n0000000000 65535 f \n");
+
+            foreach (var offset in offsets)
+            {
+                Write(
+                    offset.ToString("0000000000", CultureInfo.InvariantCulture) +
+                    " 00000 n \n");
+            }
+
+            Write(
+                $"trailer\n<< /Size {offsets.Count + 1} /Root 1 0 R >>\n" +
+                "startxref\n" +
+                xref.ToString(CultureInfo.InvariantCulture) +
+                "\n%%EOF\n");
+            File.WriteAllBytes(path, output.ToArray());
+
+            var images = SupportedFormatRegistry
+                .ReadDocument(path)
+                .Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .ToArray();
+
+            Assert(
+                images.Length == 2,
+                "PDF ImageMask должен допускать повторное использование с разными цветами.");
+
+            for (var index = 0; index < images.Length; index++)
+            {
+                using var input = new MemoryStream(
+                    images[index].Data,
+                    writable: false);
+                var decoder = new PngBitmapDecoder(
+                    input,
+                    BitmapCreateOptions.PreservePixelFormat,
+                    BitmapCacheOption.OnLoad);
+                BitmapSource bitmap = decoder.Frames.Single();
+
+                if (bitmap.Format != PixelFormats.Bgra32)
+                {
+                    bitmap = new FormatConvertedBitmap(
+                        bitmap,
+                        PixelFormats.Bgra32,
+                        null,
+                        0);
+                }
+
+                var pixels = new byte[16];
+                bitmap.CopyPixels(pixels, 8, 0);
+
+                var expectedAlpha = inverted ? (byte)0 : (byte)255;
+                Assert(
+                    bitmap.PixelWidth == 2 &&
+                    bitmap.PixelHeight == 2 &&
+                    pixels[3] == expectedAlpha &&
+                    pixels[7] == (byte)(255 - expectedAlpha) &&
+                    pixels[11] == (byte)(255 - expectedAlpha) &&
+                    pixels[15] == expectedAlpha,
+                    "PDF ImageMask должен сохранять orientation и polarity.");
+
+                var red = index == 0;
+                Assert(
+                    pixels[0] == (red ? (byte)0 : (byte)255) &&
+                    pixels[1] == 0 &&
+                    pixels[2] == (red ? (byte)255 : (byte)0),
+                    "PDF ImageMask должен использовать текущий nonstroking RGB color.");
+            }
+        }
     }
 
     private static void CreateJbig2ImagePdf(

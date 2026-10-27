@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.21
+Версия профиля: 1.5.22
 
 ## Ready for use
 
@@ -71,6 +71,7 @@ MYBOOK считает готовыми к обычному пользовате�
 
 ### PDF
 
+- PDF Image XObject `/ImageMask true` использует stencil semantics: 1-bit samples с row padding, `/Decode [0 1]` и `[1 0]`, текущий nonstroking RGB color на каждом `Do` и RGBA output с прозрачностью. Для bilevel CCITT/JBIG2 используется их 8-bit decoded sample path. Дополнительные `/Mask` и `/SMask` для stencil отклоняются; stencil DCT/JPX не входят в профиль.
 - ExtGState soft-mask group compositing не реализован полностью.
 - Predefined Type0 CMaps для public Adobe CJK/KR collections входят в профиль: canonical Adobe resources дают code→CID, включая `usecmap` inheritance; без `/ToUnicode` CID→Unicode берётся из canonical `Registry-Ordering-UCS2` mapping resources.
 - CIE-based raster ColorSpace `CalGray`, `CalRGB` и `Lab` входят в профиль для 8-bit decoded samples с точными PDF gamma/matrix/Lab transforms и chromatic adaptation к sRGB. `CalGray` DCT входит в профиль через grayscale sample decode; `CalRGB` DCT — при effective JPEG `ColorTransform=1`, с приоритетом Adobe APP14 marker над `/DecodeParms /ColorTransform`. CIE `/SMask /Matte` входит в профиль с unpremultiply в исходных CIE components до gamma/matrix/Lab conversion. `Lab` DCT и `CalRGB` DCT с effective transform=0 остаются вне профиля до raw JPEG component decoder. `ICCBased` `/N=1/3/4` входит в профиль через embedded ICC profile и системный WPF ICC/ICM engine; `/Range` и `/Decode` учитываются строго. ICC Gray/RGB/CMYK DCT post-processing входит в профиль, причём `/N=4` использует decoded CMYK JPEG samples до ICC conversion. `Separation` и `DeviceN` входят в профиль через общий PDF Function evaluator: `FunctionType 2`, sampled `FunctionType 0` с multilinear `/Order=1` и stitching `FunctionType 3`; alternate DeviceGray/DeviceRGB/DeviceCMYK поддерживаются. `FunctionType 4` calculator functions входят в профиль через отдельный VM с полным разрешённым operator set, PDF numeric grammar, 32-bit integer semantics и overflow promotion, PostScript round/bitshift/cvi behavior, синтаксическими conditional expressions для `if`/`ifelse`, top-N output stack semantics, строгими type/stack checks и resource limits. Sampled `FunctionType 0` `/Order=3` входит в профиль через Acrobat-compatible multidimensional cubic interpolation с cubic-convolution `a=-0.5`, quadratic edge handling и recursive interpolation по измерениям. ICCBased, Separation и DeviceN `/SMask /Matte` входят в профиль с unpremultiply в исходных component/tint coordinates до ICC profile conversion или tint transform. DeviceCMYK DCT post-processing входит в профиль через 8-bit CMYK sample decode с geometry validation и последующим PDF `/Decode`. Ненулевой CIE BlackPoint и `Lab` DCT/`CalRGB` DCT с effective transform=0 остаются вне профиля. DeviceN+DCT не заявляется как поддерживаемый: PDF DCT profile ограничен максимум четырьмя components, поэтому произвольный N-channel JPEG не эмулируется.
@@ -81,5 +82,5 @@ MYBOOK считает готовыми к обычному пользовате�
 ## Future formats
 
 DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
-поддерживаемый формат MYBOOK 1.5.21. Его reader является отдельной будущей
+поддерживаемый формат MYBOOK 1.5.22. Его reader является отдельной будущей
 функциональностью и должен пройти те же readiness gates до добавления в реестр.
