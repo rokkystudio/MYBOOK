@@ -63,6 +63,7 @@ internal static class Program
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
             ("PDF CIE color spaces", TestPdfCieColorSpaces),
+            ("PDF CIE DCT reader", () => TestPdfCieDctReader(temporaryDirectory)),
             ("PDF ICC color space", () => TestPdfIccColorSpace(temporaryDirectory)),
             ("PDF advanced color matte", () => TestPdfAdvancedColorMatte(temporaryDirectory)),
             ("PDF Separation color space", () => TestPdfSeparationColorSpace(temporaryDirectory)),
@@ -9477,6 +9478,79 @@ internal static class Program
             "PDF Lab L*=100 a*=0 b*=0 должен преобразовываться в near-white sRGB.");
     }
 
+    private static void TestPdfCieDctReader(
+        string directory)
+    {
+        var calGrayPath =
+            Path.Combine(
+                directory,
+                "regression-calgray-dct.pdf");
+
+        CreateCieDctImagePdf(
+            calGrayPath,
+            colorSpaceSyntax:
+                "[/CalGray << /WhitePoint [0.95047 1 1.08883] /Gamma 1 >>]",
+            jpegPixels: [255],
+            PixelFormats.Gray8,
+            stride: 1,
+            colorTransform: null);
+
+        var calGrayPixel =
+            DecodeRgb24Pixel(
+                SupportedFormatRegistry
+                    .ReadDocument(calGrayPath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            calGrayPixel.R >= 252 &&
+            calGrayPixel.G >= 252 &&
+            calGrayPixel.B >= 252,
+            "PDF CalGray+DCTDecode должен декодироваться как grayscale samples до CIE conversion.");
+
+        var calRgbPath =
+            Path.Combine(
+                directory,
+                "regression-calrgb-dct.pdf");
+
+        CreateCieDctImagePdf(
+            calRgbPath,
+            colorSpaceSyntax:
+                "[/CalRGB << " +
+                "/WhitePoint [0.95047 1 1.08883] " +
+                "/Gamma [1 1 1] " +
+                "/Matrix [" +
+                "0.4124564 0.2126729 0.0193339 " +
+                "0.3575761 0.7151522 0.1191920 " +
+                "0.1804375 0.0721750 0.9503041" +
+                "] >>]",
+            jpegPixels: [255, 0, 0],
+            PixelFormats.Rgb24,
+            stride: 3,
+            colorTransform: 1);
+
+        var calRgbPixel =
+            DecodeRgb24Pixel(
+                SupportedFormatRegistry
+                    .ReadDocument(calRgbPath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            calRgbPixel.R >= 240 &&
+            calRgbPixel.G <= 20 &&
+            calRgbPixel.B <= 20,
+            "PDF CalRGB+DCTDecode ColorTransform=1 должен пройти JPEG YUV→RGB sample decode до CalRGB conversion.");
+    }
+
     private static void TestPdfIccColorSpace(
         string directory)
     {
@@ -9575,6 +9649,44 @@ internal static class Program
             iccPixel.G <= 8 &&
             iccPixel.B <= 8,
             "PDF ICCBased /SMask /Matte должен удаляться в ICC component coordinates до profile conversion.");
+
+        var ciePath =
+            Path.Combine(
+                directory,
+                "regression-calrgb-matte.pdf");
+
+        CreateRawImagePdf(
+            ciePath,
+            colorSpaceSyntax:
+                "[/CalRGB << " +
+                "/WhitePoint [0.95047 1 1.08883] " +
+                "/Gamma [1 1 1] " +
+                "/Matrix [" +
+                "0.4124564 0.2126729 0.0193339 " +
+                "0.3575761 0.7151522 0.1191920 " +
+                "0.1804375 0.0721750 0.9503041" +
+                "] >>]",
+            imageSamples: [255, 127, 127],
+            profileData: null,
+            softMaskSample: 128,
+            softMaskMatte: [1.0, 1.0, 1.0]);
+
+        var ciePixel =
+            DecodeRgb24Pixel(
+                SupportedFormatRegistry
+                    .ReadDocument(ciePath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            ciePixel.R >= 248 &&
+            ciePixel.G <= 8 &&
+            ciePixel.B <= 8,
+            "PDF CalRGB /SMask /Matte должен удаляться в CIE component coordinates до gamma/matrix conversion.");
 
         var separationPath =
             Path.Combine(
@@ -10105,6 +10217,18 @@ internal static class Program
             Near(rgb[1], 50, 8) &&
             Near(rgb[2], 20, 8),
             "PDF DCTDecode RGB JPEG должен декодироваться в RGB samples.");
+
+        var adobeOverride =
+            InjectAdobeApp14Transform(
+                rgbJpeg,
+                transform: 1);
+
+        Assert(
+            PdfJpegSampleDecoder.ResolveEffectiveColorTransform(
+                adobeOverride,
+                requestedColorTransform: 0,
+                components: 3) == 1,
+            "PDF DCTDecode Adobe APP14 marker должен иметь приоритет над /DecodeParms /ColorTransform.");
 
         var cmykJpeg = EncodeJpegFixture(
             [32, 96, 160, 224],
@@ -11743,6 +11867,54 @@ internal static class Program
     /// <summary>
     /// Кодирует raster fixture в JPEG с максимальным quality для PDF DCT regressions.
     /// </summary>
+    private static byte[] InjectAdobeApp14Transform(
+        byte[] jpeg,
+        byte transform)
+    {
+        if (jpeg.Length < 2 ||
+            jpeg[0] != 0xFF ||
+            jpeg[1] != 0xD8)
+        {
+            throw new ArgumentException(
+                "JPEG fixture не содержит SOI marker.",
+                nameof(jpeg));
+        }
+
+        byte[] marker =
+        [
+            0xFF, 0xEE,
+            0x00, 0x0E,
+            (byte)'A', (byte)'d', (byte)'o',
+            (byte)'b', (byte)'e',
+            0x00, 0x64,
+            0x00, 0x00,
+            0x00, 0x00,
+            transform
+        ];
+
+        var result =
+            new byte[checked(jpeg.Length + marker.Length)];
+        Buffer.BlockCopy(
+            jpeg,
+            0,
+            result,
+            0,
+            2);
+        Buffer.BlockCopy(
+            marker,
+            0,
+            result,
+            2,
+            marker.Length);
+        Buffer.BlockCopy(
+            jpeg,
+            2,
+            result,
+            2 + marker.Length,
+            jpeg.Length - 2);
+        return result;
+    }
+
     private static byte[] EncodeJpegFixture(
         byte[] pixels,
         int width,
@@ -11873,6 +12045,15 @@ internal static class Program
             "Q\n");
         using var memory = new MemoryStream();
         var offsets = new List<long>();
+        var hasAuxiliaryObject =
+            profileData != null ||
+            functionData != null ||
+            calculatorProgramData != null ||
+            sampledOrder3Data != null;
+        var softMaskObjectNumber =
+            softMaskSample != null
+                ? (hasAuxiliaryObject ? 7 : 6)
+                : (int?)null;
 
         void Write(string value)
         {
@@ -11930,8 +12111,8 @@ internal static class Program
             "/Width 1 /Height 1 " +
             $"/ColorSpace {colorSpaceSyntax} " +
             "/BitsPerComponent 8 " +
-            (softMaskSample != null
-                ? "/SMask 7 0 R "
+            (softMaskObjectNumber != null
+                ? $"/SMask {softMaskObjectNumber.Value} 0 R "
                 : string.Empty) +
             $"/Length {imageSamples.Length} >>\nstream\n");
         memory.Write(
@@ -12018,13 +12199,10 @@ internal static class Program
                     nameof(softMaskMatte));
             }
 
-            if (offsets.Count != 6)
-            {
-                throw new InvalidOperationException(
-                    "Soft-mask fixture требует object 6 для ICC profile или tint function.");
-            }
-
-            StartObject(7);
+            StartObject(
+                softMaskObjectNumber
+                ?? throw new InvalidOperationException(
+                    "Soft-mask fixture не определил object number."));
             Write(
                 "<< /Type /XObject /Subtype /Image " +
                 "/Width 1 /Height 1 " +
@@ -12156,6 +12334,108 @@ internal static class Program
         Write(
             "trailer\n" +
             "<< /Size 6 /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
+    }
+
+    private static void CreateCieDctImagePdf(
+        string path,
+        string colorSpaceSyntax,
+        byte[] jpegPixels,
+        PixelFormat format,
+        int stride,
+        int? colorTransform)
+    {
+        var encoding = Encoding.ASCII;
+        var jpeg = EncodeJpegFixture(
+            jpegPixels,
+            width: 1,
+            height: 1,
+            format,
+            stride);
+        var content =
+            encoding.GetBytes(
+                "q\n20 0 0 20 20 20 cm\n/Im1 Do\nQ\n");
+        using var memory = new MemoryStream();
+        var offsets = new List<long>();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(bytes, 0, bytes.Length);
+        }
+
+        void StartObject(int number)
+        {
+            if (number != offsets.Count + 1)
+            {
+                throw new InvalidOperationException(
+                    "PDF fixture objects должны записываться последовательно.");
+            }
+
+            offsets.Add(memory.Position);
+            Write($"{number} 0 obj\n");
+        }
+
+        void EndObject() =>
+            Write("\nendobj\n");
+
+        Write("%PDF-1.4\n");
+
+        StartObject(1);
+        Write("<< /Type /Catalog /Pages 2 0 R >>");
+        EndObject();
+
+        StartObject(2);
+        Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>");
+        EndObject();
+
+        StartObject(3);
+        Write(
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R " +
+            "/Resources << /XObject << /Im1 5 0 R >> >> >>");
+        EndObject();
+
+        StartObject(4);
+        Write($"<< /Length {content.Length} >>\nstream\n");
+        memory.Write(content, 0, content.Length);
+        Write("endstream");
+        EndObject();
+
+        StartObject(5);
+        Write(
+            "<< /Type /XObject /Subtype /Image " +
+            "/Width 1 /Height 1 " +
+            $"/ColorSpace {colorSpaceSyntax} " +
+            "/BitsPerComponent 8 /Filter /DCTDecode " +
+            (colorTransform != null
+                ? $"/DecodeParms << /ColorTransform {colorTransform.Value} >> "
+                : string.Empty) +
+            $"/Length {jpeg.Length} >>\nstream\n");
+        memory.Write(jpeg, 0, jpeg.Length);
+        Write("\nendstream");
+        EndObject();
+
+        var xref = memory.Position;
+        Write("xref\n0 6\n0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n<< /Size 6 /Root 1 0 R >>\n" +
             "startxref\n" +
             xref.ToString(
                 CultureInfo.InvariantCulture) +
