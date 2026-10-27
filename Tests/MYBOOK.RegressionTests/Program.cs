@@ -10897,6 +10897,93 @@ internal static class Program
                 "PDF JPX ICCBased /SMaskInData=2 должен компенсировать Matte перед ICC conversion.");
         }
 
+        var separationJpx = Convert.FromBase64String(
+            "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAABDanAyaAAAABZpaGRyAAAAAQAAAAIAAgcHAAAAAAAPY29scgEAAAAAABEAAAAWY2RlZgACAAAAAAABAAEAAQAAAAAAjWpwMmP/T/9RACwAAAAAAAIAAAABAAAAAAAAAAAAAAACAAAAAQAAAAAAAAAAAAIHAQEHAQH/UgAMAAAAAQAABAQAAf9cAARAQP9kACUAAUNyZWF0ZWQgYnkgT3BlbkpQRUcgdmVyc2lvbiAyLjUuNP+QAAoAAAAAABgAAf+Tz7QIBB/PtAgEH//Z");
+        var separationJpxPath = Path.Combine(
+            directory,
+            "regression-jpx-separation-preblended.pdf");
+        CreateJpxImagePdf(
+            separationJpxPath,
+            separationJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            colorSpaceSyntax: "[/Separation /SpotRed /DeviceRGB << /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [1 0 0] /N 1 >>]",
+            softMaskInData: 2,
+            matteSyntax: "[0]");
+
+        var separationJpxImage = SupportedFormatRegistry
+            .ReadDocument(separationJpxPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        using (var separationInput = new MemoryStream(separationJpxImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                separationInput,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[8];
+            bgra.CopyPixels(pixels, 8, 0);
+
+            Assert(
+                pixels[2] == 255 &&
+                pixels[3] == 255 &&
+                pixels[4] == 0 &&
+                pixels[5] == 0 &&
+                pixels[6] == 255 &&
+                pixels[7] == 128,
+                "PDF JPX Separation preblended opacity должен компенсировать tint перед FunctionType 2.");
+        }
+
+        var deviceNJpxPath = Path.Combine(
+            directory,
+            "regression-jpx-devicen-preblended.pdf");
+        CreateJpxImagePdf(
+            deviceNJpxPath,
+            preblendedJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            colorSpaceSyntax: "[/DeviceN [/SpotR /SpotG /SpotB] /DeviceRGB 6 0 R]",
+            softMaskInData: 2,
+            matteSyntax: "[0 0 0]",
+            calculatorFunction: "{ 0 add }");
+
+        var deviceNJpxImage = SupportedFormatRegistry
+            .ReadDocument(deviceNJpxPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        using (var deviceNInput = new MemoryStream(deviceNJpxImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                deviceNInput,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[8];
+            bgra.CopyPixels(pixels, 8, 0);
+
+            Assert(
+                pixels[2] == 255 &&
+                pixels[3] == 255 &&
+                pixels[4] == 0 &&
+                pixels[5] == 255 &&
+                pixels[6] == 0 &&
+                pixels[7] == 128,
+                "PDF JPX DeviceN должен компенсировать три tint components до FunctionType 4.");
+        }
+
         var preblendedRejected = false;
 
         try
@@ -13516,7 +13603,8 @@ internal static class Program
         string colorSpaceSyntax = "/DeviceRGB",
         int? softMaskInData = null,
         string? matteSyntax = null,
-        byte[]? iccProfile = null)
+        byte[]? iccProfile = null,
+        string? calculatorFunction = null)
     {
         var encoding = Encoding.ASCII;
         var content =
@@ -13615,6 +13703,17 @@ internal static class Program
             Write("\nendstream");
             EndObject();
         }
+        else if (calculatorFunction != null)
+        {
+            StartObject(6);
+            var program = encoding.GetBytes(calculatorFunction);
+            Write(
+                "<< /FunctionType 4 /Domain [0 1 0 1 0 1] " +
+                $"/Range [0 1 0 1 0 1] /Length {program.Length} >>\nstream\n");
+            memory.Write(program, 0, program.Length);
+            Write("\nendstream");
+            EndObject();
+        }
 
         var xref =
             memory.Position;
@@ -13631,7 +13730,7 @@ internal static class Program
         }
 
         Write(
-            "trailer\n<< /Size 6 /Root 1 0 R >>\n" +
+            $"trailer\n<< /Size {offsets.Count + 1} /Root 1 0 R >>\n" +
             "startxref\n" +
             xref.ToString(
                 CultureInfo.InvariantCulture) +
