@@ -65,6 +65,8 @@ internal static class Program
             ("PDF CIE color spaces", TestPdfCieColorSpaces),
             ("PDF ICC color space", () => TestPdfIccColorSpace(temporaryDirectory)),
             ("PDF Separation color space", () => TestPdfSeparationColorSpace(temporaryDirectory)),
+            ("PDF sampled and stitching functions", TestPdfSampledAndStitchingFunctions),
+            ("PDF DeviceN color space", () => TestPdfDeviceNColorSpace(temporaryDirectory)),
             ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
@@ -9590,6 +9592,130 @@ internal static class Program
             "PDF Separation с неподдерживаемым FunctionType должен завершаться явной structural error.");
     }
 
+    private static void TestPdfSampledAndStitchingFunctions()
+    {
+        var sampled =
+            new PdfSampledFunction(
+                domain:
+                [
+                    0.0, 1.0,
+                    0.0, 1.0
+                ],
+                size: [2, 2],
+                bitsPerSample: 8,
+                encode:
+                [
+                    0.0, 1.0,
+                    0.0, 1.0
+                ],
+                decode:
+                [
+                    0.0, 1.0,
+                    0.0, 1.0,
+                    0.0, 1.0
+                ],
+                range:
+                [
+                    0.0, 1.0,
+                    0.0, 1.0,
+                    0.0, 1.0
+                ],
+                sampleData:
+                [
+                    255, 255, 255,
+                    255, 0, 0,
+                    0, 255, 0,
+                    0, 0, 0
+                ]);
+
+        var exact =
+            sampled.Evaluate([1.0, 0.0]);
+
+        Assert(
+            exact[0] > 0.999 &&
+            exact[1] < 0.001 &&
+            exact[2] < 0.001,
+            "PDF FunctionType 0 должен точно выбирать sample table corner.");
+
+        var midpoint =
+            sampled.Evaluate([0.5, 0.0]);
+
+        Assert(
+            Math.Abs(midpoint[0] - 1.0) < 0.002 &&
+            Math.Abs(midpoint[1] - 0.5) < 0.01 &&
+            Math.Abs(midpoint[2] - 0.5) < 0.01,
+            "PDF FunctionType 0 должен выполнять multilinear interpolation.");
+
+        var first =
+            new PdfExponentialFunction(
+                0,
+                1,
+                [0.0],
+                [1.0],
+                1,
+                null);
+        var second =
+            new PdfExponentialFunction(
+                0,
+                1,
+                [1.0],
+                [0.0],
+                1,
+                null);
+        var stitched =
+            new PdfStitchingFunction(
+                [0.0, 1.0],
+                [first, second],
+                [0.5],
+                [
+                    0.0, 1.0,
+                    0.0, 1.0
+                ],
+                [0.0, 1.0]);
+
+        var left =
+            stitched.Evaluate([0.25]);
+        var right =
+            stitched.Evaluate([0.75]);
+
+        Assert(
+            Math.Abs(left[0] - 0.5) < 0.001 &&
+            Math.Abs(right[0] - 0.5) < 0.001,
+            "PDF FunctionType 3 должен выбирать subfunction и применять /Encode.");
+    }
+
+    private static void TestPdfDeviceNColorSpace(
+        string directory)
+    {
+        var path = Path.Combine(
+            directory,
+            "regression-devicen-image.pdf");
+
+        CreateDeviceNImagePdf(path);
+
+        var model =
+            SupportedFormatRegistry.ReadDocument(
+                path);
+        var image =
+            model.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var pixel =
+            DecodeRgb24Pixel(image.Data);
+
+        Assert(
+            string.Equals(
+                image.ContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            pixel.R >= 250 &&
+            pixel.G <= 5 &&
+            pixel.B <= 5,
+            "PDF DeviceN two-ink sample должен пройти FunctionType 0 tint transform в DeviceRGB red.");
+    }
+
     private static (byte R, byte G, byte B) DecodeRgb24Pixel(
         byte[] png)
     {
@@ -11381,6 +11507,24 @@ internal static class Program
             profileData);
     }
 
+    private static void CreateDeviceNImagePdf(
+        string path)
+    {
+        CreateRawImagePdf(
+            path,
+            colorSpaceSyntax:
+                "[/DeviceN [/SpotA /SpotB] /DeviceRGB 6 0 R]",
+            imageSamples: [255, 0],
+            profileData: null,
+            functionData:
+            [
+                255, 255, 255,
+                255, 0, 0,
+                0, 255, 0,
+                0, 0, 0
+            ]);
+    }
+
     private static void CreateSeparationImagePdf(
         string path,
         byte tintSample)
@@ -11399,7 +11543,8 @@ internal static class Program
         string path,
         string colorSpaceSyntax,
         byte[] imageSamples,
-        byte[]? profileData)
+        byte[]? profileData,
+        byte[]? functionData = null)
     {
         var encoding = Encoding.ASCII;
         var content = encoding.GetBytes(
@@ -11483,6 +11628,25 @@ internal static class Program
                 profileData,
                 0,
                 profileData.Length);
+            Write("\nendstream");
+            EndObject();
+        }
+        else if (functionData != null)
+        {
+            StartObject(6);
+            Write(
+                "<< /FunctionType 0 " +
+                "/Domain [0 1 0 1] " +
+                "/Range [0 1 0 1 0 1] " +
+                "/Size [2 2] " +
+                "/BitsPerSample 8 " +
+                "/Encode [0 1 0 1] " +
+                "/Decode [0 1 0 1 0 1] " +
+                $"/Length {functionData.Length} >>\nstream\n");
+            memory.Write(
+                functionData,
+                0,
+                functionData.Length);
             Write("\nendstream");
             EndObject();
         }
