@@ -64,6 +64,7 @@ internal static class Program
             ("PDF Indexed matte", TestPdfIndexedMatte),
             ("PDF CIE color spaces", TestPdfCieColorSpaces),
             ("PDF ICC color space", () => TestPdfIccColorSpace(temporaryDirectory)),
+            ("PDF advanced color matte", () => TestPdfAdvancedColorMatte(temporaryDirectory)),
             ("PDF Separation color space", () => TestPdfSeparationColorSpace(temporaryDirectory)),
             ("PDF sampled and stitching functions", TestPdfSampledAndStitchingFunctions),
             ("PDF sampled order 3 reader", () => TestPdfSampledOrder3Reader(temporaryDirectory)),
@@ -9529,6 +9530,124 @@ internal static class Program
             "PDF ICCBased sRGB red должен пройти embedded profile -> ICC engine -> PNG без смены primary.");
     }
 
+    private static void TestPdfAdvancedColorMatte(
+        string directory)
+    {
+        var context =
+            new ColorContext(
+                PixelFormats.Rgb24);
+        byte[] profileData;
+
+        using (var profileStream = context.OpenProfileStream())
+        using (var memory = new MemoryStream())
+        {
+            profileStream.CopyTo(memory);
+            profileData = memory.ToArray();
+        }
+
+        var iccPath =
+            Path.Combine(
+                directory,
+                "regression-icc-matte.pdf");
+
+        CreateRawImagePdf(
+            iccPath,
+            colorSpaceSyntax: "[/ICCBased 6 0 R]",
+            imageSamples: [255, 127, 127],
+            profileData,
+            softMaskSample: 128,
+            softMaskMatte: [1.0, 1.0, 1.0]);
+
+        var iccPixel =
+            DecodeRgb24Pixel(
+                SupportedFormatRegistry
+                    .ReadDocument(iccPath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            iccPixel.R >= 248 &&
+            iccPixel.G <= 8 &&
+            iccPixel.B <= 8,
+            "PDF ICCBased /SMask /Matte должен удаляться в ICC component coordinates до profile conversion.");
+
+        var separationPath =
+            Path.Combine(
+                directory,
+                "regression-separation-matte.pdf");
+
+        CreateRawImagePdf(
+            separationPath,
+            colorSpaceSyntax:
+                "[/Separation /SpotMatte /DeviceRGB 6 0 R]",
+            imageSamples: [128],
+            profileData: null,
+            calculatorProgramData:
+                Encoding.ASCII.GetBytes(
+                    "{ 0.9 gt { 1 0 0 } { 0 1 0 } ifelse }"),
+            softMaskSample: 128,
+            softMaskMatte: [0.0]);
+
+        var separationPixel =
+            DecodeRgb24Pixel(
+                SupportedFormatRegistry
+                    .ReadDocument(separationPath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            separationPixel.R >= 250 &&
+            separationPixel.G <= 5 &&
+            separationPixel.B <= 5,
+            "PDF Separation /SMask /Matte должен удаляться в tint coordinates до tint transform.");
+
+        var deviceNPath =
+            Path.Combine(
+                directory,
+                "regression-devicen-matte.pdf");
+
+        CreateRawImagePdf(
+            deviceNPath,
+            colorSpaceSyntax:
+                "[/DeviceN [/SpotA /SpotB] /DeviceRGB 6 0 R]",
+            imageSamples: [128, 127],
+            profileData: null,
+            functionData:
+            [
+                255, 255, 255,
+                255, 0, 0,
+                0, 255, 0,
+                0, 0, 0
+            ],
+            softMaskSample: 128,
+            softMaskMatte: [0.0, 1.0]);
+
+        var deviceNPixel =
+            DecodeRgb24Pixel(
+                SupportedFormatRegistry
+                    .ReadDocument(deviceNPath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            deviceNPixel.R >= 245 &&
+            deviceNPixel.G <= 10 &&
+            deviceNPixel.B <= 10,
+            "PDF DeviceN /SMask /Matte должен удаляться отдельно по tint components до tint transform.");
+    }
+
     private static void TestPdfSeparationColorSpace(
         string directory)
     {
@@ -11689,7 +11808,9 @@ internal static class Program
         byte[]? profileData,
         byte[]? functionData = null,
         byte[]? calculatorProgramData = null,
-        byte[]? sampledOrder3Data = null)
+        byte[]? sampledOrder3Data = null,
+        byte? softMaskSample = null,
+        double[]? softMaskMatte = null)
     {
         var encoding = Encoding.ASCII;
         var content = encoding.GetBytes(
@@ -11756,6 +11877,9 @@ internal static class Program
             "/Width 1 /Height 1 " +
             $"/ColorSpace {colorSpaceSyntax} " +
             "/BitsPerComponent 8 " +
+            (softMaskSample != null
+                ? "/SMask 7 0 R "
+                : string.Empty) +
             $"/Length {imageSamples.Length} >>\nstream\n");
         memory.Write(
             imageSamples,
@@ -11827,6 +11951,40 @@ internal static class Program
                 sampledOrder3Data,
                 0,
                 sampledOrder3Data.Length);
+            Write("\nendstream");
+            EndObject();
+        }
+
+        if (softMaskSample != null)
+        {
+            if (softMaskMatte == null ||
+                softMaskMatte.Length == 0)
+            {
+                throw new ArgumentException(
+                    "Soft-mask fixture требует непустой /Matte.",
+                    nameof(softMaskMatte));
+            }
+
+            if (offsets.Count != 6)
+            {
+                throw new InvalidOperationException(
+                    "Soft-mask fixture требует object 6 для ICC profile или tint function.");
+            }
+
+            StartObject(7);
+            Write(
+                "<< /Type /XObject /Subtype /Image " +
+                "/Width 1 /Height 1 " +
+                "/ColorSpace /DeviceGray /BitsPerComponent 8 " +
+                "/Matte [" +
+                string.Join(
+                    " ",
+                    softMaskMatte.Select(value =>
+                        value.ToString(
+                            CultureInfo.InvariantCulture))) +
+                "] /Length 1 >>\nstream\n");
+            memory.WriteByte(
+                softMaskSample.Value);
             Write("\nendstream");
             EndObject();
         }
