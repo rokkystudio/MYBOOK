@@ -66,6 +66,7 @@ internal static class Program
             ("PDF ICC color space", () => TestPdfIccColorSpace(temporaryDirectory)),
             ("PDF Separation color space", () => TestPdfSeparationColorSpace(temporaryDirectory)),
             ("PDF sampled and stitching functions", TestPdfSampledAndStitchingFunctions),
+            ("PDF sampled order 3 reader", () => TestPdfSampledOrder3Reader(temporaryDirectory)),
             ("PDF calculator function", TestPdfCalculatorFunction),
             ("PDF DeviceN color space", () => TestPdfDeviceNColorSpace(temporaryDirectory)),
             ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
@@ -9682,6 +9683,7 @@ internal static class Program
                 ],
                 size: [2, 2],
                 bitsPerSample: 8,
+                order: 1,
                 encode:
                 [
                     0.0, 1.0,
@@ -9725,6 +9727,25 @@ internal static class Program
             Math.Abs(midpoint[2] - 0.5) < 0.01,
             "PDF FunctionType 0 должен выполнять multilinear interpolation.");
 
+        var cubic =
+            new PdfSampledFunction(
+                domain: [0.0, 1.0],
+                size: [4],
+                bitsPerSample: 8,
+                order: 3,
+                encode: [0.0, 3.0],
+                decode: [0.0, 1.0],
+                range: [0.0, 1.0],
+                sampleData: [0, 0, 255, 0]);
+        var cubicMidpoint =
+            cubic.Evaluate([0.5]);
+
+        Assert(
+            Math.Abs(
+                cubicMidpoint[0] -
+                143.4375 / 255.0) < 0.00001,
+            "PDF FunctionType 0 /Order=3 должен использовать Acrobat-compatible cubic interpolation, а не linear.");
+
         var first =
             new PdfExponentialFunction(
                 0,
@@ -9761,6 +9782,49 @@ internal static class Program
             Math.Abs(left[0] - 0.5) < 0.001 &&
             Math.Abs(right[0] - 0.5) < 0.001,
             "PDF FunctionType 3 должен выбирать subfunction и применять /Encode.");
+    }
+
+    private static void TestPdfSampledOrder3Reader(
+        string directory)
+    {
+        var path = Path.Combine(
+            directory,
+            "regression-sampled-order3.pdf");
+
+        CreateRawImagePdf(
+            path,
+            colorSpaceSyntax:
+                "[/Separation /CubicSpot /DeviceRGB 6 0 R]",
+            imageSamples: [128],
+            profileData: null,
+            sampledOrder3Data:
+            [
+                0, 0, 0,
+                0, 0, 0,
+                255, 0, 0,
+                0, 0, 0
+            ]);
+
+        var model =
+            SupportedFormatRegistry.ReadDocument(path);
+        var image =
+            model.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var pixel =
+            DecodeRgb24Pixel(image.Data);
+
+        Assert(
+            string.Equals(
+                image.ContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            pixel.R is >= 140 and <= 147 &&
+            pixel.G <= 2 &&
+            pixel.B <= 2,
+            "PDF FunctionType 0 /Order=3 должен пройти parser и cubic tint transform end-to-end.");
     }
 
     private static void TestPdfDeviceNColorSpace(
@@ -11624,7 +11688,8 @@ internal static class Program
         byte[] imageSamples,
         byte[]? profileData,
         byte[]? functionData = null,
-        byte[]? calculatorProgramData = null)
+        byte[]? calculatorProgramData = null,
+        byte[]? sampledOrder3Data = null)
     {
         var encoding = Encoding.ASCII;
         var content = encoding.GetBytes(
@@ -11742,6 +11807,26 @@ internal static class Program
                 calculatorProgramData,
                 0,
                 calculatorProgramData.Length);
+            Write("\nendstream");
+            EndObject();
+        }
+        else if (sampledOrder3Data != null)
+        {
+            StartObject(6);
+            Write(
+                "<< /FunctionType 0 " +
+                "/Domain [0 1] " +
+                "/Range [0 1 0 1 0 1] " +
+                "/Size [4] " +
+                "/BitsPerSample 8 " +
+                "/Order 3 " +
+                "/Encode [0 3] " +
+                "/Decode [0 1 0 1 0 1] " +
+                $"/Length {sampledOrder3Data.Length} >>\nstream\n");
+            memory.Write(
+                sampledOrder3Data,
+                0,
+                sampledOrder3Data.Length);
             Write("\nendstream");
             EndObject();
         }

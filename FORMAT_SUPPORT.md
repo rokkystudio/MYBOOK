@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.13
+Версия профиля: 1.5.14
 
 ## Ready for use
 
@@ -73,7 +73,7 @@ MYBOOK считает готовыми к обычному пользовате�
 
 - ExtGState soft-mask group compositing не реализован полностью.
 - Predefined Type0 CMaps для public Adobe CJK/KR collections входят в профиль: canonical Adobe resources дают code→CID, включая `usecmap` inheritance; без `/ToUnicode` CID→Unicode берётся из canonical `Registry-Ordering-UCS2` mapping resources.
-- CIE-based raster ColorSpace `CalGray`, `CalRGB` и `Lab` входят в профиль для 8-bit decoded samples с точными PDF gamma/matrix/Lab transforms и chromatic adaptation к sRGB. `ICCBased` `/N=1/3/4` входит в профиль через embedded ICC profile и системный WPF ICC/ICM engine; `/Range` и `/Decode` учитываются строго. `Separation` и `DeviceN` входят в профиль через общий PDF Function evaluator: `FunctionType 2`, sampled `FunctionType 0` с multilinear `/Order=1` и stitching `FunctionType 3`; alternate DeviceGray/DeviceRGB/DeviceCMYK поддерживаются. `FunctionType 4` calculator functions входят в профиль через отдельный VM с arithmetic/trigonometric/comparison/boolean/bitwise/stack operators, procedures и `if`/`ifelse`, строгими type/stack checks и resource limits. Ненулевой CIE BlackPoint, CIE+DCT raw-component path, ICC CMYK DCT, DeviceN+DCT raw N-channel JPEG, ICC/Separation/DeviceN `/SMask /Matte`, sampled `/Order=3` и DeviceCMYK DCT post-processing остаются вне профиля.
+- CIE-based raster ColorSpace `CalGray`, `CalRGB` и `Lab` входят в профиль для 8-bit decoded samples с точными PDF gamma/matrix/Lab transforms и chromatic adaptation к sRGB. `ICCBased` `/N=1/3/4` входит в профиль через embedded ICC profile и системный WPF ICC/ICM engine; `/Range` и `/Decode` учитываются строго. `Separation` и `DeviceN` входят в профиль через общий PDF Function evaluator: `FunctionType 2`, sampled `FunctionType 0` с multilinear `/Order=1` и stitching `FunctionType 3`; alternate DeviceGray/DeviceRGB/DeviceCMYK поддерживаются. `FunctionType 4` calculator functions входят в профиль через отдельный VM с arithmetic/trigonometric/comparison/boolean/bitwise/stack operators, procedures и `if`/`ifelse`, строгими type/stack checks и resource limits. Sampled `FunctionType 0` `/Order=3` входит в профиль через Acrobat-compatible multidimensional cubic interpolation с cubic-convolution `a=-0.5`, quadratic edge handling и recursive interpolation по измерениям. Ненулевой CIE BlackPoint, CIE+DCT raw-component path, ICC CMYK DCT, DeviceN+DCT raw N-channel JPEG, ICC/Separation/DeviceN `/SMask /Matte` и DeviceCMYK DCT post-processing остаются вне профиля.
 - CCITT Group 3/Group 4 filters входят в профиль; JPX и JBIG2 filters остаются вне профиля.
 - Revision 5/6 Unicode passwords проходят SASLprep на фиксированных Unicode 3.2 tables, UTF-8 и truncation до 127 bytes; R6 user/owner authentication использует Algorithm 2.B hardened hash и AESV3. Legacy revisions сохраняют точный byte-password API.
 - Password-protected PDF открывается через локализованный password prompt; неверный пароль запрашивается повторно, пароль не сохраняется. R2-R4 string passwords кодируются точным PDFDocEncoding, R5/R6 — SASLprep/UTF-8.
@@ -81,5 +81,5 @@ MYBOOK считает готовыми к обычному пользовате�
 ## Future formats
 
 DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
-поддерживаемый формат MYBOOK 1.5.13. Его reader является отдельной будущей
+поддерживаемый формат MYBOOK 1.5.14. Его reader является отдельной будущей
 функциональностью и должен пройти те же readiness gates до добавления в реестр.
