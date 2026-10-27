@@ -63,6 +63,8 @@ internal static class Program
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
             ("PDF CIE color spaces", TestPdfCieColorSpaces),
+            ("PDF ICC color space", () => TestPdfIccColorSpace(temporaryDirectory)),
+            ("PDF Separation color space", () => TestPdfSeparationColorSpace(temporaryDirectory)),
             ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
@@ -9469,6 +9471,163 @@ internal static class Program
             "PDF Lab L*=100 a*=0 b*=0 должен преобразовываться в near-white sRGB.");
     }
 
+    private static void TestPdfIccColorSpace(
+        string directory)
+    {
+        var context =
+            new ColorContext(
+                PixelFormats.Rgb24);
+
+        byte[] profileData;
+
+        using (var profileStream =
+               context.OpenProfileStream())
+        using (var memory =
+               new MemoryStream())
+        {
+            profileStream.CopyTo(memory);
+            profileData = memory.ToArray();
+        }
+
+        Assert(
+            profileData.Length > 0,
+            "WPF sRGB ColorContext должен предоставлять ICC profile bytes.");
+
+        var path = Path.Combine(
+            directory,
+            "regression-icc-image.pdf");
+
+        CreateIccImagePdf(
+            path,
+            profileData,
+            [255, 0, 0]);
+
+        var model =
+            SupportedFormatRegistry.ReadDocument(
+                path);
+        var image =
+            model.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var pixel =
+            DecodeRgb24Pixel(image.Data);
+
+        Assert(
+            string.Equals(
+                image.ContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            pixel.R >= 250 &&
+            pixel.G <= 5 &&
+            pixel.B <= 5,
+            "PDF ICCBased sRGB red должен пройти embedded profile -> ICC engine -> PNG без смены primary.");
+    }
+
+    private static void TestPdfSeparationColorSpace(
+        string directory)
+    {
+        var path = Path.Combine(
+            directory,
+            "regression-separation-image.pdf");
+
+        CreateSeparationImagePdf(
+            path,
+            tintSample: 255);
+
+        var model =
+            SupportedFormatRegistry.ReadDocument(
+                path);
+        var image =
+            model.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var pixel =
+            DecodeRgb24Pixel(image.Data);
+
+        Assert(
+            string.Equals(
+                image.ContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            pixel.R >= 250 &&
+            pixel.G <= 5 &&
+            pixel.B <= 5,
+            "PDF Separation FunctionType 2 tint=1 должен преобразовываться через alternate DeviceRGB в red.");
+
+        var unsupportedPath = Path.Combine(
+            directory,
+            "regression-separation-function4.pdf");
+
+        CreateRawImagePdf(
+            unsupportedPath,
+            colorSpaceSyntax:
+                "[/Separation /SpotUnsupported /DeviceRGB " +
+                "<< /FunctionType 4 /Domain [0 1] /Range [0 1 0 1 0 1] >>]",
+            [255],
+            profileData: null);
+
+        var rejected = false;
+
+        try
+        {
+            SupportedFormatRegistry.ReadDocument(
+                unsupportedPath);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "FunctionType 4",
+                StringComparison.Ordinal))
+        {
+            rejected = true;
+        }
+
+        Assert(
+            rejected,
+            "PDF Separation с неподдерживаемым FunctionType должен завершаться явной structural error.");
+    }
+
+    private static (byte R, byte G, byte B) DecodeRgb24Pixel(
+        byte[] png)
+    {
+        using var input =
+            new MemoryStream(
+                png,
+                writable: false);
+        var decoder =
+            new PngBitmapDecoder(
+                input,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad);
+        BitmapSource source =
+            decoder.Frames.Single();
+
+        if (source.Format != PixelFormats.Rgb24)
+        {
+            source =
+                new FormatConvertedBitmap(
+                    source,
+                    PixelFormats.Rgb24,
+                    null,
+                    0);
+        }
+
+        var pixels = new byte[3];
+
+        source.CopyPixels(
+            pixels,
+            3,
+            0);
+
+        return (
+            pixels[0],
+            pixels[1],
+            pixels[2]);
+    }
+
     private static void TestPdfIndexedMatte()
     {
         var rgb = PdfImageColorConverter.ConvertIndexedToRgb(
@@ -11201,6 +11360,159 @@ internal static class Program
         using var output = new MemoryStream();
         encoder.Save(output);
         return output.ToArray();
+    }
+
+    private static void CreateIccImagePdf(
+        string path,
+        byte[] profileData,
+        byte[] imageSamples)
+    {
+        if (imageSamples.Length != 3)
+        {
+            throw new ArgumentException(
+                "ICC RGB fixture должен содержать ровно один RGB pixel.",
+                nameof(imageSamples));
+        }
+
+        CreateRawImagePdf(
+            path,
+            colorSpaceSyntax: "[/ICCBased 6 0 R]",
+            imageSamples,
+            profileData);
+    }
+
+    private static void CreateSeparationImagePdf(
+        string path,
+        byte tintSample)
+    {
+        CreateRawImagePdf(
+            path,
+            colorSpaceSyntax:
+                "[/Separation /SpotRed /DeviceRGB " +
+                "<< /FunctionType 2 /Domain [0 1] " +
+                "/C0 [1 1 1] /C1 [1 0 0] /N 1 >>]",
+            [tintSample],
+            profileData: null);
+    }
+
+    private static void CreateRawImagePdf(
+        string path,
+        string colorSpaceSyntax,
+        byte[] imageSamples,
+        byte[]? profileData)
+    {
+        var encoding = Encoding.ASCII;
+        var content = encoding.GetBytes(
+            "q\n" +
+            "20 0 0 20 20 20 cm\n" +
+            "/Im1 Do\n" +
+            "Q\n");
+        using var memory = new MemoryStream();
+        var offsets = new List<long>();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        void StartObject(int number)
+        {
+            if (number != offsets.Count + 1)
+            {
+                throw new InvalidOperationException(
+                    "PDF fixture objects должны записываться последовательно.");
+            }
+
+            offsets.Add(memory.Position);
+            Write($"{number} 0 obj\n");
+        }
+
+        void EndObject()
+        {
+            Write("\nendobj\n");
+        }
+
+        Write("%PDF-1.4\n");
+
+        StartObject(1);
+        Write("<< /Type /Catalog /Pages 2 0 R >>");
+        EndObject();
+
+        StartObject(2);
+        Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>");
+        EndObject();
+
+        StartObject(3);
+        Write("<< /Type /Page /Parent 2 0 R /Contents 4 0 R " +
+              "/Resources << /XObject << /Im1 5 0 R >> >> >>");
+        EndObject();
+
+        StartObject(4);
+        Write($"<< /Length {content.Length} >>\nstream\n");
+        memory.Write(
+            content,
+            0,
+            content.Length);
+        Write("endstream");
+        EndObject();
+
+        StartObject(5);
+        Write(
+            "<< /Type /XObject /Subtype /Image " +
+            "/Width 1 /Height 1 " +
+            $"/ColorSpace {colorSpaceSyntax} " +
+            "/BitsPerComponent 8 " +
+            $"/Length {imageSamples.Length} >>\nstream\n");
+        memory.Write(
+            imageSamples,
+            0,
+            imageSamples.Length);
+        Write("\nendstream");
+        EndObject();
+
+        if (profileData != null)
+        {
+            StartObject(6);
+            Write(
+                $"<< /N 3 /Length {profileData.Length} >>\nstream\n");
+            memory.Write(
+                profileData,
+                0,
+                profileData.Length);
+            Write("\nendstream");
+            EndObject();
+        }
+
+        var xref = memory.Position;
+        Write(
+            "xref\n" +
+            $"0 {offsets.Count + 1}\n" +
+            "0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n" +
+            $"<< /Size {offsets.Count + 1} /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
     }
 
     /// <summary>
