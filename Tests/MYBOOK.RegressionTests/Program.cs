@@ -9877,6 +9877,138 @@ internal static class Program
             Math.Abs(arithmeticResult[1] - 1.0) < 0.001,
             "PDF FunctionType 4 должен выполнять arithmetic, stack и bitwise operators.");
 
+        var extraStack =
+            new PdfCalculatorFunction(
+                domain: [0.0, 1.0],
+                range: [0.0, 1.0],
+                programData:
+                    Encoding.ASCII.GetBytes(
+                        "{ 0.25 exch }"));
+
+        var extraStackResult =
+            extraStack.Evaluate([0.75]);
+
+        Assert(
+            Math.Abs(extraStackResult[0] - 0.75) < 0.00001,
+            "PDF FunctionType 4 должен брать верхние N outputs и игнорировать более глубокие stack values.");
+
+        var rounding =
+            new PdfCalculatorFunction(
+                domain: [0.0, 1.0],
+                range: [-10.0, 10.0],
+                programData:
+                    Encoding.ASCII.GetBytes(
+                        "{ pop -6.5 round }"));
+
+        Assert(
+            Math.Abs(
+                rounding.Evaluate([0.0])[0] +
+                6.0) < 0.00001,
+            "PDF FunctionType 4 round при отрицательном midpoint должен выбирать большее целое: -6.5 -> -6.");
+
+        var logicalShift =
+            new PdfCalculatorFunction(
+                domain: [0.0, 1.0],
+                range: [0.0, 2147483647.0],
+                programData:
+                    Encoding.ASCII.GetBytes(
+                        "{ pop -1 -1 bitshift }"));
+
+        Assert(
+            Math.Abs(
+                logicalShift.Evaluate([0.0])[0] -
+                2147483647.0) < 0.5,
+            "PDF FunctionType 4 отрицательный bitshift должен сдвигать вправо с нулевым заполнением.");
+
+        var overflowPromoted = false;
+
+        try
+        {
+            var overflow =
+                new PdfCalculatorFunction(
+                    domain: [0.0, 1.0],
+                    range: [0.0, 1.0],
+                    programData:
+                        Encoding.ASCII.GetBytes(
+                            "{ pop 2147483647 1 add 1 and }"));
+            overflow.Evaluate([0.0]);
+        }
+        catch (InvalidDataException)
+        {
+            overflowPromoted = true;
+        }
+
+        Assert(
+            overflowPromoted,
+            "PDF FunctionType 4 integer add overflow должен promoted-to-real, после чего bitwise operator обязан дать type error.");
+
+        var cviRangeRejected = false;
+
+        try
+        {
+            var cviOverflow =
+                new PdfCalculatorFunction(
+                    domain: [0.0, 1.0],
+                    range: [0.0, 1.0],
+                    programData:
+                        Encoding.ASCII.GetBytes(
+                            "{ pop 2147483648.0 cvi }"));
+            cviOverflow.Evaluate([0.0]);
+        }
+        catch (InvalidDataException)
+        {
+            cviRangeRejected = true;
+        }
+
+        Assert(
+            cviRangeRejected,
+            "PDF FunctionType 4 cvi должен отклонять real вне 32-bit PDF integer range.");
+
+        var exponentRejected = false;
+
+        try
+        {
+            var exponent =
+                new PdfCalculatorFunction(
+                    domain: [0.0, 1.0],
+                    range: [0.0, 1.0],
+                    programData:
+                        Encoding.ASCII.GetBytes(
+                            "{ pop 1e3 }"));
+            exponent.Evaluate([0.0]);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "1e3",
+                StringComparison.Ordinal))
+        {
+            exponentRejected = true;
+        }
+
+        Assert(
+            exponentRejected,
+            "PDF FunctionType 4 operands используют PDF numeric syntax и не должны принимать exponent notation.");
+
+        var freeProcedureRejected = false;
+
+        try
+        {
+            _ = new PdfCalculatorFunction(
+                domain: [0.0, 1.0],
+                range: [0.0, 1.0],
+                programData:
+                    Encoding.ASCII.GetBytes(
+                        "{ pop { 1 } { 1 } eq }"));
+        }
+        catch (InvalidDataException)
+        {
+            freeProcedureRejected = true;
+        }
+
+        Assert(
+            freeProcedureRejected,
+            "PDF FunctionType 4 braces допустимы только как conditional expressions для if/ifelse.");
+
         var rejected = false;
 
         try
