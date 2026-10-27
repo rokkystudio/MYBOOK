@@ -71,6 +71,7 @@ internal static class Program
             ("PDF calculator function", TestPdfCalculatorFunction),
             ("PDF DeviceN color space", () => TestPdfDeviceNColorSpace(temporaryDirectory)),
             ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
+            ("PDF CMYK DCT reader", () => TestPdfCmykDctReader(temporaryDirectory)),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
@@ -10105,6 +10106,25 @@ internal static class Program
             Near(rgb[2], 20, 8),
             "PDF DCTDecode RGB JPEG должен декодироваться в RGB samples.");
 
+        var cmykJpeg = EncodeJpegFixture(
+            [32, 96, 160, 224],
+            width: 1,
+            height: 1,
+            PixelFormats.Cmyk32,
+            stride: 4);
+        var cmyk = PdfJpegSampleDecoder.DecodeCmyk(
+            cmykJpeg,
+            expectedWidth: 1,
+            expectedHeight: 1);
+
+        Assert(
+            cmyk.Length == 4 &&
+            Near(cmyk[0], 32, 8) &&
+            Near(cmyk[1], 96, 8) &&
+            Near(cmyk[2], 160, 8) &&
+            Near(cmyk[3], 224, 8),
+            "PDF DCTDecode CMYK JPEG должен декодироваться в CMYK samples без RGB промежуточного преобразования.");
+
         var matteRemoved = PdfImageColorConverter.RemoveMatte(
             rgb,
             components: 3,
@@ -10132,6 +10152,39 @@ internal static class Program
         Assert(
             geometryRejected,
             "PDF DCTDecode должен отклонять JPEG geometry, несовместимую с Image XObject.");
+    }
+
+    private static void TestPdfCmykDctReader(
+        string directory)
+    {
+        var path =
+            Path.Combine(
+                directory,
+                "regression-cmyk-dct.pdf");
+
+        CreateCmykDctImagePdf(path);
+
+        var model =
+            SupportedFormatRegistry.ReadDocument(path);
+        var image =
+            model.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var pixel =
+            DecodeRgb24Pixel(image.Data);
+
+        Assert(
+            string.Equals(
+                image.ContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            pixel.R <= 8 &&
+            pixel.G >= 245 &&
+            pixel.B >= 245,
+            "PDF DeviceCMYK DCT с нестандартным /Decode должен проходить через decoded CMYK samples и давать cyan.");
+
     }
 
     private static void TestPdfLzwDecoder()
@@ -12103,6 +12156,106 @@ internal static class Program
         Write(
             "trailer\n" +
             "<< /Size 6 /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
+    }
+
+    private static void CreateCmykDctImagePdf(
+        string path)
+    {
+        var encoding = Encoding.ASCII;
+        var jpeg = EncodeJpegFixture(
+            [0, 0, 0, 0],
+            width: 1,
+            height: 1,
+            PixelFormats.Cmyk32,
+            stride: 4);
+        var content = encoding.GetBytes(
+            "q\n20 0 0 20 20 20 cm\n/Im1 Do\nQ\n");
+        using var memory = new MemoryStream();
+        var offsets = new List<long>();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            memory.Write(bytes, 0, bytes.Length);
+        }
+
+        void StartObject(int number)
+        {
+            if (number != offsets.Count + 1)
+            {
+                throw new InvalidOperationException(
+                    "PDF fixture objects должны записываться последовательно.");
+            }
+
+            offsets.Add(memory.Position);
+            Write($"{number} 0 obj\n");
+        }
+
+        void EndObject() =>
+            Write("\nendobj\n");
+
+        Write("%PDF-1.4\n");
+
+        StartObject(1);
+        Write("<< /Type /Catalog /Pages 2 0 R >>");
+        EndObject();
+
+        StartObject(2);
+        Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>");
+        EndObject();
+
+        StartObject(3);
+        Write(
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R " +
+            "/Resources << /XObject << /Im1 5 0 R >> >> >>");
+        EndObject();
+
+        StartObject(4);
+        Write($"<< /Length {content.Length} >>\nstream\n");
+        memory.Write(content, 0, content.Length);
+        Write("endstream");
+        EndObject();
+
+        StartObject(5);
+        Write(
+            "<< /Type /XObject /Subtype /Image " +
+            "/Width 1 /Height 1 /ColorSpace /DeviceCMYK " +
+            "/BitsPerComponent 8 /Filter /DCTDecode " +
+            "/Decode [1 0 0 1 0 1 0 1] " +
+            $"/Length {jpeg.Length} >>\nstream\n");
+        memory.Write(jpeg, 0, jpeg.Length);
+        Write("\nendstream");
+        EndObject();
+
+        var xref = memory.Position;
+        Write(
+            "xref\n0 " +
+            (offsets.Count + 1).ToString(
+                CultureInfo.InvariantCulture) +
+            "\n0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n<< /Size " +
+            (offsets.Count + 1).ToString(
+                CultureInfo.InvariantCulture) +
+            " /Root 1 0 R >>\n" +
             "startxref\n" +
             xref.ToString(
                 CultureInfo.InvariantCulture) +
