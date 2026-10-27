@@ -10807,6 +10807,96 @@ internal static class Program
                 "PDF JPX /SMaskInData=2 должен восстанавливать green из preblended samples по /Matte.");
         }
 
+        var ciePath = Path.Combine(
+            directory,
+            "regression-jpx-calrgb-preblended.pdf");
+        CreateJpxImagePdf(
+            ciePath,
+            preblendedJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            colorSpaceSyntax: "[/CalRGB << /WhitePoint [0.95047 1 1.08883] >>]",
+            softMaskInData: 2,
+            matteSyntax: "[0 0 0]");
+
+        var cieImage = SupportedFormatRegistry
+            .ReadDocument(ciePath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        using (var cieInput = new MemoryStream(cieImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                cieInput,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[8];
+            bgra.CopyPixels(pixels, 8, 0);
+
+            Assert(
+                pixels[4] <= 8 &&
+                pixels[5] >= 245 &&
+                pixels[6] <= 8 &&
+                pixels[7] == 128,
+                "PDF JPX CalRGB /SMaskInData=2 должен компенсировать Matte до CIE conversion.");
+        }
+
+        var context = new ColorContext(PixelFormats.Rgb24);
+        byte[] iccProfile;
+
+        using (var profileStream = context.OpenProfileStream())
+        using (var profileMemory = new MemoryStream())
+        {
+            profileStream.CopyTo(profileMemory);
+            iccProfile = profileMemory.ToArray();
+        }
+
+        var iccPath = Path.Combine(
+            directory,
+            "regression-jpx-icc-preblended.pdf");
+        CreateJpxImagePdf(
+            iccPath,
+            preblendedJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            colorSpaceSyntax: "[/ICCBased 6 0 R]",
+            softMaskInData: 2,
+            matteSyntax: "[0 0 0]",
+            iccProfile: iccProfile);
+
+        var iccImage = SupportedFormatRegistry
+            .ReadDocument(iccPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+        using (var iccInput = new MemoryStream(iccImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                iccInput,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[8];
+            bgra.CopyPixels(pixels, 8, 0);
+
+            Assert(
+                pixels[4] <= 8 &&
+                pixels[5] >= 245 &&
+                pixels[6] <= 8 &&
+                pixels[7] == 128,
+                "PDF JPX ICCBased /SMaskInData=2 должен компенсировать Matte перед ICC conversion.");
+        }
+
         var preblendedRejected = false;
 
         try
@@ -13137,7 +13227,7 @@ internal static class Program
         }
 
         Write(
-            "trailer\n<< /Size 6 /Root 1 0 R >>\n" +
+            $"trailer\n<< /Size {offsets.Count + 1} /Root 1 0 R >>\n" +
             "startxref\n" +
             xref.ToString(
                 CultureInfo.InvariantCulture) +
@@ -13425,7 +13515,8 @@ internal static class Program
         bool includeReverseDecode,
         string colorSpaceSyntax = "/DeviceRGB",
         int? softMaskInData = null,
-        string? matteSyntax = null)
+        string? matteSyntax = null,
+        byte[]? iccProfile = null)
     {
         var encoding = Encoding.ASCII;
         var content =
@@ -13516,10 +13607,19 @@ internal static class Program
         Write("\nendstream");
         EndObject();
 
+        if (iccProfile != null)
+        {
+            StartObject(6);
+            Write($"<< /N 3 /Length {iccProfile.Length} >>\nstream\n");
+            memory.Write(iccProfile, 0, iccProfile.Length);
+            Write("\nendstream");
+            EndObject();
+        }
+
         var xref =
             memory.Position;
         Write(
-            "xref\n0 6\n0000000000 65535 f \n");
+            $"xref\n0 {offsets.Count + 1}\n0000000000 65535 f \n");
 
         foreach (var offset in offsets)
         {
