@@ -11790,6 +11790,33 @@ internal static class Program
             "regression-extgstate.pdf");
         CreateExtGStatePdf(extGStatePath);
 
+        foreach (var (suffix, mask) in new[]
+        {
+            ("invalid-subtype", "<< /S /Bogus >>"),
+            ("invalid-group-type", "<< /S /Alpha /G /NotAStream >>")
+        })
+        {
+            var invalidPath = Path.Combine(
+                directory,
+                $"regression-extgstate-smask-{suffix}.pdf");
+            CreateExtGStatePdf(invalidPath, mask);
+            var rejected = false;
+
+            try
+            {
+                _ = SupportedFormatRegistry.ReadDocument(invalidPath);
+            }
+            catch (InvalidDataException error)
+                when (error.Message.Contains("/SMask", StringComparison.Ordinal))
+            {
+                rejected = true;
+            }
+
+            Assert(
+                rejected,
+                $"PDF ExtGState /SMask must reject {suffix} with explicit diagnostics.");
+        }
+
         var extGStateModel = SupportedFormatRegistry.ReadDocument(extGStatePath);
         var extGStatePage = extGStateModel.Blocks
             .OfType<DocumentFixedPage>()
@@ -12115,7 +12142,7 @@ internal static class Program
         writer.Write(content);
     }
 
-    private static void CreateExtGStatePdf(string path)
+    private static void CreateExtGStatePdf(string path, string? softMaskSyntax = null)
     {
         var encoding = Encoding.ASCII;
         var content =
@@ -12136,7 +12163,7 @@ internal static class Program
             "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 240 120] >>",
             "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /ExtGState << /GS1 5 0 R /GS2 6 0 R >> >> >>",
             $"<< /Length {encoding.GetByteCount(content)} >>\nstream\n{content}endstream",
-            "<< /Type /ExtGState /BM [/UnknownVendorMode /Multiply] /OP true /op true /OPM 1 /SMask << /S /Alpha >> /CA 0.75 /ca 0.5 >>",
+            $"<< /Type /ExtGState /BM [/UnknownVendorMode /Multiply] /OP true /op true /OPM 1 /SMask {softMaskSyntax ?? "<< /S /Alpha >>"} /CA 0.75 /ca 0.5 >>",
             "<< /Type /ExtGState /BM /Screen /OP false /op false /OPM 0 /SMask /None >>"
         };
 
