@@ -11843,6 +11843,29 @@ internal static class Program
             Assert(rejected, $"PDF ExtGState /SMask /G must reject {suffix}.");
         }
 
+        var validMaskGroupPath = Path.Combine(
+            directory,
+            "regression-smask-form-valid-unsupported.pdf");
+        CreateExtGStatePdf(
+            validMaskGroupPath,
+            "<< /S /Alpha /G 7 0 R >>",
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K false >> /Length 0 >>\nstream\n\nendstream");
+
+        var realMaskRejected = false;
+        try
+        {
+            _ = SupportedFormatRegistry.ReadDocument(validMaskGroupPath);
+        }
+        catch (NotSupportedException error)
+            when (error.Message.Contains("compositing", StringComparison.Ordinal))
+        {
+            realMaskRejected = true;
+        }
+
+        Assert(
+            realMaskRejected,
+            "PDF ExtGState /SMask /G must explicitly reject real transparency groups until compositing is implemented.");
+
         var extGStateModel = SupportedFormatRegistry.ReadDocument(extGStatePath);
         var extGStatePage = extGStateModel.Blocks
             .OfType<DocumentFixedPage>()
