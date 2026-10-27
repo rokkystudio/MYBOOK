@@ -11817,6 +11817,28 @@ internal static class Program
                 $"PDF ExtGState /SMask must reject {suffix} with explicit diagnostics.");
         }
 
+        foreach (var (suffix, form) in new[]
+        {
+            ("missing-bbox", "<< /Type /XObject /Subtype /Form /Group << /S /Transparency >> /Length 0 >>\nstream\n\nendstream"),
+            ("wrong-group", "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Other >> /Length 0 >>\nstream\n\nendstream")
+        })
+        {
+            var invalidPath = Path.Combine(directory, $"regression-smask-form-{suffix}.pdf");
+            CreateExtGStatePdf(invalidPath, "<< /S /Alpha /G 7 0 R >>", form);
+            var rejected = false;
+            try
+            {
+                _ = SupportedFormatRegistry.ReadDocument(invalidPath);
+            }
+            catch (InvalidDataException error)
+                when (error.Message.Contains("/SMask /G", StringComparison.Ordinal))
+            {
+                rejected = true;
+            }
+
+            Assert(rejected, $"PDF ExtGState /SMask /G must reject {suffix}.");
+        }
+
         var extGStateModel = SupportedFormatRegistry.ReadDocument(extGStatePath);
         var extGStatePage = extGStateModel.Blocks
             .OfType<DocumentFixedPage>()
@@ -12142,7 +12164,7 @@ internal static class Program
         writer.Write(content);
     }
 
-    private static void CreateExtGStatePdf(string path, string? softMaskSyntax = null)
+    private static void CreateExtGStatePdf(string path, string? softMaskSyntax = null, string? groupForm = null)
     {
         var encoding = Encoding.ASCII;
         var content =
@@ -12166,6 +12188,11 @@ internal static class Program
             $"<< /Type /ExtGState /BM [/UnknownVendorMode /Multiply] /OP true /op true /OPM 1 /SMask {softMaskSyntax ?? "<< /S /Alpha >>"} /CA 0.75 /ca 0.5 >>",
             "<< /Type /ExtGState /BM /Screen /OP false /op false /OPM 0 /SMask /None >>"
         };
+
+        if (groupForm != null)
+        {
+            objects = [.. objects, groupForm];
+        }
 
         using var memory = new MemoryStream();
 
