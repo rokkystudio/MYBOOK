@@ -11820,7 +11820,11 @@ internal static class Program
         foreach (var (suffix, form) in new[]
         {
             ("missing-bbox", "<< /Type /XObject /Subtype /Form /Group << /S /Transparency >> /Length 0 >>\nstream\n\nendstream"),
-            ("wrong-group", "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Other >> /Length 0 >>\nstream\n\nendstream")
+            ("wrong-group", "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Other >> /Length 0 >>\nstream\n\nendstream"),
+            ("zero-area", "<< /Type /XObject /Subtype /Form /BBox [0 0 0 10] /Group << /S /Transparency >> /Length 0 >>\nstream\n\nendstream"),
+            ("reverse-bbox", "<< /Type /XObject /Subtype /Form /BBox [10 0 0 10] /Group << /S /Transparency >> /Length 0 >>\nstream\n\nendstream"),
+            ("invalid-isolated", "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I 1 >> /Length 0 >>\nstream\n\nendstream"),
+            ("invalid-knockout", "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /K /True >> /Length 0 >>\nstream\n\nendstream")
         })
         {
             var invalidPath = Path.Combine(directory, $"regression-smask-form-{suffix}.pdf");
