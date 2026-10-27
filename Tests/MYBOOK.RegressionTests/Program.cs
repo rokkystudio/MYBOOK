@@ -75,6 +75,7 @@ internal static class Program
             ("PDF CMYK DCT reader", () => TestPdfCmykDctReader(temporaryDirectory)),
             ("PDF ICC CMYK DCT reader", () => TestPdfIccCmykDctReader(temporaryDirectory)),
             ("PDF JPX reader", () => TestPdfJpxReader(temporaryDirectory)),
+            ("PDF JBIG2 reader", () => TestPdfJbig2Reader(temporaryDirectory)),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
@@ -10225,6 +10226,53 @@ internal static class Program
             "PDF DeviceN two-ink sample должен пройти FunctionType 0 tint transform в DeviceRGB red.");
     }
 
+    private static (
+        int Width,
+        int Height,
+        byte[] Pixels) DecodeGray8Pixels(
+        byte[] png)
+    {
+        using var input =
+            new MemoryStream(
+                png,
+                writable: false);
+        var decoder =
+            new PngBitmapDecoder(
+                input,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad);
+        BitmapSource source =
+            decoder.Frames.Single();
+
+        if (source.Format != PixelFormats.Gray8)
+        {
+            source =
+                new FormatConvertedBitmap(
+                    source,
+                    PixelFormats.Gray8,
+                    null,
+                    0);
+        }
+
+        var stride =
+            source.PixelWidth;
+        var pixels =
+            new byte[
+                checked(
+                    stride *
+                    source.PixelHeight)];
+
+        source.CopyPixels(
+            pixels,
+            stride,
+            0);
+
+        return (
+            source.PixelWidth,
+            source.PixelHeight,
+            pixels);
+    }
+
     private static (byte R, byte G, byte B) DecodeRgb24Pixel(
         byte[] png)
     {
@@ -10667,6 +10715,170 @@ internal static class Program
         Assert(
             alphaRejected,
             "PDF JPX /SMaskInData=1 должен завершаться явным unsupported до реализации embedded opacity compositing.");
+    }
+
+    private static void TestPdfJbig2Reader(
+        string directory)
+    {
+        var embedded =
+            Convert.FromBase64String(
+                "AAAAADAAAQAAABMAAAAgAAAAEAAAAAAAAAAAAQAAAAAAASYAAQAAADMAAAAgAAAAEAAAAAAAAAAAAAAD//3/Av7+/v9SWaqXAS01C97qHUhYDdtf/3/9lm1P/6w=");
+
+        var direct =
+            PdfJbig2SampleDecoder.Decode(
+                embedded,
+                Array.Empty<byte>(),
+                width: 32,
+                height: 16);
+
+        var expectedRows =
+            new[]
+            {
+                "################################",
+                "###...###...###...###...###...##",
+                "#..###...###...###...###...###.#",
+                "#..###...###...###...###...###.#",
+                "###...###...###...###...###...##",
+                "###...###...###...###...###...##",
+                "#..###...###...###...###...###.#",
+                "#..###...###...###...###...###.#",
+                "###...###...###...###...###...##",
+                "###...###...###...###...###...##",
+                "#..###...###...###...###...###.#",
+                "#..###...###...###...###...###.#",
+                "###...###...###...###...###...##",
+                "###...###...###...###...###...##",
+                "#..###...###...###...###...###.#",
+                "################################"
+            };
+
+        Assert(
+            direct.Length == 32 * 16 &&
+            Enumerable.Range(0, 16)
+                .All(row =>
+                    Enumerable.Range(0, 32)
+                        .All(column =>
+                            direct[row * 32 + column] ==
+                            (expectedRows[row][column] == '#'
+                                ? (byte)0
+                                : (byte)255))),
+            "PDF JBIG2 decoder должен точно воспроизводить upstream jbig2enc -p fixture в Gray8 polarity.");
+
+        var plainPath =
+            Path.Combine(
+                directory,
+                "regression-jbig2.pdf");
+        CreateJbig2ImagePdf(
+            plainPath,
+            embedded,
+            globals: null,
+            reverseDecode: false);
+
+        var plain =
+            DecodeGray8Pixels(
+                SupportedFormatRegistry
+                    .ReadDocument(plainPath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            plain.Width == 32 &&
+            plain.Height == 16 &&
+            plain.Pixels[0] == 0 &&
+            plain.Pixels[35] == 255,
+            "PDF JBIG2 Image XObject должен рендерить black/white samples через DeviceGray.");
+
+        var inversePath =
+            Path.Combine(
+                directory,
+                "regression-jbig2-inverse.pdf");
+        CreateJbig2ImagePdf(
+            inversePath,
+            embedded,
+            globals: null,
+            reverseDecode: true);
+
+        var inverse =
+            DecodeGray8Pixels(
+                SupportedFormatRegistry
+                    .ReadDocument(inversePath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            inverse.Pixels[0] == 255 &&
+            inverse.Pixels[35] == 0,
+            "PDF JBIG2 должен применять PDF /Decode после JBIG2 reconstruction.");
+
+        var globals =
+            embedded[..30]
+                .ToArray();
+        globals[27] |= 0x04;
+        var pageOnly =
+            embedded[30..];
+
+        var globalsPath =
+            Path.Combine(
+                directory,
+                "regression-jbig2-globals.pdf");
+        CreateJbig2ImagePdf(
+            globalsPath,
+            pageOnly,
+            globals,
+            reverseDecode: false);
+
+        var globalPixels =
+            DecodeGray8Pixels(
+                SupportedFormatRegistry
+                    .ReadDocument(globalsPath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            globalPixels.Pixels.All(
+                value => value == 0),
+            "PDF /JBIG2Globals должен декодироваться перед embedded stream и участвовать в page state.");
+
+        var customHuffmanTable =
+            new byte[]
+            {
+                0, 0, 0, 1,
+                53,
+                0,
+                1,
+                0, 0, 0, 4,
+                0, 0, 0, 0
+            };
+        var unsupported = false;
+
+        try
+        {
+            _ = PdfJbig2SampleDecoder.Decode(
+                customHuffmanTable,
+                Array.Empty<byte>(),
+                width: 8,
+                height: 8);
+        }
+        catch (NotSupportedException)
+        {
+            unsupported = true;
+        }
+
+        Assert(
+            unsupported,
+            "PDF JBIG2 custom Huffman table должен оставаться явным unsupported.");
     }
 
     private static void TestPdfLzwDecoder()
@@ -12794,6 +13006,140 @@ internal static class Program
 
         Write(
             "trailer\n<< /Size 6 /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
+    }
+
+    private static void CreateJbig2ImagePdf(
+        string path,
+        byte[] embedded,
+        byte[]? globals,
+        bool reverseDecode)
+    {
+        var encoding =
+            Encoding.ASCII;
+        var content =
+            encoding.GetBytes(
+                "q\n32 0 0 16 20 20 cm\n/Im1 Do\nQ\n");
+        using var memory =
+            new MemoryStream();
+        var offsets =
+            new List<long>();
+
+        void Write(string value)
+        {
+            var bytes =
+                encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        void StartObject(int number)
+        {
+            if (number != offsets.Count + 1)
+            {
+                throw new InvalidOperationException(
+                    "PDF fixture objects должны записываться последовательно.");
+            }
+
+            offsets.Add(
+                memory.Position);
+            Write(
+                $"{number} 0 obj\n");
+        }
+
+        void EndObject() =>
+            Write("\nendobj\n");
+
+        Write("%PDF-1.4\n");
+
+        StartObject(1);
+        Write(
+            "<< /Type /Catalog /Pages 2 0 R >>");
+        EndObject();
+
+        StartObject(2);
+        Write(
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>");
+        EndObject();
+
+        StartObject(3);
+        Write(
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R " +
+            "/Resources << /XObject << /Im1 5 0 R >> >> >>");
+        EndObject();
+
+        StartObject(4);
+        Write(
+            $"<< /Length {content.Length} >>\nstream\n");
+        memory.Write(
+            content,
+            0,
+            content.Length);
+        Write("endstream");
+        EndObject();
+
+        StartObject(5);
+        Write(
+            "<< /Type /XObject /Subtype /Image " +
+            "/Width 32 /Height 16 " +
+            "/ColorSpace /DeviceGray " +
+            "/BitsPerComponent 1 " +
+            (reverseDecode
+                ? "/Decode [1 0] "
+                : string.Empty) +
+            (globals != null
+                ? "/DecodeParms << /JBIG2Globals 6 0 R >> "
+                : string.Empty) +
+            "/Filter /JBIG2Decode " +
+            $"/Length {embedded.Length} >>\nstream\n");
+        memory.Write(
+            embedded,
+            0,
+            embedded.Length);
+        Write("\nendstream");
+        EndObject();
+
+        if (globals != null)
+        {
+            StartObject(6);
+            Write(
+                $"<< /Length {globals.Length} >>\nstream\n");
+            memory.Write(
+                globals,
+                0,
+                globals.Length);
+            Write("\nendstream");
+            EndObject();
+        }
+
+        var objectCount =
+            offsets.Count;
+        var xref =
+            memory.Position;
+        Write(
+            $"xref\n0 {objectCount + 1}\n" +
+            "0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            $"trailer\n<< /Size {objectCount + 1} /Root 1 0 R >>\n" +
             "startxref\n" +
             xref.ToString(
                 CultureInfo.InvariantCulture) +

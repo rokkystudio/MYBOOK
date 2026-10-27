@@ -8,9 +8,9 @@
         <UseWPF>true</UseWPF>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
         <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-        <Version>1.5.20</Version>
-        <AssemblyVersion>1.5.20.0</AssemblyVersion>
-        <FileVersion>1.5.20.0</FileVersion>
+        <Version>1.5.21</Version>
+        <AssemblyVersion>1.5.21.0</AssemblyVersion>
+        <FileVersion>1.5.21.0</FileVersion>
         <InformationalVersion>1.2.44</InformationalVersion>
     </PropertyGroup>
 
@@ -57,6 +57,8 @@
                  CopyToOutputDirectory="PreserveNewest" />
         <Content Include="ThirdParty\CoreJ2K\COPYRIGHT-JJ2000-5.1"
                  CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="ThirdParty\SharpAstro.Jbig2\UNLICENSE"
+                 CopyToOutputDirectory="PreserveNewest" />
 
         <Resource Include="..\SHARED\Flags\Assets\**\*.png">
             <Link>Shared\Flags\Assets\%(Filename)%(Extension)</Link>
@@ -82,6 +84,8 @@
                           Version="1.4.0" />
         <PackageReference Include="Microsoft.Web.WebView2"
                           Version="1.0.4258.31" />
+        <PackageReference Include="SharpAstro.Jbig2"
+                          Version="3.16.981" />
     </ItemGroup>
 
 </Project>
