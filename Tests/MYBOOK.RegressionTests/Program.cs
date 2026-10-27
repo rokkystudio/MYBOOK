@@ -74,6 +74,7 @@ internal static class Program
             ("PDF DCT JPEG decoder", TestPdfJpegDecoder),
             ("PDF CMYK DCT reader", () => TestPdfCmykDctReader(temporaryDirectory)),
             ("PDF ICC CMYK DCT reader", () => TestPdfIccCmykDctReader(temporaryDirectory)),
+            ("PDF JPX reader", () => TestPdfJpxReader(temporaryDirectory)),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
@@ -10249,11 +10250,18 @@ internal static class Program
                     0);
         }
 
-        var pixels = new byte[3];
+        var stride =
+            checked(
+                source.PixelWidth * 3);
+        var pixels =
+            new byte[
+                checked(
+                    stride *
+                    source.PixelHeight)];
 
         source.CopyPixels(
             pixels,
-            3,
+            stride,
             0);
 
         return (
@@ -10479,6 +10487,186 @@ internal static class Program
             Math.Abs(pixel.R - pixel.G) <= 3 &&
             Math.Abs(pixel.R - pixel.B) <= 3,
             "PDF ICCBased /N=4 DCT должен проходить через CMYK JPEG samples и embedded CMYK ICC profile с ожидаемой нейтральной Lab→sRGB яркостью.");
+    }
+
+    private static void TestPdfJpxReader(
+        string directory)
+    {
+        var jpx =
+            Convert.FromBase64String(
+                "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAAAtanAyaAAAABZpaGRyAAAAAQAAAAIAAwcHAAAAAAAPY29scgEAAAAAABAAAACYanAyY/9P/1EALwAAAAAAAgAAAAEAAAAAAAAAAAAAAAIAAAABAAAAAAAAAAAAAwcBAQcBAQcBAf9SAAwAAAABAAAEBAAB/1wABEBA/2QAJQABQ3JlYXRlZCBieSBPcGVuSlBFRyB2ZXJzaW9uIDIuNS40/5AACgAAAAAAIAAB/5PfgCALsop/34AYBaLd34AQCT//2Q==");
+
+        var direct =
+            PdfJpxSampleDecoder.Decode(
+                jpx,
+                expectedWidth: 2,
+                expectedHeight: 1,
+                useEmbeddedColorSpace: false);
+
+        Assert(
+            direct.Components == 3 &&
+            direct.BitDepths.SequenceEqual(
+                new[] { 8, 8, 8 }) &&
+            direct.Samples.SequenceEqual(
+                new byte[]
+                {
+                    255, 0, 0,
+                    0, 255, 0
+                }),
+            "PDF JPX decoder должен вернуть точные interleaved RGB samples и исходную component depth.");
+
+        var sixteenBitJpx =
+            Convert.FromBase64String(
+                "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAAAtanAyaAAAABZpaGRyAAAAAQAAAAIAAQ8HAAAAAAAPY29scgEAAAAAABEAAACGanAyY/9P/1EAKQAAAAAAAgAAAAEAAAAAAAAAAAAAAAIAAAABAAAAAAAAAAAAAQ8BAf9SAAwAAAABAAAEBAAB/1wABECA/2QAJQABQ3JlYXRlZCBieSBPcGVuSlBFRyB2ZXJzaW9uIDIuNS40/5AACgAAAAAAFAAB/5PP/DAIBCv/2Q==");
+        var sixteenBit =
+            PdfJpxSampleDecoder.Decode(
+                sixteenBitJpx,
+                expectedWidth: 2,
+                expectedHeight: 1,
+                useEmbeddedColorSpace: false);
+
+        Assert(
+            sixteenBit.Components == 1 &&
+            sixteenBit.BitDepths.SequenceEqual(
+                new[] { 16 }) &&
+            sixteenBit.Samples.SequenceEqual(
+                new byte[] { 255, 128 }),
+            "PDF JPX decoder должен сохранять исходную 16-bit component depth и нормализовать samples в 8-bit render coordinates.");
+
+        var explicitPath =
+            Path.Combine(
+                directory,
+                "regression-jpx-explicit-rgb.pdf");
+        CreateJpxImagePdf(
+            explicitPath,
+            jpx,
+            includeColorSpace: true,
+            includeReverseDecode: true);
+
+        var explicitImage =
+            SupportedFormatRegistry
+                .ReadDocument(explicitPath)
+                .Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var explicitPixel =
+            DecodeRgb24Pixel(
+                explicitImage.Data);
+
+        Assert(
+            string.Equals(
+                explicitImage.ContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            explicitPixel.R >= 250 &&
+            explicitPixel.G <= 5 &&
+            explicitPixel.B <= 5,
+            "PDF JPX с явным /DeviceRGB должен игнорировать /Decode и /BitsPerComponent и сохранить красный первый pixel.");
+
+        var implicitPath =
+            Path.Combine(
+                directory,
+                "regression-jpx-implicit-rgb.pdf");
+        CreateJpxImagePdf(
+            implicitPath,
+            jpx,
+            includeColorSpace: false,
+            includeReverseDecode: false);
+
+        var implicitPixel =
+            DecodeRgb24Pixel(
+                SupportedFormatRegistry
+                    .ReadDocument(implicitPath)
+                    .Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single()
+                    .ImageRuns
+                    .Single()
+                    .Data);
+
+        Assert(
+            implicitPixel.R >= 250 &&
+            implicitPixel.G <= 5 &&
+            implicitPixel.B <= 5,
+            "PDF JPX без /ColorSpace должен использовать embedded JPX sRGB mapping.");
+
+        var geometryRejected = false;
+
+        try
+        {
+            _ = PdfJpxSampleDecoder.Decode(
+                jpx,
+                expectedWidth: 1,
+                expectedHeight: 1,
+                useEmbeddedColorSpace: false);
+        }
+        catch (InvalidDataException)
+        {
+            geometryRejected = true;
+        }
+
+        Assert(
+            geometryRejected,
+            "PDF JPX decoder должен строго отклонять geometry mismatch.");
+
+        var mismatchPath =
+            Path.Combine(
+                directory,
+                "regression-jpx-component-mismatch.pdf");
+        CreateJpxImagePdf(
+            mismatchPath,
+            jpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            colorSpaceSyntax: "/DeviceGray");
+
+        var componentMismatchRejected = false;
+
+        try
+        {
+            SupportedFormatRegistry.ReadDocument(
+                mismatchPath);
+        }
+        catch (InvalidDataException)
+        {
+            componentMismatchRejected = true;
+        }
+
+        Assert(
+            componentMismatchRejected,
+            "PDF JPX explicit ColorSpace должен строго совпадать с числом decoded components.");
+
+        var alphaPath =
+            Path.Combine(
+                directory,
+                "regression-jpx-smaskindata.pdf");
+        CreateJpxImagePdf(
+            alphaPath,
+            jpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            softMaskInData: 1);
+
+        var alphaRejected = false;
+
+        try
+        {
+            SupportedFormatRegistry.ReadDocument(
+                alphaPath);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "SMaskInData",
+                StringComparison.Ordinal))
+        {
+            alphaRejected = true;
+        }
+
+        Assert(
+            alphaRejected,
+            "PDF JPX /SMaskInData=1 должен завершаться явным unsupported до реализации embedded opacity compositing.");
     }
 
     private static void TestPdfLzwDecoder()
@@ -12594,6 +12782,126 @@ internal static class Program
 
         var xref = memory.Position;
         Write("xref\n0 6\n0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString(
+                    "0000000000",
+                    CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            "trailer\n<< /Size 6 /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(
+                CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+
+        File.WriteAllBytes(
+            path,
+            memory.ToArray());
+    }
+
+    private static void CreateJpxImagePdf(
+        string path,
+        byte[] jpx,
+        bool includeColorSpace,
+        bool includeReverseDecode,
+        string colorSpaceSyntax = "/DeviceRGB",
+        int? softMaskInData = null)
+    {
+        var encoding = Encoding.ASCII;
+        var content =
+            encoding.GetBytes(
+                "q\n20 0 0 10 20 20 cm\n/Im1 Do\nQ\n");
+        using var memory =
+            new MemoryStream();
+        var offsets =
+            new List<long>();
+
+        void Write(string value)
+        {
+            var bytes =
+                encoding.GetBytes(value);
+            memory.Write(
+                bytes,
+                0,
+                bytes.Length);
+        }
+
+        void StartObject(int number)
+        {
+            if (number != offsets.Count + 1)
+            {
+                throw new InvalidOperationException(
+                    "PDF fixture objects должны записываться последовательно.");
+            }
+
+            offsets.Add(
+                memory.Position);
+            Write(
+                $"{number} 0 obj\n");
+        }
+
+        void EndObject() =>
+            Write("\nendobj\n");
+
+        Write("%PDF-1.5\n");
+
+        StartObject(1);
+        Write(
+            "<< /Type /Catalog /Pages 2 0 R >>");
+        EndObject();
+
+        StartObject(2);
+        Write(
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>");
+        EndObject();
+
+        StartObject(3);
+        Write(
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R " +
+            "/Resources << /XObject << /Im1 5 0 R >> >> >>");
+        EndObject();
+
+        StartObject(4);
+        Write(
+            $"<< /Length {content.Length} >>\nstream\n");
+        memory.Write(
+            content,
+            0,
+            content.Length);
+        Write("endstream");
+        EndObject();
+
+        StartObject(5);
+        Write(
+            "<< /Type /XObject /Subtype /Image " +
+            "/Width 2 /Height 1 " +
+            (includeColorSpace
+                ? $"/ColorSpace {colorSpaceSyntax} "
+                : string.Empty) +
+            (includeReverseDecode
+                ? "/Decode [1 0 1 0 1 0] "
+                : string.Empty) +
+            (softMaskInData != null
+                ? $"/SMaskInData {softMaskInData.Value} "
+                : string.Empty) +
+            "/Filter /JPXDecode " +
+            $"/Length {jpx.Length} >>\nstream\n");
+        memory.Write(
+            jpx,
+            0,
+            jpx.Length);
+        Write("\nendstream");
+        EndObject();
+
+        var xref =
+            memory.Position;
+        Write(
+            "xref\n0 6\n0000000000 65535 f \n");
 
         foreach (var offset in offsets)
         {
