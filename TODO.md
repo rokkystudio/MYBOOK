@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.5.51
+Текущая версия: 1.5.52
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
@@ -62,7 +62,7 @@
 - [ ] IW44 decoder.
 - [ ] Background/foreground composition.
 - [ ] Постраничный renderer.
-- [ ] Links/annotations: `INCL` references to shared `FORM:DJVI` components and raw UTF-8 `ANTa` texts now extracted per page (duplicate/invalid IDs and malformed UTF-8 rejected); `ANTa` rectangular and elliptical `maparea` hyperlinks are now structurally extracted with shape metadata (URL/comment and bottom-left coordinates), with escaped strings and malformed expressions tested; clickable navigation, other shapes and compressed `ANTz` still unsupported.
+- [ ] Links/annotations: `INCL` references to shared `FORM:DJVI` components and raw UTF-8 `ANTa` texts now extracted per page (duplicate/invalid IDs and malformed UTF-8 rejected); `ANTa` rectangular, elliptical and polygonal `maparea` hyperlinks are now structurally extracted with shape metadata and bounded vertex lists (URL/comment and bottom-left coordinates), with escaped strings and malformed expressions tested; clickable navigation, other shapes and compressed `ANTz` still unsupported.
 
 ## Интерфейс
 

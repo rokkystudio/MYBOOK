@@ -12389,9 +12389,10 @@ internal static class Program
             (maparea "https://example.org/a" "Description" (rect 10 20 100 50) (border #000000))
             (maparea (url "#+1" "_self") "Next page" (rect 150 75 80 30) (xor))
             (maparea "" "Other geometry" (oval 0 0 10 10))
+            (maparea "#page" "Triangle" (poly 10 20 30 20 20 40))
             """;
         var areas = DjvuAnnotationReader.ReadMapAreas(annotation);
-        Assert(areas.Count == 3 &&
+        Assert(areas.Count == 4 &&
             areas[0].Url == "https://example.org/a" &&
             areas[0].Comment == "Description" &&
             areas[0].X == 10 && areas[0].Y == 20 &&
@@ -12399,7 +12400,12 @@ internal static class Program
             areas[1].Url == "#+1" &&
             areas[1].X == 150 && areas[1].Height == 30 &&
             areas[2].Shape == "oval" && areas[2].X == 0 &&
-            areas[2].Width == 10 && areas[2].Height == 10,
+            areas[2].Width == 10 && areas[2].Height == 10 &&
+            areas[3].Shape == "poly" && areas[3].Url == "#page" &&
+            areas[3].X == 10 && areas[3].Y == 20 &&
+            areas[3].Width == 20 && areas[3].Height == 20 &&
+            areas[3].Vertices.SequenceEqual(new[] {
+                new DjvuPoint(10, 20), new DjvuPoint(30, 20), new DjvuPoint(20, 40) }),
             "DjVu ANTa rectangle and oval links with URL target syntax.");
 
         var escaped = DjvuAnnotationReader.ReadRectangles(
@@ -12414,6 +12420,10 @@ internal static class Program
             ("bad-arity", "(maparea \"x\" \"comment\" (rect 1 2 3))"),
             ("bad-number", "(maparea \"x\" \"comment\" (rect a 2 3 4))"),
             ("bad-oval", "(maparea \"x\" \"comment\" (oval 1 2 -3 4))"),
+            ("bad-poly-points", "(maparea \"x\" \"comment\" (poly 1 2 3 4))"),
+            ("bad-poly-negative", "(maparea \"x\" \"comment\" (poly 1 2 -3 4 5 6))"),
+            ("bad-poly-arity", "(maparea \"x\" \"comment\" (poly 1 2 3 4 5))"),
+            ("bad-poly-flat", "(maparea \"x\" \"comment\" (poly 1 2 1 5 1 7))"),
             ("unclosed-string", "(maparea \"x")
         })
         {
