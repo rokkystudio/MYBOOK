@@ -8,9 +8,9 @@
         <UseWPF>true</UseWPF>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
         <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-        <Version>1.5.42</Version>
-        <AssemblyVersion>1.5.42.0</AssemblyVersion>
-        <FileVersion>1.5.42.0</FileVersion>
+        <Version>1.5.43</Version>
+        <AssemblyVersion>1.5.43.0</AssemblyVersion>
+        <FileVersion>1.5.43.0</FileVersion>
         <InformationalVersion>1.2.44</InformationalVersion>
     </PropertyGroup>
 

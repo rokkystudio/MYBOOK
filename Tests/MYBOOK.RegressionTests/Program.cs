@@ -12052,6 +12052,7 @@ internal static class Program
 
         foreach (var (suffix, mask) in new[]
         {
+            ("missing-group", "<< /S /Alpha >>"),
             ("invalid-subtype", "<< /S /Bogus >>"),
             ("invalid-group-type", "<< /S /Alpha /G /NotAStream >>")
         })
@@ -12148,7 +12149,7 @@ internal static class Program
             firstPath.FillOverprint &&
             firstPath.StrokeOverprint &&
             firstPath.OverprintMode == 1 &&
-            firstPath.SoftMaskActive &&
+            !firstPath.SoftMaskActive &&
             Math.Abs(firstPath.FillOpacity - 0.5) < 0.0001 &&
             Math.Abs(firstPath.StrokeOpacity - 0.75) < 0.0001,
             "PDF ExtGState должен применять BM/OP/op/OPM/SMask/CA/ca к path state.");
@@ -12166,7 +12167,7 @@ internal static class Program
             restoredPath.FillOverprint &&
             restoredPath.StrokeOverprint &&
             restoredPath.OverprintMode == 1 &&
-            restoredPath.SoftMaskActive,
+            !restoredPath.SoftMaskActive,
             "PDF Q должен восстанавливать ExtGState composite parameters.");
 
         Assert(
@@ -12186,7 +12187,7 @@ internal static class Program
             "PDF renderer blend mode");
         AssertContains(
             extGStateHtml,
-            "data-pdf-overprint-stroke=\"true\" data-pdf-overprint-fill=\"true\" data-pdf-overprint-mode=\"1\" data-pdf-soft-mask-active=\"true\"",
+            "data-pdf-overprint-stroke=\"true\" data-pdf-overprint-fill=\"true\" data-pdf-overprint-mode=\"1\"",
             "PDF renderer overprint/soft-mask metadata");
     }
 
@@ -12474,7 +12475,7 @@ internal static class Program
             "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 240 120] >>",
             "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /ExtGState << /GS1 5 0 R /GS2 6 0 R >> >> >>",
             $"<< /Length {encoding.GetByteCount(content)} >>\nstream\n{content}endstream",
-            $"<< /Type /ExtGState /BM [/UnknownVendorMode /Multiply] /OP true /op true /OPM 1 /SMask {softMaskSyntax ?? "<< /S /Alpha >>"} /CA 0.75 /ca 0.5 >>",
+            $"<< /Type /ExtGState /BM [/UnknownVendorMode /Multiply] /OP true /op true /OPM 1 /SMask {softMaskSyntax ?? "/None"} /CA 0.75 /ca 0.5 >>",
             "<< /Type /ExtGState /BM /Screen /OP false /op false /OPM 0 /SMask /None >>"
         };
 
