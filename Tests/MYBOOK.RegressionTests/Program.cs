@@ -12316,6 +12316,50 @@ internal static class Program
         catch (NotSupportedException) { compressedRejected = true; }
         Assert(compressedRejected, "DjVu compressed TXTz must not silently decode as plain text.");
 
+        var annotatedPage = Form("DJVU",
+            Chunk("INFO", info),
+            Chunk("INCL", Encoding.UTF8.GetBytes("shared-dictionary.djvi")),
+            Chunk("ANTa", Encoding.UTF8.GetBytes("(background #FFFFFF)")),
+            Chunk("ANTa", Encoding.UTF8.GetBytes("(zoom page)")));
+        System.IO.File.WriteAllBytes(path, File(annotatedPage));
+        var annotated = DjvuContainerReader.Inspect(path).Pages.Single();
+        Assert(
+            annotated.SharedComponentIds.SequenceEqual(new[] { "shared-dictionary.djvi" }) &&
+            annotated.Annotations.SequenceEqual(new[] { "(background #FFFFFF)", "(zoom page)" }),
+            "DjVu INCL references and plain ANTa annotations must be preserved per page.");
+
+        var annotatedMulti = Form("DJVM", page, annotatedPage);
+        System.IO.File.WriteAllBytes(path, File(annotatedMulti));
+        var sharedPages = DjvuContainerReader.Inspect(path).Pages;
+        Assert(sharedPages.Count == 2 && sharedPages[0].SharedComponentIds.Count == 0 &&
+            sharedPages[1].SharedComponentIds.Single() == "shared-dictionary.djvi",
+            "DjVu shared component references must not leak across pages.");
+
+        foreach (var (name, badChunk) in new[]
+        {
+            ("empty", Chunk("INCL", Array.Empty<byte>())),
+            ("invalid-utf8", Chunk("INCL", new byte[] { 0xC3, 0x28 })),
+            ("duplicate", Chunk("INCL", Encoding.UTF8.GetBytes("shared-dictionary.djvi"))),
+            ("control", Chunk("INCL", new byte[] { (byte)'a', 0 })),
+        })
+        {
+            var chunks = name == "duplicate"
+                ? new[] { Chunk("INFO", info), badChunk, badChunk }
+                : new[] { Chunk("INFO", info), badChunk };
+            System.IO.File.WriteAllBytes(path, File(Form("DJVU", chunks)));
+            var rejected = false;
+            try { _ = DjvuContainerReader.Inspect(path); }
+            catch (InvalidDataException) { rejected = true; }
+            Assert(rejected, $"DjVu malformed INCL {name} must be rejected.");
+        }
+
+        System.IO.File.WriteAllBytes(path, File(Form("DJVU", Chunk("INFO", info),
+            Chunk("ANTa", new byte[] { 0xC3, 0x28 }))));
+        var invalidAnnotationRejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { invalidAnnotationRejected = true; }
+        Assert(invalidAnnotationRejected, "DjVu invalid UTF-8 ANTa must be rejected.");
+
         var truncated = File(page)[..^1];
         System.IO.File.WriteAllBytes(path, truncated);
         var failed = false;
