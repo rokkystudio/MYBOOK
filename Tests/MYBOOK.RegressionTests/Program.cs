@@ -10891,6 +10891,33 @@ internal static class Program
                 "PDF JPX RGB alpha-first cdef должен сохранять RGBA в конечном PNG.");
         }
 
+        foreach (var (shift, alphaIndex) in new[] { (2, 1), (3, 2) })
+        {
+            var middleAlphaJpx = (byte[])preblendedJpx.Clone();
+            for (var entry = 0; entry < rgbCount; entry++)
+            {
+                var offset = rgbCdef + 6 + entry * 6;
+                var previous = (middleAlphaJpx[offset] << 8) |
+                    middleAlphaJpx[offset + 1];
+                middleAlphaJpx[offset] = 0;
+                middleAlphaJpx[offset + 1] = (byte)((previous + shift) % 4);
+            }
+
+            var rejectedMiddleAlpha = false;
+            try
+            {
+                _ = PdfJpxSampleDecoder.Decode(middleAlphaJpx, 2, 1, true);
+            }
+            catch (NotSupportedException error)
+                when (error.Message.Contains("cdef alpha", StringComparison.Ordinal))
+            {
+                rejectedMiddleAlpha = true;
+            }
+
+            Assert(rejectedMiddleAlpha,
+                $"PDF JP2 cdef alpha index {alphaIndex} должен явно отклоняться, пока порядок каналов не поддерживается.");
+        }
+
         var compensatedPath = Path.Combine(
             directory,
             "regression-jpx-preblended-compensated.pdf");
