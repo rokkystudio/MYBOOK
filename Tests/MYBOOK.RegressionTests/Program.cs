@@ -10833,6 +10833,31 @@ internal static class Program
 
         var preblendedJpx = Convert.FromBase64String(
             "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAABPanAyaAAAABZpaGRyAAAAAQAAAAIABAcHAAAAAAAPY29scgEAAAAAABAAAAAiY2RlZgAEAAAAAAABAAEAAAACAAIAAAADAAMAAQAAAAAAn2pwMmP/T/9RADIAAAAAAAIAAAABAAAAAAAAAAAAAAACAAAAAQAAAAAAAAAAAAQHAQEHAQEHAQEHAQH/UgAMAAAAAQAABAQAAf9cAARAQP9kACUAAUNyZWF0ZWQgYnkgT3BlbkpQRUcgdmVyc2lvbiAyLjUuNP+QAAoAAAAAACQAAf+T34AgC7KKf9+AEAef34AQCT/PtAgEH//Z");
+        var rgbAlphaFirst = (byte[])preblendedJpx.Clone();
+        var rgbCdefMarker = Encoding.ASCII.GetBytes("cdef");
+        var rgbCdef = rgbAlphaFirst.AsSpan().IndexOf(rgbCdefMarker);
+        Assert(rgbCdef >= 0, "JP2 RGB+alpha fixture требует cdef.");
+        var rgbCount = (rgbAlphaFirst[rgbCdef + 4] << 8) | rgbAlphaFirst[rgbCdef + 5];
+        Assert(rgbCount == 4, "JP2 RGB+alpha fixture требует четыре записи cdef.");
+        for (var index = 0; index < rgbCount; index++)
+        {
+            var offset = rgbCdef + 6 + index * 6;
+            var previous = (rgbAlphaFirst[offset] << 8) | rgbAlphaFirst[offset + 1];
+            var shifted = (previous + 1) % 4;
+            rgbAlphaFirst[offset] = 0;
+            rgbAlphaFirst[offset + 1] = (byte)shifted;
+        }
+
+        var originalRgbAlpha = PdfJpxSampleDecoder.Decode(preblendedJpx, 2, 1, true);
+        var shiftedRgbAlpha = PdfJpxSampleDecoder.Decode(rgbAlphaFirst, 2, 1, true);
+        Assert(
+            shiftedRgbAlpha.Components == 4 &&
+            Enumerable.Range(0, 2).All(pixel =>
+                Enumerable.Range(0, 4).All(channel =>
+                    shiftedRgbAlpha.Samples[pixel * 4 + channel] ==
+                    originalRgbAlpha.Samples[pixel * 4 + (channel + 1) % 4])),
+            "PDF JP2 RGB+alpha alpha-first cdef должен сохранять правильную перестановку RGBA samples.");
+
         var compensatedPath = Path.Combine(
             directory,
             "regression-jpx-preblended-compensated.pdf");
