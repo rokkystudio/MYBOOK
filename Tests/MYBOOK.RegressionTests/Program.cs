@@ -62,6 +62,7 @@ internal static class Program
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
+            ("DjVu TXTa zone tree", TestDjvuTextZones),
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
             ("PDF CIE color spaces", TestPdfCieColorSpaces),
@@ -12265,13 +12266,11 @@ internal static class Program
             "DJVM nested page count.");
 
         var utf8Text = Encoding.UTF8.GetBytes("Hello DjVu — Привет");
-        var textPayload = new byte[3 + utf8Text.Length + 1];
+        var textPayload = new byte[3 + utf8Text.Length];
         textPayload[0] = (byte)(utf8Text.Length >> 16);
         textPayload[1] = (byte)(utf8Text.Length >> 8);
         textPayload[2] = (byte)utf8Text.Length;
         utf8Text.CopyTo(textPayload.AsSpan(3));
-        // The extra byte represents an uninterpreted optional zone-tree payload.
-        textPayload[^1] = 1;
         var textPage = Form("DJVU", Chunk("TXTa", textPayload), Chunk("INFO", info));
         System.IO.File.WriteAllBytes(path, File(textPage));
         Assert(DjvuContainerReader.Inspect(path).Pages.Single().Text ==
@@ -12331,6 +12330,62 @@ internal static class Program
         try { _ = DjvuContainerReader.Inspect(path); }
         catch (InvalidDataException) { failed = true; }
         Assert(failed, "DjVu zero-width INFO must be rejected.");
+    }
+
+    private static void TestDjvuTextZones()
+    {
+        static byte[] Zone(int kind, int x, int y, int w, int h, int start, int length, int children)
+        {
+            var value = new byte[17];
+            value[0] = (byte)kind;
+            foreach (var (offset, number) in new[]
+            {
+                (1, x), (3, y), (5, w), (7, h), (9, start)
+            })
+                BinaryPrimitives.WriteUInt16BigEndian(value.AsSpan(offset, 2), checked((ushort)(number + 0x8000)));
+            value[11] = (byte)(length >> 16);
+            value[12] = (byte)(length >> 8);
+            value[13] = (byte)length;
+            value[14] = (byte)(children >> 16);
+            value[15] = (byte)(children >> 8);
+            value[16] = (byte)children;
+            return value;
+        }
+
+        var tree = new byte[] { 1 }
+            .Concat(Zone(1, 0, 0, 640, 480, 0, 11, 2))
+            .Concat(Zone(6, 20, 10, 40, 12, 0, 5, 0))
+            .Concat(Zone(6, 15, 0, 50, 12, 1, 5, 0))
+            .ToArray();
+        var root = DjvuTextZoneReader.Read(tree, 11);
+        Assert(root != null && root.Type == 1 &&
+            root.Width == 640 && root.Height == 480 &&
+            root.Children.Count == 2 &&
+            root.Children[0].X == 20 &&
+            root.Children[0].Y == 458 &&
+            root.Children[0].TextStart == 0 &&
+            root.Children[1].X == 75 &&
+            root.Children[1].Y == 458 &&
+            root.Children[1].TextStart == 6,
+            "DjVu TXTa word zones must reconstruct parent/sibling delta coordinates and UTF-8 offsets.");
+
+        foreach (var (name, payload) in new[]
+        {
+            ("truncated", tree[..^1]),
+            ("bad-version", new byte[] { 2 }.Concat(tree.Skip(1)).ToArray()),
+            ("bad-type", tree.Select((b, i) => i == 1 ? (byte)9 : b).ToArray()),
+            ("text-range", tree.Select((b, i) => i == 13 ? (byte)12 : b).ToArray()),
+            ("extra-bytes", tree.Concat(new byte[] { 0 }).ToArray())
+        })
+        {
+            var rejected = false;
+            try { _ = DjvuTextZoneReader.Read(payload, 11); }
+            catch (InvalidDataException) { rejected = true; }
+            Assert(rejected, $"DjVu TXTa malformed zone {name} must be rejected.");
+        }
+
+        Assert(DjvuTextZoneReader.Read(ReadOnlySpan<byte>.Empty, 0) == null,
+            "DjVu TXTa plain text without zone geometry must remain supported.");
     }
 
     private static void TestParserTrace(string directory)
