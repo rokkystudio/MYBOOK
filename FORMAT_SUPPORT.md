@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.47
+Версия профиля: 1.5.48
 
 ## Ready for use
 
@@ -27,7 +27,7 @@ MYBOOK считает готовыми к обычному пользовате�
 
 ## Experimental DjVu inspection (not registered)
 
-`DjvuContainerReader.Inspect` parses the DjVu IFF envelope (`AT&T`, `FORM:DJVU`, `FORM:DJVM`), validates chunk bounds/padding/nesting, and reads page `INFO` dimensions and DPI. Plain `TXTa` text is now extracted as validated UTF-8 with 24-bit length, attached to its page; compressed `TXTz` is explicitly unsupported. `TXTa` version-1 zone trees now decode PAGE/COLUMN/REGION/PARAGRAPH/LINE/WORD/CHARACTER geometry with DjVu parent/sibling delta coordinates and UTF-8 byte ranges; malformed trees and resource limits are validated. It does **not** decode JB2/IW44, resolve indirect DJVM directories or render DjVu pages. `.djvu` remains outside `SupportedFormatRegistry` until complete reading is available. Synthetic regression fixtures cover single/multipage containers and malformed input.
+`DjvuContainerReader.Inspect` parses the DjVu IFF envelope (`AT&T`, `FORM:DJVU`, `FORM:DJVM`), validates chunk bounds/padding/nesting, and reads page `INFO` dimensions and DPI. Plain `TXTa` text is now extracted as validated UTF-8 with 24-bit length, attached to its page; compressed `TXTz` is explicitly unsupported. `TXTa` version-1 zone trees now decode PAGE/COLUMN/REGION/PARAGRAPH/LINE/WORD/CHARACTER geometry with DjVu parent/sibling delta coordinates and UTF-8 byte ranges; malformed trees and resource limits are validated. It now inspects DIRM v1 bundled/indirect headers, validates bundled component offsets and preserves the BZZ metadata tail as opaque. It does **not** decode BZZ component metadata, JB2/IW44, resolve indirect DJVM directories or render DjVu pages. `.djvu` remains outside `SupportedFormatRegistry` until complete reading is available. Synthetic regression fixtures cover single/multipage containers and malformed input.
 
 ## Readiness gates
 
@@ -86,5 +86,5 @@ MYBOOK считает готовыми к обычному пользовате�
 ## Future formats
 
 DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
-поддерживаемый формат MYBOOK 1.5.47. Его reader является отдельной будущей
+поддерживаемый формат MYBOOK 1.5.48. Его reader является отдельной будущей
 функциональностью и должен пройти те же readiness gates до добавления в реестр.

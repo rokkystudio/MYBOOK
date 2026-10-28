@@ -62,6 +62,7 @@ internal static class Program
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
+            ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
@@ -12330,6 +12331,74 @@ internal static class Program
         try { _ = DjvuContainerReader.Inspect(path); }
         catch (InvalidDataException) { failed = true; }
         Assert(failed, "DjVu zero-width INFO must be rejected.");
+    }
+
+    private static void TestDjvuDirectory(string directory)
+    {
+        static byte[] Chunk(string id, byte[] payload)
+        {
+            var data = new byte[8 + payload.Length + (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id).CopyTo(data, 0);
+            BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(4, 4), (uint)payload.Length);
+            payload.CopyTo(data, 8);
+            return data;
+        }
+        static byte[] Form(string type, params byte[][] chunks) =>
+            Chunk("FORM", Encoding.ASCII.GetBytes(type)
+                .Concat(chunks.SelectMany(chunk => chunk)).ToArray());
+        static byte[] File(byte[] form) =>
+            Encoding.ASCII.GetBytes("AT&T").Concat(form).ToArray();
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(0, 2), 800);
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(2, 2), 600);
+        var page = Form("DJVU", Chunk("INFO", info));
+        var metadata = new byte[12];
+        metadata[0] = 0x81;
+        metadata[2] = 2;
+        // DIRM is first, and each offset is an absolute file position.
+        var firstPage = 16 + Chunk("DIRM", metadata).Length;
+        BinaryPrimitives.WriteUInt32BigEndian(metadata.AsSpan(3, 4), (uint)firstPage);
+        BinaryPrimitives.WriteUInt32BigEndian(metadata.AsSpan(7, 4), (uint)(firstPage + page.Length));
+        metadata[^1] = 0xA5; // Opaque BZZ tail, not decoded.
+        var path = Path.Combine(directory, "djvu-directory.djvu");
+        System.IO.File.WriteAllBytes(path, File(Form("DJVM",
+            Chunk("DIRM", metadata), page, page)));
+        var inspected = DjvuContainerReader.Inspect(path);
+        Assert(inspected.Directory is { Bundled: true, ComponentCount: 2 } &&
+            inspected.Directory.Offsets.SequenceEqual(new[] { firstPage, firstPage + page.Length }) &&
+            inspected.Directory.CompressedMetadataBytes == 1 &&
+            inspected.Pages.Count == 2,
+            "DjVu bundled DIRM offsets and opaque BZZ metadata.");
+
+        var malformed = (byte[])metadata.Clone();
+        BinaryPrimitives.WriteUInt32BigEndian(malformed.AsSpan(3, 4), 999999);
+        System.IO.File.WriteAllBytes(path, File(Form("DJVM", Chunk("DIRM", malformed), page, page)));
+        var rejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { rejected = true; }
+        Assert(rejected, "DjVu out-of-bounds DIRM offset must be rejected.");
+
+        malformed = (byte[])metadata.Clone();
+        BinaryPrimitives.WriteUInt32BigEndian(malformed.AsSpan(7, 4), (uint)firstPage);
+        System.IO.File.WriteAllBytes(path, File(Form("DJVM", Chunk("DIRM", malformed), page, page)));
+        rejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { rejected = true; }
+        Assert(rejected, "DjVu duplicate DIRM offsets must be rejected.");
+
+        malformed = (byte[])metadata.Clone();
+        malformed[0] = 0x82;
+        System.IO.File.WriteAllBytes(path, File(Form("DJVM", Chunk("DIRM", malformed), page, page)));
+        var unsupported = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (NotSupportedException) { unsupported = true; }
+        Assert(unsupported, "DjVu unsupported DIRM version must be rejected.");
+
+        var indirect = DjvuDirectoryReader.Read(new byte[] { 1, 0, 1, 0xAB }, 100);
+        Assert(!indirect.Bundled && indirect.ComponentCount == 1 &&
+            indirect.Offsets.Count == 0 && indirect.CompressedMetadataBytes == 1,
+            "DjVu indirect DIRM should not require bundled offsets.");
     }
 
     private static void TestDjvuTextZones()
