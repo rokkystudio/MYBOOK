@@ -12268,6 +12268,37 @@ internal static class Program
         Assert(DjvuContainerReader.Inspect(path).Pages.Count == 2,
             "DJVM nested page count.");
 
+        var layeredPage = Form("DJVU",
+            Chunk("INFO", info),
+            Chunk("Sjbz", new byte[] { 0xA1, 0xB2 }),
+            Chunk("BG44", new byte[] { 1, 2, 3 }),
+            Chunk("BG44", new byte[] { 4, 5 }));
+        var dictionaryForm = Form("DJVI",
+            Chunk("Djbz", new byte[] { 6, 7, 8, 9 }));
+        var composite = Form("DJVM", dictionaryForm, layeredPage);
+        System.IO.File.WriteAllBytes(path, File(composite));
+        var imageIndex = DjvuContainerReader.Inspect(path);
+        Assert(imageIndex.Pages.Count == 1 &&
+            imageIndex.Pages[0].ImageLayers.Select(layer => layer.Kind)
+                .SequenceEqual(new[] { "Sjbz", "BG44", "BG44" }) &&
+            imageIndex.SharedImageLayers.Single().Kind == "Djbz" &&
+            imageIndex.Pages[0].ImageLayers[0].IsJb2 &&
+            imageIndex.Pages[0].ImageLayers[1].IsIw44 &&
+            imageIndex.Pages[0].ImageLayers[0].ReadPayload(path)
+                .SequenceEqual(new byte[] { 0xA1, 0xB2 }) &&
+            imageIndex.Pages[0].ImageLayers[2].ReadPayload(path)
+                .SequenceEqual(new byte[] { 4, 5 }) &&
+            imageIndex.SharedImageLayers[0].ReadPayload(path)
+                .SequenceEqual(new byte[] { 6, 7, 8, 9 }),
+            "DjVu page/shared JB2 and IW44 layers must preserve stream offsets and order.");
+
+        var invalidLayer = imageIndex.Pages[0].ImageLayers[0] with
+            { Offset = int.MaxValue };
+        var invalidRangeRejected = false;
+        try { _ = invalidLayer.ReadPayload(path); }
+        catch (InvalidDataException) { invalidRangeRejected = true; }
+        Assert(invalidRangeRejected, "DjVu image layer cannot read outside file bounds.");
+
         var utf8Text = Encoding.UTF8.GetBytes("Hello DjVu — Привет");
         var textPayload = new byte[3 + utf8Text.Length];
         textPayload[0] = (byte)(utf8Text.Length >> 16);
