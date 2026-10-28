@@ -11057,22 +11057,23 @@ internal static class Program
                 nonLastAlpha[offset + 1] = 0;
                 alphaEntryFound = true;
             }
+            else
+            {
+                nonLastAlpha[offset] = 0;
+                nonLastAlpha[offset + 1] = 1;
+            }
         }
         Assert(alphaEntryFound, "JPX fixture должен маркировать alpha cdef entry.");
 
-        var nonLastAlphaRejected = false;
-        try
-        {
-            _ = PdfJpxSampleDecoder.Decode(nonLastAlpha, 2, 1, true);
-        }
-        catch (NotSupportedException error)
-            when (error.Message.Contains("cdef alpha", StringComparison.Ordinal))
-        {
-            nonLastAlphaRejected = true;
-        }
+        var sourceChannels = PdfJpxSampleDecoder.Decode(separationJpx, 2, 1, true);
+        var alphaFirst = PdfJpxSampleDecoder.Decode(nonLastAlpha, 2, 1, true);
 
-        Assert(nonLastAlphaRejected,
-            "PDF JPX non-last cdef alpha должен явно отклоняться вместо чтения неверного channel.");
+        Assert(
+            alphaFirst.Samples.Length == sourceChannels.Samples.Length &&
+            Enumerable.Range(0, 2).All(pixel =>
+                alphaFirst.Samples[pixel * 2] == sourceChannels.Samples[pixel * 2 + 1] &&
+                alphaFirst.Samples[pixel * 2 + 1] == sourceChannels.Samples[pixel * 2]),
+            "PDF JPX Gray+alpha с первым alpha в JP2 cdef должен декодироваться с перестановкой компонентов.");
 
         var separationJpxPath = Path.Combine(
             directory,
