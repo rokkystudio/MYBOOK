@@ -10943,6 +10943,45 @@ internal static class Program
                     pixels[pixel * 4 + 2] == decodedMiddleAlpha.Samples[pixel * 4] &&
                     pixels[pixel * 4 + 3] == decodedMiddleAlpha.Samples[pixel * 4 + 3]),
                 $"PDF JP2 cdef alpha index {alphaIndex} должен сохранять BGRA в итоговом PNG.");
+
+            var preblendedMiddlePath = Path.Combine(
+                directory, $"regression-jpx-middle-alpha-matte-{alphaIndex}.pdf");
+            CreateJpxImagePdf(
+                preblendedMiddlePath,
+                middleAlphaJpx,
+                includeColorSpace: true,
+                includeReverseDecode: false,
+                softMaskInData: 2,
+                matteSyntax: "[0 0 0]");
+            var preblendedMiddleImage = SupportedFormatRegistry
+                .ReadDocument(preblendedMiddlePath).Blocks
+                .OfType<DocumentFixedPage>().Single().ImageRuns.Single();
+
+            using var preblendedStream = new MemoryStream(preblendedMiddleImage.Data);
+            var preblendedBitmap = new PngBitmapDecoder(
+                preblendedStream, BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource preblendedBgra = preblendedBitmap.Format == PixelFormats.Bgra32
+                ? preblendedBitmap
+                : new FormatConvertedBitmap(preblendedBitmap, PixelFormats.Bgra32, null, 0);
+            var preblendedPixels = new byte[8];
+            preblendedBgra.CopyPixels(preblendedPixels, 8, 0);
+
+            Assert(
+                Enumerable.Range(0, 2).All(pixel =>
+                {
+                    var offset = pixel * 4;
+                    var alpha = pixels[offset + 3];
+                    return preblendedPixels[offset + 3] == alpha &&
+                        Enumerable.Range(0, 3).All(channel =>
+                        {
+                            var expected = alpha == 0 ? 0 :
+                                Math.Min(255, (int)Math.Round(
+                                    pixels[offset + channel] * 255.0 / alpha));
+                            return Math.Abs(preblendedPixels[offset + channel] - expected) <= 1;
+                        });
+                }),
+                $"PDF JP2 cdef alpha index {alphaIndex} должен применять Matte к фактическим RGB samples.");
         }
 
         var compensatedPath = Path.Combine(
