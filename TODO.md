@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.5.44
+Текущая версия: 1.5.45
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
@@ -53,11 +53,11 @@
 
 ## DjVu — будущий формат, не зарегистрирован в SupportedFormatRegistry
 
-- [ ] IFF/DjVu container.
-- [ ] `FORM:DJVU` / `FORM:DJVM`.
+- [x] IFF/DjVu container: отдельный `DjvuContainerReader.Inspect` проверяет AT&T signature, big-endian chunk sizes, odd-byte padding, nesting и bounded scanning; пока не зарегистрирован для чтения.
+- [x] `FORM:DJVU` / `FORM:DJVM`: структурный обход вложенных страниц; косвенные DIRM references пока не разрешаются.
 - [ ] Directory/navigation.
 - [ ] Text layer.
-- [ ] INFO chunks.
+- [x] INFO chunks: geometry и DPI с отрицательными regression-тестами; это metadata inspection, не изображение страницы.
 - [ ] JB2 decoder.
 - [ ] IW44 decoder.
 - [ ] Background/foreground composition.

@@ -10,6 +10,7 @@ using Book.Diagnostics;
 using Book.Documents;
 using Book.Formats;
 using Book.Formats.Doc;
+using Book.Formats.Djvu;
 using Book.Formats.Pdf;
 using Book.Formats.Rtf;
 using Book.Rendering;
@@ -60,6 +61,7 @@ internal static class Program
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
+            ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
             ("PDF CIE color spaces", TestPdfCieColorSpaces),
@@ -12217,6 +12219,66 @@ internal static class Program
             extGStateHtml,
             "data-pdf-overprint-stroke=\"true\" data-pdf-overprint-fill=\"true\" data-pdf-overprint-mode=\"1\"",
             "PDF renderer overprint/soft-mask metadata");
+    }
+
+    private static void TestDjvuContainerInfo(string directory)
+    {
+        static byte[] Chunk(string id, byte[] payload)
+        {
+            using var data = new MemoryStream();
+            data.Write(Encoding.ASCII.GetBytes(id));
+            var length = new byte[4];
+            BinaryPrimitives.WriteUInt32BigEndian(length, (uint)payload.Length);
+            data.Write(length);
+            data.Write(payload);
+            if ((payload.Length & 1) != 0) data.WriteByte(0);
+            return data.ToArray();
+        }
+
+        static byte[] Form(string type, params byte[][] chunks)
+        {
+            using var payload = new MemoryStream();
+            payload.Write(Encoding.ASCII.GetBytes(type));
+            foreach (var chunk in chunks) payload.Write(chunk);
+            return Chunk("FORM", payload.ToArray());
+        }
+
+        static byte[] File(byte[] form) =>
+            Encoding.ASCII.GetBytes("AT&T").Concat(form).ToArray();
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(0, 2), 640);
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(2, 2), 480);
+        BinaryPrimitives.WriteUInt16LittleEndian(info.AsSpan(6, 2), 300);
+        info[8] = 22;
+        var page = Form("DJVU", Chunk("ODD!", new byte[] { 1, 2, 3 }), Chunk("INFO", info));
+        var path = Path.Combine(directory, "djvu-inspect.djvu");
+        System.IO.File.WriteAllBytes(path, File(page));
+        var inspected = DjvuContainerReader.Inspect(path);
+        Assert(inspected.FormType == "DJVU" && inspected.Pages.Count == 1 &&
+            inspected.Pages[0].Width == 640 && inspected.Pages[0].Height == 480 &&
+            inspected.Pages[0].Dpi == 300, "DjVu INFO geometry/DPI.");
+
+        var multi = Form("DJVM", page, page);
+        System.IO.File.WriteAllBytes(path, File(multi));
+        Assert(DjvuContainerReader.Inspect(path).Pages.Count == 2,
+            "DJVM nested page count.");
+
+        var truncated = File(page)[..^1];
+        System.IO.File.WriteAllBytes(path, truncated);
+        var failed = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { failed = true; }
+        Assert(failed, "DjVu truncated FORM must be rejected.");
+
+        var badInfo = (byte[])info.Clone();
+        badInfo[0] = 0;
+        badInfo[1] = 0;
+        System.IO.File.WriteAllBytes(path, File(Form("DJVU", Chunk("INFO", badInfo))));
+        failed = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { failed = true; }
+        Assert(failed, "DjVu zero-width INFO must be rejected.");
     }
 
     private static void TestParserTrace(string directory)
