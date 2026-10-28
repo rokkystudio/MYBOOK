@@ -11037,6 +11037,43 @@ internal static class Program
 
         var separationJpx = Convert.FromBase64String(
             "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAABDanAyaAAAABZpaGRyAAAAAQAAAAIAAgcHAAAAAAAPY29scgEAAAAAABEAAAAWY2RlZgACAAAAAAABAAEAAQAAAAAAjWpwMmP/T/9RACwAAAAAAAIAAAABAAAAAAAAAAAAAAACAAAAAQAAAAAAAAAAAAIHAQEHAQH/UgAMAAAAAQAABAQAAf9cAARAQP9kACUAAUNyZWF0ZWQgYnkgT3BlbkpQRUcgdmVyc2lvbiAyLjUuNP+QAAoAAAAAABgAAf+Tz7QIBB/PtAgEH//Z");
+        var nonLastAlpha = (byte[])separationJpx.Clone();
+        var definitionMarker = Encoding.ASCII.GetBytes("cdef");
+        var definitionOffset = nonLastAlpha.AsSpan().IndexOf(definitionMarker);
+        Assert(definitionOffset >= 0,
+            "JPX fixture должен содержать JP2 cdef metadata.");
+
+        var alphaEntryFound = false;
+        var definitionCount = (nonLastAlpha[definitionOffset + 4] << 8) |
+            nonLastAlpha[definitionOffset + 5];
+        for (var entry = 0; entry < definitionCount; entry++)
+        {
+            var offset = definitionOffset + 6 + entry * 6;
+            var channelType = (nonLastAlpha[offset + 2] << 8) |
+                nonLastAlpha[offset + 3];
+            if (channelType is 1 or 2)
+            {
+                nonLastAlpha[offset] = 0;
+                nonLastAlpha[offset + 1] = 0;
+                alphaEntryFound = true;
+            }
+        }
+        Assert(alphaEntryFound, "JPX fixture должен маркировать alpha cdef entry.");
+
+        var nonLastAlphaRejected = false;
+        try
+        {
+            _ = PdfJpxSampleDecoder.Decode(nonLastAlpha, 2, 1, true);
+        }
+        catch (NotSupportedException error)
+            when (error.Message.Contains("cdef alpha", StringComparison.Ordinal))
+        {
+            nonLastAlphaRejected = true;
+        }
+
+        Assert(nonLastAlphaRejected,
+            "PDF JPX non-last cdef alpha должен явно отклоняться вместо чтения неверного channel.");
+
         var separationJpxPath = Path.Combine(
             directory,
             "regression-jpx-separation-preblended.pdf");
