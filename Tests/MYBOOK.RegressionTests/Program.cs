@@ -12106,6 +12106,34 @@ internal static class Program
             Assert(rejected, $"PDF ExtGState /SMask /G must reject {suffix}.");
         }
 
+        foreach (var (suffix, mask) in new[]
+        {
+            ("nonidentity-transfer", "<< /S /Alpha /TR << /FunctionType 2 /Domain [0 1] /C0 [0] /C1 [1] /N 1 >> /G 7 0 R >>"),
+            ("backdrop-color", "<< /S /Luminosity /BC [1 1 1] /G 7 0 R >>")
+        })
+        {
+            var unsupportedPath = Path.Combine(
+                directory, $"regression-smask-{suffix}.pdf");
+            CreateExtGStatePdf(
+                unsupportedPath,
+                mask,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency >> /Length 0 >>\nstream\n\nendstream");
+
+            var rejected = false;
+            try
+            {
+                _ = SupportedFormatRegistry.ReadDocument(unsupportedPath);
+            }
+            catch (NotSupportedException error)
+                when (error.Message.Contains("/SMask", StringComparison.Ordinal))
+            {
+                rejected = true;
+            }
+
+            Assert(rejected,
+                $"PDF ExtGState /SMask {suffix} должен явно отклоняться до compositing.");
+        }
+
         var validMaskGroupPath = Path.Combine(
             directory,
             "regression-smask-form-valid-unsupported.pdf");
