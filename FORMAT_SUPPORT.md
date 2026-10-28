@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.45
+Версия профиля: 1.5.46
 
 ## Ready for use
 
@@ -27,7 +27,7 @@ MYBOOK считает готовыми к обычному пользовате�
 
 ## Experimental DjVu inspection (not registered)
 
-`DjvuContainerReader.Inspect` parses the DjVu IFF envelope (`AT&T`, `FORM:DJVU`, `FORM:DJVM`), validates chunk bounds/padding/nesting, and reads page `INFO` dimensions and DPI. It does **not** decode JB2/IW44, resolve indirect DJVM directories or render DjVu pages. `.djvu` remains outside `SupportedFormatRegistry` until complete reading is available. Synthetic regression fixtures cover single/multipage containers and malformed input.
+`DjvuContainerReader.Inspect` parses the DjVu IFF envelope (`AT&T`, `FORM:DJVU`, `FORM:DJVM`), validates chunk bounds/padding/nesting, and reads page `INFO` dimensions and DPI. Plain `TXTa` text is now extracted as validated UTF-8 with 24-bit length, attached to its page; compressed `TXTz` is explicitly unsupported. Text zone geometry is not yet parsed. It does **not** decode JB2/IW44, resolve indirect DJVM directories or render DjVu pages. `.djvu` remains outside `SupportedFormatRegistry` until complete reading is available. Synthetic regression fixtures cover single/multipage containers and malformed input.
 
 ## Readiness gates
 
@@ -86,5 +86,5 @@ MYBOOK считает готовыми к обычному пользовате�
 ## Future formats
 
 DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
-поддерживаемый формат MYBOOK 1.5.45. Его reader является отдельной будущей
+поддерживаемый формат MYBOOK 1.5.46. Его reader является отдельной будущей
 функциональностью и должен пройти те же readiness gates до добавления в реестр.

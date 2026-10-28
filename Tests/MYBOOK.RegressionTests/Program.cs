@@ -12264,6 +12264,58 @@ internal static class Program
         Assert(DjvuContainerReader.Inspect(path).Pages.Count == 2,
             "DJVM nested page count.");
 
+        var utf8Text = Encoding.UTF8.GetBytes("Hello DjVu — Привет");
+        var textPayload = new byte[3 + utf8Text.Length + 1];
+        textPayload[0] = (byte)(utf8Text.Length >> 16);
+        textPayload[1] = (byte)(utf8Text.Length >> 8);
+        textPayload[2] = (byte)utf8Text.Length;
+        utf8Text.CopyTo(textPayload.AsSpan(3));
+        // The extra byte represents an uninterpreted optional zone-tree payload.
+        textPayload[^1] = 1;
+        var textPage = Form("DJVU", Chunk("TXTa", textPayload), Chunk("INFO", info));
+        System.IO.File.WriteAllBytes(path, File(textPage));
+        Assert(DjvuContainerReader.Inspect(path).Pages.Single().Text ==
+            "Hello DjVu — Привет", "DjVu TXTa UTF-8 text extraction.");
+
+        var textMulti = Form("DJVM", page, textPage);
+        System.IO.File.WriteAllBytes(path, File(textMulti));
+        var textPages = DjvuContainerReader.Inspect(path).Pages;
+        Assert(textPages.Count == 2 && textPages[0].Text is null &&
+            textPages[1].Text == "Hello DjVu — Привет",
+            "DjVu DJVM page text must stay associated with its page.");
+
+        var malformedText = (byte[])textPayload.Clone();
+        malformedText[0] = 0x7F;
+        System.IO.File.WriteAllBytes(path,
+            File(Form("DJVU", Chunk("INFO", info), Chunk("TXTa", malformedText))));
+        var failedText = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { failedText = true; }
+        Assert(failedText, "DjVu TXTa text-length overflow must be rejected.");
+
+        var invalidUtf8 = new byte[] { 0, 0, 2, 0xC3, 0x28 };
+        System.IO.File.WriteAllBytes(path,
+            File(Form("DJVU", Chunk("INFO", info), Chunk("TXTa", invalidUtf8))));
+        failedText = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { failedText = true; }
+        Assert(failedText, "DjVu TXTa invalid UTF-8 must be rejected.");
+
+        System.IO.File.WriteAllBytes(path,
+            File(Form("DJVU", Chunk("INFO", info),
+                Chunk("TXTa", textPayload), Chunk("TXTa", textPayload))));
+        failedText = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { failedText = true; }
+        Assert(failedText, "DjVu duplicate TXTa must be rejected.");
+
+        System.IO.File.WriteAllBytes(path,
+            File(Form("DJVU", Chunk("INFO", info), Chunk("TXTz", new byte[] { 1, 2 }))));
+        var compressedRejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (NotSupportedException) { compressedRejected = true; }
+        Assert(compressedRejected, "DjVu compressed TXTz must not silently decode as plain text.");
+
         var truncated = File(page)[..^1];
         System.IO.File.WriteAllBytes(path, truncated);
         var failed = false;
