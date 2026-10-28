@@ -63,6 +63,7 @@ internal static class Program
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
+            ("DjVu ANTa rectangular links", TestDjvuMapAreas),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
@@ -12320,12 +12321,16 @@ internal static class Program
             Chunk("INFO", info),
             Chunk("INCL", Encoding.UTF8.GetBytes("shared-dictionary.djvi")),
             Chunk("ANTa", Encoding.UTF8.GetBytes("(background #FFFFFF)")),
-            Chunk("ANTa", Encoding.UTF8.GetBytes("(zoom page)")));
+            Chunk("ANTa", Encoding.UTF8.GetBytes("(zoom page)")),
+            Chunk("ANTa", Encoding.UTF8.GetBytes("(maparea \"#2\" \"Next\" (rect 12 22 44 55))")));
         System.IO.File.WriteAllBytes(path, File(annotatedPage));
         var annotated = DjvuContainerReader.Inspect(path).Pages.Single();
         Assert(
             annotated.SharedComponentIds.SequenceEqual(new[] { "shared-dictionary.djvi" }) &&
-            annotated.Annotations.SequenceEqual(new[] { "(background #FFFFFF)", "(zoom page)" }),
+            annotated.Annotations.Count == 3 &&
+            annotated.Annotations[0] == "(background #FFFFFF)" &&
+            annotated.Annotations[1] == "(zoom page)" &&
+            annotated.MapAreas.Single() is { Url: "#2", Comment: "Next", X: 12, Y: 22, Width: 44, Height: 55 },
             "DjVu INCL references and plain ANTa annotations must be preserved per page.");
 
         var annotatedMulti = Form("DJVM", page, annotatedPage);
@@ -12375,6 +12380,45 @@ internal static class Program
         try { _ = DjvuContainerReader.Inspect(path); }
         catch (InvalidDataException) { failed = true; }
         Assert(failed, "DjVu zero-width INFO must be rejected.");
+    }
+
+    private static void TestDjvuMapAreas()
+    {
+        var annotation = """
+            (background #FFFFFF)
+            (maparea "https://example.org/a" "Description" (rect 10 20 100 50) (border #000000))
+            (maparea (url "#+1" "_self") "Next page" (rect 150 75 80 30) (xor))
+            (maparea "" "Other geometry" (oval 0 0 10 10))
+            """;
+        var areas = DjvuAnnotationReader.ReadRectangles(annotation);
+        Assert(areas.Count == 2 &&
+            areas[0].Url == "https://example.org/a" &&
+            areas[0].Comment == "Description" &&
+            areas[0].X == 10 && areas[0].Y == 20 &&
+            areas[0].Width == 100 && areas[0].Height == 50 &&
+            areas[1].Url == "#+1" &&
+            areas[1].X == 150 && areas[1].Height == 30,
+            "DjVu ANTa rect links and URL target syntax.");
+
+        var escaped = DjvuAnnotationReader.ReadRectangles(
+            "(maparea \"#2\" \"it\\'s here\" (rect 1 2 3 4))");
+        Assert(escaped.Single().Comment == "it's here",
+            "DjVu ANTa single quote escape in comment.");
+
+        foreach (var (name, text) in new[]
+        {
+            ("unterminated", "(maparea \"x\" \"comment\" (rect 1 2 3 4)"),
+            ("bad-dimension", "(maparea \"x\" \"comment\" (rect 1 2 0 4))"),
+            ("bad-arity", "(maparea \"x\" \"comment\" (rect 1 2 3))"),
+            ("bad-number", "(maparea \"x\" \"comment\" (rect a 2 3 4))"),
+            ("unclosed-string", "(maparea \"x")
+        })
+        {
+            var rejected = false;
+            try { _ = DjvuAnnotationReader.ReadRectangles(text); }
+            catch (InvalidDataException) { rejected = true; }
+            Assert(rejected, $"DjVu ANTa malformed rect {name} must be rejected.");
+        }
     }
 
     private static void TestDjvuDirectory(string directory)
