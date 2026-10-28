@@ -10903,19 +10903,46 @@ internal static class Program
                 middleAlphaJpx[offset + 1] = (byte)((previous + shift) % 4);
             }
 
-            var rejectedMiddleAlpha = false;
-            try
-            {
-                _ = PdfJpxSampleDecoder.Decode(middleAlphaJpx, 2, 1, true);
-            }
-            catch (NotSupportedException error)
-                when (error.Message.Contains("cdef alpha", StringComparison.Ordinal))
-            {
-                rejectedMiddleAlpha = true;
-            }
+            var decodedMiddleAlpha = PdfJpxSampleDecoder.Decode(middleAlphaJpx, 2, 1, true);
+            Assert(
+                decodedMiddleAlpha.Components == 4 &&
+                Enumerable.Range(0, 2).All(pixel =>
+                    Enumerable.Range(0, 4).All(channel =>
+                    {
+                        var raw = channel == 3 ? alphaIndex :
+                            channel < alphaIndex ? channel : channel + 1;
+                        return decodedMiddleAlpha.Samples[pixel * 4 + channel] ==
+                            originalRgbAlpha.Samples[pixel * 4 + raw];
+                    })),
+                $"PDF JP2 cdef alpha index {alphaIndex} должен правильно переставлять samples.");
 
-            Assert(rejectedMiddleAlpha,
-                $"PDF JP2 cdef alpha index {alphaIndex} должен явно отклоняться, пока порядок каналов не поддерживается.");
+            var middleAlphaPdf = Path.Combine(
+                directory, $"regression-jpx-middle-alpha-{alphaIndex}.pdf");
+            CreateJpxImagePdf(
+                middleAlphaPdf,
+                middleAlphaJpx,
+                includeColorSpace: true,
+                includeReverseDecode: false,
+                softMaskInData: 1);
+            var middleAlphaImage = SupportedFormatRegistry.ReadDocument(middleAlphaPdf)
+                .Blocks.OfType<DocumentFixedPage>().Single().ImageRuns.Single();
+
+            using var stream = new MemoryStream(middleAlphaImage.Data);
+            var bitmap = new PngBitmapDecoder(
+                stream, BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[8];
+            bgra.CopyPixels(pixels, 8, 0);
+            Assert(
+                Enumerable.Range(0, 2).All(pixel =>
+                    pixels[pixel * 4] == decodedMiddleAlpha.Samples[pixel * 4 + 2] &&
+                    pixels[pixel * 4 + 1] == decodedMiddleAlpha.Samples[pixel * 4 + 1] &&
+                    pixels[pixel * 4 + 2] == decodedMiddleAlpha.Samples[pixel * 4] &&
+                    pixels[pixel * 4 + 3] == decodedMiddleAlpha.Samples[pixel * 4 + 3]),
+                $"PDF JP2 cdef alpha index {alphaIndex} должен сохранять BGRA в итоговом PNG.");
         }
 
         var compensatedPath = Path.Combine(
