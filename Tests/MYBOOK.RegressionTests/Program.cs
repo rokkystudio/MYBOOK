@@ -10964,6 +10964,77 @@ internal static class Program
                 "PDF JPX ICCBased /SMaskInData=2 должен компенсировать Matte перед ICC conversion.");
         }
 
+        // Lossless two-channel JPEG 2000 (Gray + alpha): white opaque,
+        // half-gray with half opacity; ColorSpace is intentionally implicit.
+        var implicitGrayAlphaJpx = Convert.FromBase64String(
+            "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAABDanAyaAAAABZpaGRyAAAAAQAAAAIAAgcHAAAAAAAPY29scgEAAAAAABEAAAAWY2RlZgACAAAAAAABAAEAAQAAAAAAjWpwMmP/T/9RACwAAAAAAAIAAAABAAAAAAAAAAAAAAACAAAAAQAAAAAAAAAAAAIHAQEHAQH/UgAMAAAAAQAABAQAAf9cAARAQP9kACUAAUNyZWF0ZWQgYnkgT3BlbkpQRUcgdmVyc2lvbiAyLjUuNP+QAAoAAAAAABgAAf+Tz7QIBB/PtAgEH//Z");
+
+        var implicitGrayAlphaPath = Path.Combine(
+            directory, "regression-jpx-implicit-gray-alpha.pdf");
+        CreateJpxImagePdf(
+            implicitGrayAlphaPath,
+            implicitGrayAlphaJpx,
+            includeColorSpace: false,
+            includeReverseDecode: false,
+            softMaskInData: 1);
+
+        var implicitGrayImage = SupportedFormatRegistry
+            .ReadDocument(implicitGrayAlphaPath).Blocks
+            .OfType<DocumentFixedPage>().Single().ImageRuns.Single();
+
+        using (var grayInput = new MemoryStream(implicitGrayImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                grayInput, BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var samples = new byte[8];
+            bgra.CopyPixels(samples, 8, 0);
+
+            Assert(
+                samples[0] == 255 && samples[1] == 255 &&
+                samples[2] == 255 && samples[3] == 255 &&
+                samples[4] >= 125 && samples[4] <= 131 &&
+                samples[5] == samples[4] &&
+                samples[6] == samples[4] && samples[7] == 128,
+                "PDF implicit JPX Gray+alpha должен сохранять Gray и embedded opacity.");
+        }
+
+        var implicitGrayMattePath = Path.Combine(
+            directory, "regression-jpx-implicit-gray-matte.pdf");
+        CreateJpxImagePdf(
+            implicitGrayMattePath,
+            implicitGrayAlphaJpx,
+            includeColorSpace: false,
+            includeReverseDecode: false,
+            softMaskInData: 2,
+            matteSyntax: "[0]");
+
+        var implicitMatteImage = SupportedFormatRegistry
+            .ReadDocument(implicitGrayMattePath).Blocks
+            .OfType<DocumentFixedPage>().Single().ImageRuns.Single();
+
+        using (var matteInput = new MemoryStream(implicitMatteImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                matteInput, BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var samples = new byte[8];
+            bgra.CopyPixels(samples, 8, 0);
+
+            Assert(
+                samples[4] >= 248 &&
+                samples[5] == samples[4] &&
+                samples[6] == samples[4] &&
+                samples[7] == 128,
+                "PDF implicit JPX Gray /SMaskInData=2 должен компенсировать Matte до RGBA.");
+        }
+
         var separationJpx = Convert.FromBase64String(
             "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAABDanAyaAAAABZpaGRyAAAAAQAAAAIAAgcHAAAAAAAPY29scgEAAAAAABEAAAAWY2RlZgACAAAAAAABAAEAAQAAAAAAjWpwMmP/T/9RACwAAAAAAAIAAAABAAAAAAAAAAAAAAACAAAAAQAAAAAAAAAAAAIHAQEHAQH/UgAMAAAAAQAABAQAAf9cAARAQP9kACUAAUNyZWF0ZWQgYnkgT3BlbkpQRUcgdmVyc2lvbiAyLjUuNP+QAAoAAAAAABgAAf+Tz7QIBB/PtAgEH//Z");
         var separationJpxPath = Path.Combine(
