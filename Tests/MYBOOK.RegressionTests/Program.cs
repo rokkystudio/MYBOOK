@@ -10858,6 +10858,39 @@ internal static class Program
                     originalRgbAlpha.Samples[pixel * 4 + (channel + 1) % 4])),
             "PDF JP2 RGB+alpha alpha-first cdef должен сохранять правильную перестановку RGBA samples.");
 
+        var rgbAlphaFirstPdfPath = Path.Combine(
+            directory, "regression-jpx-rgb-alpha-first.pdf");
+        CreateJpxImagePdf(
+            rgbAlphaFirstPdfPath,
+            rgbAlphaFirst,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            softMaskInData: 1);
+
+        var rgbAlphaFirstImage = SupportedFormatRegistry
+            .ReadDocument(rgbAlphaFirstPdfPath).Blocks
+            .OfType<DocumentFixedPage>().Single().ImageRuns.Single();
+
+        using (var rgbAlphaStream = new MemoryStream(rgbAlphaFirstImage.Data))
+        {
+            var bitmap = new PngBitmapDecoder(
+                rgbAlphaStream, BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource bgra = bitmap.Format == PixelFormats.Bgra32
+                ? bitmap
+                : new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+            var pixels = new byte[8];
+            bgra.CopyPixels(pixels, 8, 0);
+
+            Assert(
+                Enumerable.Range(0, 2).All(pixel =>
+                    pixels[pixel * 4] == shiftedRgbAlpha.Samples[pixel * 4 + 2] &&
+                    pixels[pixel * 4 + 1] == shiftedRgbAlpha.Samples[pixel * 4 + 1] &&
+                    pixels[pixel * 4 + 2] == shiftedRgbAlpha.Samples[pixel * 4] &&
+                    pixels[pixel * 4 + 3] == shiftedRgbAlpha.Samples[pixel * 4 + 3]),
+                "PDF JPX RGB alpha-first cdef должен сохранять RGBA в конечном PNG.");
+        }
+
         var compensatedPath = Path.Combine(
             directory,
             "regression-jpx-preblended-compensated.pdf");
