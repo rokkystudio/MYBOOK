@@ -8,9 +8,9 @@
         <UseWPF>true</UseWPF>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
         <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-        <Version>1.5.52</Version>
-        <AssemblyVersion>1.5.52.0</AssemblyVersion>
-        <FileVersion>1.5.52.0</FileVersion>
+        <Version>1.5.53</Version>
+        <AssemblyVersion>1.5.53.0</AssemblyVersion>
+        <FileVersion>1.5.53.0</FileVersion>
         <InformationalVersion>1.2.44</InformationalVersion>
     </PropertyGroup>
 
@@ -58,6 +58,9 @@
         <Content Include="ThirdParty\CoreJ2K\COPYRIGHT-JJ2000-5.1"
                  CopyToOutputDirectory="PreserveNewest" />
         <Content Include="ThirdParty\SharpAstro.Jbig2\UNLICENSE"
+                 CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\SHARED\Book\Formats\Djvu\VendorBzz\LICENSE.md"
+                 Link="ThirdParty\DjvuNet.Bzz\LICENSE.md"
                  CopyToOutputDirectory="PreserveNewest" />
 
         <Resource Include="..\SHARED\Flags\Assets\**\*.png">

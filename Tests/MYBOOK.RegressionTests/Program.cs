@@ -63,6 +63,7 @@ internal static class Program
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
+            ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
             ("PDF SASLprep", TestPdfSaslPrep),
@@ -12278,6 +12279,24 @@ internal static class Program
         Assert(DjvuContainerReader.Inspect(path).Pages.Single().Text ==
             "Hello DjVu — Привет", "DjVu TXTa UTF-8 text extraction.");
 
+        using var compressedStream = new MemoryStream();
+        using (var encoder = new DjvuNet.Compression.BSOutputStream(compressedStream, 1024))
+            encoder.Write(textPayload, 0, textPayload.Length);
+        var compressedText = compressedStream.ToArray();
+        System.IO.File.WriteAllBytes(path,
+            File(Form("DJVU", Chunk("INFO", info), Chunk("TXTz", compressedText))));
+        Assert(DjvuContainerReader.Inspect(path).Pages.Single().Text ==
+            "Hello DjVu — Привет", "DjVu TXTz BZZ compressed UTF-8 text extraction.");
+
+        System.IO.File.WriteAllBytes(path,
+            File(Form("DJVU", Chunk("INFO", info),
+                Chunk("TXTa", textPayload), Chunk("TXTz", compressedText))));
+        var duplicateCompressionRejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { duplicateCompressionRejected = true; }
+        Assert(duplicateCompressionRejected,
+            "DjVu mixed TXTa/TXTz text chunks must be rejected.");
+
         var textMulti = Form("DJVM", page, textPage);
         System.IO.File.WriteAllBytes(path, File(textMulti));
         var textPages = DjvuContainerReader.Inspect(path).Pages;
@@ -12314,8 +12333,8 @@ internal static class Program
             File(Form("DJVU", Chunk("INFO", info), Chunk("TXTz", new byte[] { 1, 2 }))));
         var compressedRejected = false;
         try { _ = DjvuContainerReader.Inspect(path); }
-        catch (NotSupportedException) { compressedRejected = true; }
-        Assert(compressedRejected, "DjVu compressed TXTz must not silently decode as plain text.");
+        catch (InvalidDataException) { compressedRejected = true; }
+        Assert(compressedRejected, "DjVu malformed BZZ TXTz must be rejected.");
 
         var annotatedPage = Form("DJVU",
             Chunk("INFO", info),
@@ -12332,6 +12351,20 @@ internal static class Program
             annotated.Annotations[1] == "(zoom page)" &&
             annotated.MapAreas.Single() is { Url: "#2", Comment: "Next", X: 12, Y: 22, Width: 44, Height: 55 },
             "DjVu INCL references and plain ANTa annotations must be preserved per page.");
+
+        var annotationUtf8 = Encoding.UTF8.GetBytes(
+            "(maparea \"#3\" \"Compressed link\" (rect 9 8 7 6))");
+        using var annotationOutput = new MemoryStream();
+        using (var encoder = new DjvuNet.Compression.BSOutputStream(annotationOutput, 1024))
+            encoder.Write(annotationUtf8, 0, annotationUtf8.Length);
+        var annotationCompressed = annotationOutput.ToArray();
+        System.IO.File.WriteAllBytes(path,
+            File(Form("DJVU", Chunk("INFO", info),
+                Chunk("ANTz", annotationCompressed))));
+        var decodedAnnotation = DjvuContainerReader.Inspect(path).Pages.Single();
+        Assert(decodedAnnotation.MapAreas.Single() is
+            { Url: "#3", Comment: "Compressed link", X: 9, Y: 8, Width: 7, Height: 6 },
+            "DjVu ANТz BZZ-compressed rectangular link extraction.");
 
         var annotatedMulti = Form("DJVM", page, annotatedPage);
         System.IO.File.WriteAllBytes(path, File(annotatedMulti));
@@ -12380,6 +12413,51 @@ internal static class Program
         try { _ = DjvuContainerReader.Inspect(path); }
         catch (InvalidDataException) { failed = true; }
         Assert(failed, "DjVu zero-width INFO must be rejected.");
+    }
+
+    private static void TestDjvuBzzRealText()
+    {
+        var sample = Path.Combine(Path.GetTempPath(),
+            "MYBOOK-djvunet-bzz-reference", "Specs", "2001_compression_overview.djvu");
+        // Optional external cross-check against a real legacy DjVu sample.
+        // The mandatory end-to-end TXTz test above creates its own BZZ fixture.
+        if (File.Exists(sample))
+        {
+        var bytes = File.ReadAllBytes(sample);
+        var marker = Encoding.ASCII.GetBytes("TXTz");
+        var offset = -1;
+        for (var i = 0; i <= bytes.Length - marker.Length; i++)
+        {
+            if (bytes.AsSpan(i, marker.Length).SequenceEqual(marker))
+            {
+                offset = i;
+                break;
+            }
+        }
+        Assert(offset >= 0 && offset + 8 <= bytes.Length,
+            "Real DjVu sample contains a TXTz chunk.");
+        var length = (int)BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(offset + 4, 4));
+        Assert(length > 0 && length < 65536 && offset + 8 + length <= bytes.Length,
+            "Real DjVu TXTz chunk has bounded length.");
+        var decoded = DjvuBzzDecoder.Decode(bytes.AsSpan(offset + 8, length));
+        Assert(decoded.Length > 3, "DjVu real BZZ TXTz decoded payload.");
+        var textLength = (decoded[0] << 16) | (decoded[1] << 8) | decoded[2];
+        Assert(textLength > 0 && textLength <= decoded.Length - 3,
+            "DjVu real TXTz contains a valid 24-bit uncompressed text length.");
+        Assert(textLength > 30 && decoded.AsSpan(3, textLength).IndexOf((byte)' ') >= 0,
+            "DjVu real BZZ decompression yields a nonempty text payload.");
+        }
+
+        var original = Encoding.UTF8.GetBytes("Independent BZZ roundtrip — DjVu text 12345");
+        using var destination = new MemoryStream();
+        using (var encoder = new DjvuNet.Compression.BSOutputStream(destination, 1024))
+        {
+            encoder.Write(original, 0, original.Length);
+        }
+        var compressed = destination.ToArray();
+        var reconstructed = DjvuBzzDecoder.Decode(compressed);
+        Assert(reconstructed.SequenceEqual(original),
+            "DjVu BZZ encoder/decoder must preserve exact UTF-8 bytes.");
     }
 
     private static void TestDjvuMapAreas()

@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.5.52
+Текущая версия: 1.5.53
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
@@ -56,13 +56,13 @@
 - [x] IFF/DjVu container: отдельный `DjvuContainerReader.Inspect` проверяет AT&T signature, big-endian chunk sizes, odd-byte padding, nesting и bounded scanning; пока не зарегистрирован для чтения.
 - [x] `FORM:DJVU` / `FORM:DJVM`: структурный обход вложенных страниц; косвенные DIRM references пока не разрешаются.
 - [ ] Directory/navigation: `DIRM` v1 uncompressed header reader поддерживает bundled/indirect, count и абсолютные offsets с проверкой на FORM и строгой диагностикой; BZZ metadata (component sizes, roles, ids/names/titles) и NAVM navigation пока не декодируются. Отдельный regression.
-- [ ] Text layer: plain `TXTa` UTF-8 payload уже извлекается по 24-bit length с привязкой к `FORM:DJVU` и строгой диагностикой некорректной длины, UTF-8 и дублирования; BZZ-compressed `TXTz` пока явно unsupported, zone tree версии 1 теперь разбирается с иерархией координат и UTF-8 byte offsets (отдельный regression), но BZZ TXTz и полный renderer остаются неподдерживаемыми.
+- [ ] Text layer: plain `TXTa` UTF-8 payload уже извлекается по 24-bit length с привязкой к `FORM:DJVU` и строгой диагностикой некорректной длины, UTF-8 и дублирования; BZZ-compressed `TXTz` now decoded through vendored MIT DjvuNet BS/ZP with bounded output and UTF-8 validation, zone tree версии 1 теперь разбирается с иерархией координат и UTF-8 byte offsets (отдельный regression), но BZZ-compressed DIRM и полный renderer остаются неподдерживаемыми.
 - [x] INFO chunks: geometry и DPI с отрицательными regression-тестами; это metadata inspection, не изображение страницы.
 - [ ] JB2 decoder.
 - [ ] IW44 decoder.
 - [ ] Background/foreground composition.
 - [ ] Постраничный renderer.
-- [ ] Links/annotations: `INCL` references to shared `FORM:DJVI` components and raw UTF-8 `ANTa` texts now extracted per page (duplicate/invalid IDs and malformed UTF-8 rejected); `ANTa` rectangular, elliptical and polygonal `maparea` hyperlinks are now structurally extracted with shape metadata and bounded vertex lists (URL/comment and bottom-left coordinates), with escaped strings and malformed expressions tested; clickable navigation, other shapes and compressed `ANTz` still unsupported.
+- [ ] Links/annotations: `INCL` references to shared `FORM:DJVI` components and raw UTF-8 `ANTa` texts now extracted per page (duplicate/invalid IDs and malformed UTF-8 rejected); `ANTa` rectangular, elliptical and polygonal `maparea` hyperlinks are now structurally extracted with shape metadata and bounded vertex lists (URL/comment and bottom-left coordinates), with escaped strings and malformed expressions tested; clickable navigation, other shapes and compressed `ANTz` now decoded with BZZ and parsed via the same annotation path; clickable navigation and other shapes remain unsupported.
 
 ## Интерфейс
 

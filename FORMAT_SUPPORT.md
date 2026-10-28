@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.52
+Версия профиля: 1.5.53
 
 ## Ready for use
 
@@ -27,7 +27,7 @@ MYBOOK считает готовыми к обычному пользовате�
 
 ## Experimental DjVu inspection (not registered)
 
-`DjvuContainerReader.Inspect` parses the DjVu IFF envelope (`AT&T`, `FORM:DJVU`, `FORM:DJVM`), validates chunk bounds/padding/nesting, and reads page `INFO` dimensions and DPI. Plain `TXTa` text is now extracted as validated UTF-8 with 24-bit length, attached to its page; compressed `TXTz` is explicitly unsupported. `TXTa` version-1 zone trees now decode PAGE/COLUMN/REGION/PARAGRAPH/LINE/WORD/CHARACTER geometry with DjVu parent/sibling delta coordinates and UTF-8 byte ranges; malformed trees and resource limits are validated. It inspects DIRM v1 bundled/indirect headers and validates bundled component offsets while leaving BZZ metadata opaque. Page-level `INCL` shared-component IDs and plain UTF-8 `ANTa` annotation text are now preserved with per-page isolation and malformed-input validation; rectangular, elliptical and polygonal ANTa `maparea` links are parsed to structured URL/comment/geometry with explicit shape metadata. Polygon vertex lists are retained with bounded size and malformed geometry checks. Link navigation and shared component resolution remain unsupported. It does **not** decode BZZ component metadata, JB2/IW44, resolve indirect DJVM directories or render DjVu pages. `.djvu` remains outside `SupportedFormatRegistry` until complete reading is available. Synthetic regression fixtures cover single/multipage containers and malformed input.
+`DjvuContainerReader.Inspect` parses the DjVu IFF envelope (`AT&T`, `FORM:DJVU`, `FORM:DJVM`), validates chunk bounds/padding/nesting, and reads page `INFO` dimensions and DPI. Plain `TXTa` text is now extracted as validated UTF-8 with 24-bit length, attached to its page; compressed `TXTz` is now decoded using the bounded managed DjvuNet BZZ/ZP implementation (MIT) and strict UTF-8 text validation. `TXTa` version-1 zone trees now decode PAGE/COLUMN/REGION/PARAGRAPH/LINE/WORD/CHARACTER geometry with DjVu parent/sibling delta coordinates and UTF-8 byte ranges; malformed trees and resource limits are validated. It inspects DIRM v1 bundled/indirect headers and validates bundled component offsets while leaving BZZ metadata opaque. Page-level `INCL` shared-component IDs and plain UTF-8 `ANTa` and BZZ-compressed `ANTz` annotation text are now preserved with per-page isolation and malformed-input validation; rectangular, elliptical and polygonal ANTa `maparea` links are parsed to structured URL/comment/geometry with explicit shape metadata. Polygon vertex lists are retained with bounded size and malformed geometry checks. Link navigation and shared component resolution remain unsupported. It does **not** decode BZZ component metadata, JB2/IW44, resolve indirect DJVM directories or render DjVu pages. `.djvu` remains outside `SupportedFormatRegistry` until complete reading is available. Synthetic regression fixtures cover single/multipage containers and malformed input.
 
 ## Readiness gates
 
@@ -86,5 +86,5 @@ MYBOOK считает готовыми к обычному пользовате�
 ## Future formats
 
 DjVu не зарегистрирован в `SupportedFormatRegistry` и не заявляется как
-поддерживаемый формат MYBOOK 1.5.52. Его reader является отдельной будущей
+поддерживаемый формат MYBOOK 1.5.53. Его reader является отдельной будущей
 функциональностью и должен пройти те же readiness gates до добавления в реестр.
