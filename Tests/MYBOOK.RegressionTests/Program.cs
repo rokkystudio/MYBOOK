@@ -12593,6 +12593,43 @@ internal static class Program
                 "DjVu JPEG layer decodes to bounded BGRA32 pixels.");
         }
 
+        var rejectedMixedPage = false;
+        try { _ = DjvuJpegPageRenderer.Render(path, page); }
+        catch (NotSupportedException) { rejectedMixedPage = true; }
+        Assert(rejectedMixedPage,
+            "DjVu JPEG-only renderer must not omit foreground layers.");
+
+        var jpegOnly = page with
+        {
+            ImageLayers = new[] { page.ImageLayers[0] }
+        };
+        var rendered = DjvuJpegPageRenderer.Render(path, jpegOnly);
+        Assert(rendered.Width == 2 && rendered.Height == 2 &&
+            rendered.Stride == 8 && rendered.Bgra32.Length == 16 &&
+            rendered.Bgra32[2] > 150,
+            "DjVu BGjp-only page must render original-sized BGRA pixels.");
+
+        var doubled = DjvuJpegPageRenderer.Render(path,
+            jpegOnly with { Width = 4, Height = 4 });
+        Assert(doubled.Width == 4 && doubled.Height == 4 &&
+            doubled.Stride == 16 && doubled.Bgra32.Length == 64 &&
+            doubled.Bgra32.AsSpan(0, 4).SequenceEqual(doubled.Bgra32.AsSpan(4, 4)) &&
+            doubled.Bgra32.AsSpan(0, 16).SequenceEqual(doubled.Bgra32.AsSpan(16, 16)),
+            "DjVu BGjp-only page must nearest-neighbor scale by an integer factor.");
+
+        var rejectedBadRatio = false;
+        try { _ = DjvuJpegPageRenderer.Render(path,
+            jpegOnly with { Width = 3, Height = 4 }); }
+        catch (InvalidDataException) { rejectedBadRatio = true; }
+        Assert(rejectedBadRatio, "DjVu BGjp nonuniform or fractional scaling must be rejected.");
+
+        var rejectedSharedPage = false;
+        try { _ = DjvuJpegPageRenderer.Render(path,
+            jpegOnly with { ResolvedSharedImageLayers = new[] { page.ImageLayers[1] } }); }
+        catch (NotSupportedException) { rejectedSharedPage = true; }
+        Assert(rejectedSharedPage,
+            "DjVu JPEG-only renderer must not silently omit resolved shared layers.");
+
         var rejectedWrongType = false;
         try { _ = DjvuJpegLayerDecoder.Decode(path,
             page.ImageLayers[0] with { Kind = "BG44" }); }

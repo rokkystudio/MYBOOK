@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.5.57
+Текущая версия: 1.5.58
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
@@ -59,7 +59,7 @@
 - [ ] Text layer: plain `TXTa` UTF-8 payload уже извлекается по 24-bit length с привязкой к `FORM:DJVU` и строгой диагностикой некорректной длины, UTF-8 и дублирования; BZZ-compressed `TXTz` now decoded through vendored MIT DjvuNet BS/ZP with bounded output and UTF-8 validation, zone tree версии 1 теперь разбирается с иерархией координат и UTF-8 byte offsets (отдельный regression), но BZZ-compressed DIRM и полный renderer остаются неподдерживаемыми.
 - [x] INFO chunks: geometry и DPI с отрицательными regression-тестами; это metadata inspection, не изображение страницы.
 - [ ] JB2 decoder: page `Sjbz` and shared `Djbz` payload offsets/lengths are now indexed and can be read via validated `DjvuImageChunk.ReadPayload`; bundled INCL-to-DIRM-to-DJVI dictionary payload references are now resolved per page and validated; actual bitmap decoding is still pending.
-- [ ] IW44 decoder: `BG44`/`FG44` progressive layer streams are indexed in order; `FGbz`, `Smmr`, `BGjp`, `FGjp` are also enumerated with exact payload ranges. BGjp/FGjp JPEG pixel decoding is now implemented using bounded BGRA32 WPF JPEG conversion and end-to-end regression; IW44/JB2 pixel decoding and page compositing are still pending.
+- [ ] IW44 decoder: `BG44`/`FG44` progressive layer streams are indexed in order; `FGbz`, `Smmr`, `BGjp`, `FGjp` are also enumerated with exact payload ranges. BGjp/FGjp JPEG pixel decoding is now implemented using bounded BGRA32 WPF JPEG conversion and end-to-end regression; A strict BGjp-only page renderer now produces BGRA32 with bounded integer scaling and rejects mixed image layers. IW44/JB2 pixel decoding and multi-layer page compositing are still pending.
 - [ ] Background/foreground composition.
 - [ ] Постраничный renderer.
 - [ ] Links/annotations: `INCL` references now resolve bundled shared `FORM:DJVI` image layers through DIRM IDs and component offsets (unresolved references rejected); raw UTF-8 `ANTa` texts now extracted per page (duplicate/invalid IDs and malformed UTF-8 rejected); `ANTa` rectangular, elliptical and polygonal `maparea` hyperlinks are now structurally extracted with shape metadata and bounded vertex lists (URL/comment and bottom-left coordinates), with escaped strings and malformed expressions tested; clickable navigation, other shapes and compressed `ANTz` now decoded with BZZ and parsed via the same annotation path; clickable navigation and other shapes remain unsupported.
