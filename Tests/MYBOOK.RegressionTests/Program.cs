@@ -63,6 +63,7 @@ internal static class Program
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
+            ("DjVu NAVM outline", () => TestDjvuNavigation(temporaryDirectory)),
             ("DjVu shared JB2 links", () => TestDjvuSharedImageLinks(temporaryDirectory)),
             ("DjVu JPEG layers", () => TestDjvuJpegLayers(temporaryDirectory)),
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
@@ -12271,6 +12272,26 @@ internal static class Program
         Assert(DjvuContainerReader.Inspect(path).Pages.Count == 2,
             "DJVM nested page count.");
 
+        var finalOddChunk = Chunk("ODD!", new byte[] { 1, 2, 3 })[..^1];
+        var finalOddForm = Form("DJVU", Chunk("INFO", info), finalOddChunk)[..^1];
+        System.IO.File.WriteAllBytes(path, File(finalOddForm));
+        Assert(DjvuContainerReader.Inspect(path).Pages.Single().Width == 640,
+            "DjVu final odd-length child and FORM may omit trailing IFF padding.");
+
+        var middleOddPayload = Encoding.ASCII.GetBytes("DJVU")
+            .Concat(finalOddChunk)
+            .Concat(Chunk("INFO", info))
+            .ToArray();
+        var middleOddForm = Chunk("FORM", middleOddPayload);
+        if ((middleOddPayload.Length & 1) != 0)
+            middleOddForm = middleOddForm[..^1];
+        System.IO.File.WriteAllBytes(path, File(middleOddForm));
+        var missingMiddlePadRejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { missingMiddlePadRejected = true; }
+        Assert(missingMiddlePadRejected,
+            "DjVu missing padding between odd-length sibling chunks must be rejected.");
+
         var layeredPage = Form("DJVU",
             Chunk("INFO", info),
             Chunk("Sjbz", new byte[] { 0xA1, 0xB2 }),
@@ -12879,6 +12900,110 @@ internal static class Program
         }
         catch (InvalidDataException) { broken = true; }
         Assert(broken, "DjVu unresolved bundled INCL dictionary must be rejected.");
+    }
+
+    private static void TestDjvuNavigation(string directory)
+    {
+        static byte[] Chunk(string id, byte[] payload)
+        {
+            var bytes = new byte[8 + payload.Length + (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id).CopyTo(bytes, 0);
+            BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(4, 4), (uint)payload.Length);
+            payload.CopyTo(bytes, 8);
+            return bytes;
+        }
+
+        static byte[] Form(string type, params byte[][] chunks) =>
+            Chunk("FORM", Encoding.ASCII.GetBytes(type)
+                .Concat(chunks.SelectMany(chunk => chunk)).ToArray());
+
+        static byte[] Compress(byte[] data)
+        {
+            using var stream = new MemoryStream();
+            using (var encoder = new DjvuNet.Compression.BSOutputStream(stream, 1024))
+                encoder.Write(data, 0, data.Length);
+            return stream.ToArray();
+        }
+
+        static byte[] Bookmark(string title, string url, params byte[][] children)
+        {
+            var titleBytes = Encoding.UTF8.GetBytes(title);
+            var urlBytes = Encoding.UTF8.GetBytes(url);
+            using var stream = new MemoryStream();
+            stream.WriteByte(checked((byte)children.Length));
+            stream.WriteByte((byte)(titleBytes.Length >> 16));
+            stream.WriteByte((byte)(titleBytes.Length >> 8));
+            stream.WriteByte((byte)titleBytes.Length);
+            stream.Write(titleBytes);
+            stream.WriteByte((byte)(urlBytes.Length >> 16));
+            stream.WriteByte((byte)(urlBytes.Length >> 8));
+            stream.WriteByte((byte)urlBytes.Length);
+            stream.Write(urlBytes);
+            foreach (var child in children)
+                stream.Write(child);
+            return stream.ToArray();
+        }
+
+        var nested = Bookmark("Section", "2");
+        var first = Bookmark("Intro", "#1", nested);
+        var second = Bookmark("External", "https://example.com");
+        var raw = new byte[] { 0, 3 }
+            .Concat(first)
+            .Concat(second)
+            .ToArray();
+        var compressed = Compress(raw);
+        var root = Form("DJVM", Chunk("NAVM", compressed));
+        var path = Path.Combine(directory, "djvu-navigation.djvu");
+        File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(root).ToArray());
+
+        var navigation = DjvuContainerReader.Inspect(path).Navigation;
+        Assert(navigation.Count == 2 &&
+            navigation[0] is { Title: "Intro", Url: "#1" } &&
+            navigation[0].Children.Single() is { Title: "Section", Url: "2" } &&
+            navigation[1] is { Title: "External", Url: "https://example.com" } &&
+            navigation.Sum(item => item.TotalCount) == 3,
+            "DjVu NAVM BZZ outline tree preserves titles, URLs and nesting.");
+
+        var badCount = (byte[])raw.Clone();
+        badCount[1] = 2;
+        var badCountRejected = false;
+        try { _ = DjvuNavigationReader.Read(Compress(badCount)); }
+        catch (InvalidDataException) { badCountRejected = true; }
+        Assert(badCountRejected,
+            "DjVu NAVM declared bookmark count mismatch must be rejected.");
+
+        var invalidUtf8Raw = new byte[]
+        {
+            0, 1,
+            0,
+            0, 0, 2, 0xC3, 0x28,
+            0, 0, 2, (byte)'#', (byte)'1'
+        };
+        var invalidUtf8Rejected = false;
+        try { _ = DjvuNavigationReader.Read(Compress(invalidUtf8Raw)); }
+        catch (InvalidDataException) { invalidUtf8Rejected = true; }
+        Assert(invalidUtf8Rejected,
+            "DjVu NAVM invalid UTF-8 bookmark title must be rejected.");
+
+        var realSample = Path.Combine(Path.GetTempPath(),
+            "MYBOOK-djvunet-bzz-reference", "Specs", "DjVu3Spec.djvu");
+        if (File.Exists(realSample))
+        {
+            var real = DjvuContainerReader.Inspect(realSample);
+            Assert(real.Navigation.Count > 0 &&
+                real.Navigation.Sum(item => item.TotalCount) > 1,
+                "Real DjVu3Spec NAVM outline must decode to a nonempty bookmark tree.");
+        }
+
+        var duplicateRoot = Form("DJVM",
+            Chunk("NAVM", compressed),
+            Chunk("NAVM", compressed));
+        File.WriteAllBytes(path,
+            Encoding.ASCII.GetBytes("AT&T").Concat(duplicateRoot).ToArray());
+        var duplicateRejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { duplicateRejected = true; }
+        Assert(duplicateRejected, "DjVu duplicate NAVM chunk must be rejected.");
     }
 
     private static void TestDjvuDirectory(string directory)
