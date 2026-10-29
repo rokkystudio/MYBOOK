@@ -67,6 +67,7 @@ internal static class Program
             ("DjVu shared JB2 links", () => TestDjvuSharedImageLinks(temporaryDirectory)),
             ("DjVu JPEG layers", () => TestDjvuJpegLayers(temporaryDirectory)),
             ("DjVu FGbz palette", () => TestDjvuForegroundPalette(temporaryDirectory)),
+            ("DjVu IW44 headers", TestDjvuIw44Headers),
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
@@ -12319,8 +12320,15 @@ internal static class Program
         var layeredPage = Form("DJVU",
             Chunk("INFO", info),
             Chunk("Sjbz", new byte[] { 0xA1, 0xB2 }),
-            Chunk("BG44", new byte[] { 1, 2, 3 }),
-            Chunk("BG44", new byte[] { 4, 5 }));
+            Chunk("BG44", new byte[]
+            {
+                0, 72, 1, 2,
+                0x01, 0x40,
+                0x00, 0xF0,
+                0x80,
+                0xAA
+            }),
+            Chunk("BG44", new byte[] { 1, 10, 0xBB }));
         var dictionaryForm = Form("DJVI",
             Chunk("Djbz", new byte[] { 6, 7, 8, 9 }));
         var composite = Form("DJVM", dictionaryForm, layeredPage);
@@ -12335,7 +12343,17 @@ internal static class Program
             imageIndex.Pages[0].ImageLayers[0].ReadPayload(path)
                 .SequenceEqual(new byte[] { 0xA1, 0xB2 }) &&
             imageIndex.Pages[0].ImageLayers[2].ReadPayload(path)
-                .SequenceEqual(new byte[] { 4, 5 }) &&
+                .SequenceEqual(new byte[] { 1, 10, 0xBB }) &&
+            imageIndex.Pages[0].BackgroundIw44 is
+            {
+                Kind: "BG44",
+                MajorVersion: 1,
+                MinorVersion: 2,
+                Width: 320,
+                Height: 240,
+                SubsampleFactor: 2,
+                TotalSlices: 82
+            } &&
             imageIndex.SharedImageLayers[0].ReadPayload(path)
                 .SequenceEqual(new byte[] { 6, 7, 8, 9 }),
             "DjVu page/shared JB2 and IW44 layers must preserve stream offsets and order.");
@@ -12500,12 +12518,73 @@ internal static class Program
         Assert(DjvuContainerReader.Inspect(path).Pages.Single().Dpi == 0,
             "DjVu INFO preserves a zero DPI value without inventing metadata.");
 
+        var legacyInfo = new byte[5];
+        BinaryPrimitives.WriteUInt16BigEndian(legacyInfo.AsSpan(0, 2), 2556);
+        BinaryPrimitives.WriteUInt16BigEndian(legacyInfo.AsSpan(2, 2), 3300);
+        legacyInfo[4] = 17;
+        System.IO.File.WriteAllBytes(path, File(Form("DJVU", Chunk("INFO", legacyInfo))));
+        var legacyPage = DjvuContainerReader.Inspect(path).Pages.Single();
+        Assert(legacyPage.Width == 2556 && legacyPage.Height == 3300 &&
+            legacyPage.MinorVersion == 17 && legacyPage.MajorVersion == 0 &&
+            legacyPage.InfoLength == 5 && !legacyPage.HasExtendedInfo &&
+            legacyPage.Dpi == 0 && legacyPage.Gamma == 0 &&
+            legacyPage.Rotation == DjvuPageRotation.RightSideUp,
+            "DjVu legacy 5-byte INFO preserves geometry/version without invented extended metadata.");
+
         System.IO.File.WriteAllBytes(path, File(Form("DJVU",
-            Chunk("INFO", info.Concat(new byte[] { 0 }).ToArray()))));
+            Chunk("INFO", info.AsSpan(0, 6).ToArray()))));
         failed = false;
         try { _ = DjvuContainerReader.Inspect(path); }
         catch (InvalidDataException) { failed = true; }
-        Assert(failed, "DjVu INFO must contain exactly 10 bytes.");
+        Assert(failed, "DjVu INFO must contain either 5 legacy or 10 current bytes.");
+
+        var legacySample = Path.Combine(Path.GetTempPath(),
+            "MYBOOK-djvunet-bzz-reference", "Specs", "1998_compression.djvu");
+        if (System.IO.File.Exists(legacySample))
+        {
+            var legacyReal = DjvuContainerReader.Inspect(legacySample);
+            Assert(legacyReal.Pages.Count > 0 &&
+                legacyReal.Pages[0] is
+                {
+                    InfoLength: 5,
+                    HasExtendedInfo: false,
+                    Width: 2556,
+                    Height: 3300,
+                    MinorVersion: 17,
+                    Dpi: 0
+                } &&
+                legacyReal.Pages[0].BackgroundIw44 is
+                {
+                    MajorVersion: 1,
+                    MinorVersion: 2,
+                    Width: 852,
+                    Height: 1100,
+                    SubsampleFactor: 3,
+                    TotalSlices: 97
+                },
+                "Real 1998 DjVu must accept legacy INFO and parse its progressive IW44 metadata.");
+        }
+
+        var iw44Sample = Path.Combine(Path.GetTempPath(),
+            "MYBOOK-djvunet-bzz-reference", "Specs", "2000_compression_system.djvu");
+        if (System.IO.File.Exists(iw44Sample))
+        {
+            var iw44Real = DjvuContainerReader.Inspect(iw44Sample);
+            var sequencePage = iw44Real.Pages.First(page =>
+                page.BackgroundIw44 is { Chunks.Count: 4 });
+            Assert(sequencePage.BackgroundIw44 is
+                {
+                    MajorVersion: 1,
+                    MinorVersion: 2,
+                    Width: 850,
+                    Height: 1100,
+                    SubsampleFactor: 3,
+                    TotalSlices: 103
+                } sequence &&
+                sequence.Chunks.Select(chunk => chunk.Serial)
+                    .SequenceEqual(new[] { 0, 1, 2, 3 }),
+                "Real multi-chunk BG44 sequence must preserve natural serial order and slice totals.");
+        }
 
     }
 
@@ -12713,6 +12792,124 @@ internal static class Program
         try { _ = DjvuContainerReader.Inspect(path); }
         catch (InvalidDataException) { duplicateRejected = true; }
         Assert(duplicateRejected, "DjVu duplicate FGbz palette must be rejected.");
+    }
+
+    private static void TestDjvuIw44Headers()
+    {
+        byte[][] payloads =
+        [
+            new byte[]
+            {
+                0, 72, 1, 2,
+                0x03, 0x52,
+                0x04, 0x4C,
+                0x8A,
+                0xAA
+            },
+            new byte[] { 1, 11, 0xBB },
+            new byte[] { 2, 10, 0xCC },
+            new byte[] { 3, 10, 0xDD }
+        ];
+        var kinds = Enumerable.Repeat("BG44", payloads.Length).ToArray();
+        var sequence = DjvuIw44SequenceReader.Read(payloads, kinds, 2550, 3300);
+        Assert(sequence is
+            {
+                Kind: "BG44",
+                MajorVersion: 1,
+                MinorVersion: 2,
+                IsGrayscale: false,
+                Width: 850,
+                Height: 1100,
+                SubsampleFactor: 3,
+                ChrominanceDelay: 10,
+                TotalSlices: 103
+            } &&
+            sequence.Chunks.Select(chunk => chunk.Serial)
+                .SequenceEqual(new[] { 0, 1, 2, 3 }) &&
+            sequence.Chunks[0].HeaderBytes == 9 &&
+            sequence.Chunks[1].HeaderBytes == 2,
+            "DjVu IW44 progressive headers must preserve version, geometry, slices and serial order.");
+
+        var grayscale = DjvuIw44SequenceReader.Read(
+            new[] { new byte[] { 0, 1, 0x81, 2, 0, 64, 0, 32, 0x80, 0xEF } },
+            new[] { "FG44" },
+            64,
+            32);
+        Assert(grayscale.IsGrayscale &&
+            grayscale.SubsampleFactor == 1 &&
+            grayscale.Width == 64 &&
+            grayscale.Height == 32,
+            "DjVu IW44 grayscale flag and full-resolution geometry.");
+
+        var badSerialRejected = false;
+        try
+        {
+            _ = DjvuIw44SequenceReader.Read(
+                new[]
+                {
+                    payloads[0],
+                    new byte[] { 2, 1, 0xAA }
+                },
+                new[] { "BG44", "BG44" },
+                2550,
+                3300);
+        }
+        catch (InvalidDataException) { badSerialRejected = true; }
+        Assert(badSerialRejected,
+            "DjVu IW44 out-of-order serial numbers must be rejected.");
+
+        var badSubsample = (byte[])payloads[0].Clone();
+        badSubsample[4] = 0x03;
+        badSubsample[5] = 0x53;
+        var badSubsampleRejected = false;
+        try
+        {
+            _ = DjvuIw44SequenceReader.Read(
+                new[] { badSubsample },
+                new[] { "BG44" },
+                2550,
+                3300);
+        }
+        catch (InvalidDataException) { badSubsampleRejected = true; }
+        Assert(badSubsampleRejected,
+            "DjVu IW44 geometry outside page subsampling factors 1..12 must be rejected.");
+
+        var unsupportedVersion = (byte[])payloads[0].Clone();
+        unsupportedVersion[2] = 2;
+        var unsupportedRejected = false;
+        try
+        {
+            _ = DjvuIw44SequenceReader.Read(
+                new[] { unsupportedVersion },
+                new[] { "BG44" },
+                2550,
+                3300);
+        }
+        catch (NotSupportedException) { unsupportedRejected = true; }
+        Assert(unsupportedRejected,
+            "DjVu unsupported IW44 major version must be rejected.");
+
+        var emptyCoderRejected = false;
+        try
+        {
+            _ = DjvuIw44SequenceReader.Read(
+                new[]
+                {
+                    new byte[]
+                    {
+                        0, 1, 1, 2,
+                        0x03, 0x52,
+                        0x04, 0x4C,
+                        0x80
+                    }
+                },
+                new[] { "BG44" },
+                2550,
+                3300);
+        }
+        catch (InvalidDataException) { emptyCoderRejected = true; }
+        Assert(emptyCoderRejected,
+            "DjVu IW44 chunk without coefficient payload must be rejected.");
     }
 
     private static void TestDjvuSmmrMask(string directory)
