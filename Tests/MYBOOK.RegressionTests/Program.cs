@@ -12642,6 +12642,43 @@ internal static class Program
             decoded.Gray8.SequenceEqual(expected),
             "DjVu regular Smmr must decode through CCITT Group 4 exactly.");
 
+        var pageInfo = DjvuContainerReader.Inspect(path).Pages.Single();
+        var rendered = DjvuSmmrPageRenderer.Render(path, pageInfo);
+        Assert(rendered.Width == width && rendered.Height == height &&
+            rendered.Stride == width * 4 && rendered.Bgra32.Length == width * height * 4,
+            "DjVu Smmr-only page renderer returns full-size BGRA32 pixels.");
+        for (var i = 0; i < expected.Length; i++)
+        {
+            var gray = expected[i];
+            var offset = i * 4;
+            Assert(rendered.Bgra32[offset] == gray &&
+                rendered.Bgra32[offset + 1] == gray &&
+                rendered.Bgra32[offset + 2] == gray &&
+                rendered.Bgra32[offset + 3] == 255,
+                "DjVu Smmr-only page renderer preserves the decoded mask pixels.");
+        }
+
+        var geometryRejected = false;
+        try { _ = DjvuSmmrPageRenderer.Render(path,
+            pageInfo with { Width = width + 1 }); }
+        catch (InvalidDataException) { geometryRejected = true; }
+        Assert(geometryRejected,
+            "DjVu Smmr-only page renderer rejects mask/page geometry mismatch.");
+
+        var mixedRejected = false;
+        try { _ = DjvuSmmrPageRenderer.Render(path,
+            pageInfo with
+            {
+                ImageLayers = new[]
+                {
+                    pageInfo.ImageLayers.Single(),
+                    pageInfo.ImageLayers.Single() with { Kind = "BGjp" }
+                }
+            }); }
+        catch (NotSupportedException) { mixedRejected = true; }
+        Assert(mixedRejected,
+            "DjVu Smmr-only page renderer rejects mixed image layers.");
+
         var stripedRejected = false;
         try
         {
