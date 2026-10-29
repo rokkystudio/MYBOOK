@@ -68,6 +68,7 @@ internal static class Program
             ("DjVu JPEG layers", () => TestDjvuJpegLayers(temporaryDirectory)),
             ("DjVu FGbz palette", () => TestDjvuForegroundPalette(temporaryDirectory)),
             ("DjVu IW44 headers", TestDjvuIw44Headers),
+            ("DjVu IW44 pixels", TestDjvuIw44Pixels),
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
@@ -12910,6 +12911,46 @@ internal static class Program
         catch (InvalidDataException) { emptyCoderRejected = true; }
         Assert(emptyCoderRejected,
             "DjVu IW44 chunk without coefficient payload must be rejected.");
+    }
+
+    private static void TestDjvuIw44Pixels()
+    {
+        var sample = Path.Combine(Path.GetTempPath(),
+            "MYBOOK-djvunet-bzz-reference", "Specs", "2000_compression_system.djvu");
+        if (!File.Exists(sample))
+            return;
+
+        var document = DjvuContainerReader.Inspect(sample);
+        var page = document.Pages.First(candidate =>
+            candidate.BackgroundIw44 is { Chunks.Count: 4, Width: 850, Height: 1100 });
+        var layers = page.ImageLayers
+            .Where(layer => layer.Kind == "BG44")
+            .ToArray();
+        var decoded = DjvuIw44PixelDecoder.Decode(
+            sample, layers, page.Width, page.Height);
+
+        Assert(decoded.Width == 850 &&
+            decoded.Height == 1100 &&
+            decoded.Stride == 3400 &&
+            decoded.Bgra32.Length == 3_740_000,
+            "DjVu IW44 real BG44 must decode to the expected native BGRA32 geometry.");
+
+        var bgr = new byte[decoded.Width * decoded.Height * 3];
+        for (int source = 0, target = 0;
+            source < decoded.Bgra32.Length;
+            source += 4)
+        {
+            bgr[target++] = decoded.Bgra32[source];
+            bgr[target++] = decoded.Bgra32[source + 1];
+            bgr[target++] = decoded.Bgra32[source + 2];
+            Assert(decoded.Bgra32[source + 3] == 255,
+                "DjVu IW44 decoded alpha must remain opaque.");
+        }
+
+        var digest = Convert.ToHexString(SHA256.HashData(bgr));
+        Assert(digest ==
+            "F49360BC6AC894F17597B0BDE0852F21E15845B38B6466B6B779999D51A75F95",
+            "DjVu IW44 real BG44 pixel output must remain byte-stable.");
     }
 
     private static void TestDjvuSmmrMask(string directory)
