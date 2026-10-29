@@ -14089,16 +14089,35 @@ internal static class Program
 
         var beforeAnnotation =
             "(maparea \"https://before.example/\" \"Before\" (rect 0 0 10 10))";
-        var sharedAnnotationText =
-            "(maparea \"https://shared.example/\" \"Shared\" (rect 10 0 10 10))";
+        var sharedBeforeAnnotation =
+            "(maparea \"https://shared-before.example/\" \"Shared before\" (rect 10 0 10 10))";
+        var sharedLeafAnnotation =
+            "(maparea \"https://shared-leaf.example/\" \"Shared leaf\" (rect 20 0 10 10))";
+        var sharedAfterAnnotation =
+            "(maparea \"https://shared-after.example/\" \"Shared after\" (rect 30 0 10 10))";
         var afterAnnotation =
-            "(maparea \"https://after.example/\" \"After\" (rect 20 0 10 10))";
-        var sharedAnnotation = Form(
+            "(maparea \"https://after.example/\" \"After\" (rect 40 0 10 10))";
+
+        var sharedAnnotationLeaf = Form(
             "DJVI",
             Chunk(
                 "ANTa",
                 Encoding.UTF8.GetBytes(
-                    sharedAnnotationText)));
+                    sharedLeafAnnotation)));
+        var sharedAnnotationAlias = Form(
+            "DJVI",
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    sharedBeforeAnnotation)),
+            Chunk(
+                "INCL",
+                Encoding.UTF8.GetBytes(
+                    "shared-anno-leaf.iff")),
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    sharedAfterAnnotation)));
         var annotatedPage = Form(
             "DJVU",
             Chunk("INFO", info),
@@ -14109,7 +14128,7 @@ internal static class Program
             Chunk(
                 "INCL",
                 Encoding.UTF8.GetBytes(
-                    "shared-anno.iff")),
+                    "shared-anno-alias.iff")),
             Chunk(
                 "ANTa",
                 Encoding.UTF8.GetBytes(
@@ -14118,27 +14137,30 @@ internal static class Program
         var annotationRaw = new byte[]
         {
             0, 0,
-            checked((byte)sharedAnnotation.Length),
+            checked((byte)sharedAnnotationLeaf.Length),
+            0, 0,
+            checked((byte)sharedAnnotationAlias.Length),
             0, 0,
             checked((byte)annotatedPage.Length),
+            3,
             3,
             1
         }
             .Concat(
                 Encoding.UTF8.GetBytes(
-                    "shared-anno.iff\0annotated.djvu\0"))
+                    "shared-anno-leaf.iff\0shared-anno-alias.iff\0annotated.djvu\0"))
             .ToArray();
         var annotationCompressed =
             Compress(annotationRaw);
         var annotationDirm =
             new byte[
-                11 +
+                15 +
                 annotationCompressed.Length];
         annotationDirm[0] = 0x81;
-        annotationDirm[2] = 2;
+        annotationDirm[2] = 3;
         annotationCompressed.CopyTo(
             annotationDirm,
-            11);
+            15);
 
         var annotationFirstOffset =
             16 +
@@ -14154,7 +14176,13 @@ internal static class Program
             annotationDirm.AsSpan(7, 4),
             checked((uint)
                 (annotationFirstOffset +
-                 sharedAnnotation.Length)));
+                 sharedAnnotationLeaf.Length)));
+        BinaryPrimitives.WriteUInt32BigEndian(
+            annotationDirm.AsSpan(11, 4),
+            checked((uint)
+                (annotationFirstOffset +
+                 sharedAnnotationLeaf.Length +
+                 sharedAnnotationAlias.Length)));
 
         var annotationPath =
             Path.Combine(
@@ -14169,7 +14197,8 @@ internal static class Program
                         Chunk(
                             "DIRM",
                             annotationDirm),
-                        sharedAnnotation,
+                        sharedAnnotationLeaf,
+                        sharedAnnotationAlias,
                         annotatedPage))
                 .ToArray());
 
@@ -14183,7 +14212,9 @@ internal static class Program
                 new[]
                 {
                     beforeAnnotation,
-                    sharedAnnotationText,
+                    sharedBeforeAnnotation,
+                    sharedLeafAnnotation,
+                    sharedAfterAnnotation,
                     afterAnnotation
                 }) &&
             annotated.MapAreas
@@ -14192,10 +14223,12 @@ internal static class Program
                     new[]
                     {
                         "Before",
-                        "Shared",
+                        "Shared before",
+                        "Shared leaf",
+                        "Shared after",
                         "After"
                     }),
-            "DjVu bundled role-3 shared annotation must expand at the page INCL position.");
+            "DjVu bundled nested role-3 shared annotations must expand recursively at each INCL position while preserving chunk order.");
     }
 
     private static void TestDjvuIndirectDocument(
