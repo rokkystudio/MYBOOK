@@ -66,6 +66,7 @@ internal static class Program
             ("DjVu NAVM outline", () => TestDjvuNavigation(temporaryDirectory)),
             ("DjVu shared JB2 links", () => TestDjvuSharedImageLinks(temporaryDirectory)),
             ("DjVu JPEG layers", () => TestDjvuJpegLayers(temporaryDirectory)),
+            ("DjVu FGbz palette", () => TestDjvuForegroundPalette(temporaryDirectory)),
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
@@ -12605,6 +12606,115 @@ internal static class Program
         }
     }
 
+    private static void TestDjvuForegroundPalette(string directory)
+    {
+        static byte[] Chunk(string id, byte[] payload)
+        {
+            var bytes = new byte[8 + payload.Length + (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id).CopyTo(bytes, 0);
+            BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(4, 4), (uint)payload.Length);
+            payload.CopyTo(bytes, 8);
+            return bytes;
+        }
+
+        static byte[] Form(string type, params byte[][] chunks) =>
+            Chunk("FORM", Encoding.ASCII.GetBytes(type)
+                .Concat(chunks.SelectMany(chunk => chunk)).ToArray());
+
+        static byte[] Compress(byte[] data)
+        {
+            using var stream = new MemoryStream();
+            using (var encoder = new DjvuNet.Compression.BSOutputStream(stream, 1024))
+                encoder.Write(data, 0, data.Length);
+            return stream.ToArray();
+        }
+
+        static byte[] ShapePalette(byte header, ushort[] indexes)
+        {
+            byte[] colors =
+            [
+                0, 0, 255,
+                0, 255, 0,
+                255, 0, 0
+            ];
+            var indexBytes = new byte[indexes.Length * 2];
+            for (var i = 0; i < indexes.Length; i++)
+                BinaryPrimitives.WriteUInt16BigEndian(
+                    indexBytes.AsSpan(i * 2, 2), indexes[i]);
+            var compressed = Compress(indexBytes);
+            return new byte[] { header, 0, 3 }
+                .Concat(colors)
+                .Concat(new byte[]
+                {
+                    (byte)(indexes.Length >> 16),
+                    (byte)(indexes.Length >> 8),
+                    (byte)indexes.Length
+                })
+                .Concat(compressed)
+                .ToArray();
+        }
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(0, 2), 64);
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(2, 2), 32);
+        BinaryPrimitives.WriteUInt16LittleEndian(info.AsSpan(6, 2), 300);
+
+        var palettePayload = ShapePalette(0x80, new ushort[] { 0, 2, 1, 2 });
+        var page = Form("DJVU",
+            Chunk("INFO", info),
+            Chunk("FGbz", palettePayload));
+        var path = Path.Combine(directory, "djvu-fgbz.djvu");
+        File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(page).ToArray());
+
+        var inspected = DjvuContainerReader.Inspect(path).Pages.Single();
+        var palette = inspected.ForegroundPalette;
+        Assert(palette is
+            {
+                Version: 0,
+                HasShapeTable: true
+            } &&
+            palette.Colors.SequenceEqual(new[]
+            {
+                new DjvuRgbColor(255, 0, 0),
+                new DjvuRgbColor(0, 255, 0),
+                new DjvuRgbColor(0, 0, 255)
+            }) &&
+            palette.BlitColorIndexes.SequenceEqual(new ushort[] { 0, 2, 1, 2 }) &&
+            inspected.ImageLayers.Single().Kind == "FGbz",
+            "DjVu FGbz palette and BZZ blit-color correspondence must decode exactly.");
+
+        var plain = DjvuForegroundPaletteReader.Read(
+            new byte[] { 0x00, 0, 1, 10, 20, 30 });
+        Assert(plain.Version == 0 && !plain.HasShapeTable &&
+            plain.Colors.Single() == new DjvuRgbColor(30, 20, 10) &&
+            plain.BlitColorIndexes.Count == 0,
+            "DjVu FGbz palette without shape table must preserve BGR color bytes.");
+
+        var badIndexRejected = false;
+        try { _ = DjvuForegroundPaletteReader.Read(
+            ShapePalette(0x80, new ushort[] { 0, 3 })); }
+        catch (InvalidDataException) { badIndexRejected = true; }
+        Assert(badIndexRejected,
+            "DjVu FGbz blit palette indexes outside the palette must be rejected.");
+
+        var unsupportedVersion = false;
+        try { _ = DjvuForegroundPaletteReader.Read(
+            ShapePalette(0x81, new ushort[] { 0 })); }
+        catch (NotSupportedException) { unsupportedVersion = true; }
+        Assert(unsupportedVersion, "DjVu unsupported FGbz version must be rejected.");
+
+        File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T")
+            .Concat(Form("DJVU",
+                Chunk("INFO", info),
+                Chunk("FGbz", palettePayload),
+                Chunk("FGbz", palettePayload)))
+            .ToArray());
+        var duplicateRejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { duplicateRejected = true; }
+        Assert(duplicateRejected, "DjVu duplicate FGbz palette must be rejected.");
+    }
+
     private static void TestDjvuSmmrMask(string directory)
     {
         const int width = 16;
@@ -13099,6 +13209,10 @@ internal static class Program
                 Math.Abs(real.Pages[0].Gamma - 2.2) < 0.001 &&
                 real.Pages[0].Rotation == DjvuPageRotation.RightSideUp &&
                 real.Pages[0].InfoFlags == 0x01 &&
+                real.Pages.Any(page => page.ForegroundPalette is
+                    { Version: 0, HasShapeTable: true } palette &&
+                    palette.Colors.Count > 0 &&
+                    palette.BlitColorIndexes.Count > 0) &&
                 real.Pages[1].ComponentId == "p0002.djvu" &&
                 flattened.First(item => item.Url == "#1").TargetPageIndex == 0 &&
                 flattened.First(item => item.Url == "#p0002.djvu").TargetPageIndex == 1,
