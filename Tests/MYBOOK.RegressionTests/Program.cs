@@ -13037,19 +13037,39 @@ internal static class Program
                 "D87822CF2B6AA115B7DAFED224AAA10579483451A41319C3978555639E3C63E9",
                 "Real local Djbz + Sjbz page must decode to a stable JB2 mask.");
 
-            var ambiguousRejected = false;
-            try
-            {
-                _ = DjvuJb2Decoder.DecodePage(
-                    localPage with
-                    {
-                        ResolvedSharedImageLayers =
-                            document.Pages[1].ResolvedSharedImageLayers
-                    });
-            }
-            catch (NotSupportedException) { ambiguousRejected = true; }
-            Assert(ambiguousRejected,
-                "DjVu JB2 decoding must reject simultaneous local and shared Djbz dictionaries.");
+            var localPreferred = DjvuJb2Decoder.DecodePage(
+                localPage with
+                {
+                    ResolvedSharedImageLayers =
+                        document.Pages[1].ResolvedSharedImageLayers
+                });
+            Assert(localPreferred.InheritedShapeCount == 353 &&
+                localPreferred.Gray8.SequenceEqual(mask.Gray8),
+                "DjVu local Djbz must take precedence over included dictionaries, matching DjVuLibre get_fgjd semantics.");
+        }
+
+        var czechPath = Path.Combine(
+            Path.GetTempPath(),
+            "MYBOOK-djvu-rs-indirect",
+            "tests",
+            "fixtures",
+            "czech.djvu");
+        if (File.Exists(czechPath))
+        {
+            var czech = DjvuContainerReader.Inspect(czechPath);
+            var page = czech.Pages[15];
+            var mask = DjvuJb2Decoder.DecodePage(page);
+            Assert(mask is
+                {
+                    Width: 1081,
+                    Height: 1742,
+                    ShapeCount: 1396,
+                    BlitCount: 1241,
+                    InheritedShapeCount: 585
+                } &&
+                Convert.ToHexString(SHA256.HashData(mask.Gray8)) ==
+                "902B8651E33FCE8E8E1119A0C31F7A571B59CFB053C8986032CFC57F8D1341F4",
+                "Real czech page with repeated shared dictionary aliases must resolve the first recursive Djbz and keep a stable JB2 mask.");
         }
     }
 
@@ -13973,37 +13993,86 @@ internal static class Program
         var info = new byte[10];
         BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(0, 2), 640);
         BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(2, 2), 480);
-        var dictionary = Form("DJVI", Chunk("Djbz", new byte[] { 7, 8, 9 }));
-        var page = Form("DJVU",
+        var dictionary = Form(
+            "DJVI",
+            Chunk(
+                "Djbz",
+                new byte[] { 7, 8, 9 }));
+        var dictionaryAlias = Form(
+            "DJVI",
+            Chunk(
+                "Djbz",
+                new byte[] { 4, 5, 6 }),
+            Chunk(
+                "INCL",
+                Encoding.UTF8.GetBytes(
+                    "shapes.djvi")));
+        var page = Form(
+            "DJVU",
             Chunk("INFO", info),
-            Chunk("INCL", Encoding.UTF8.GetBytes("shapes.djvi")),
+            Chunk(
+                "INCL",
+                Encoding.UTF8.GetBytes(
+                    "alias.djvi")),
             Chunk("Sjbz", new byte[] { 1, 2 }));
         var raw = new byte[]
         {
-            0, 0, (byte)dictionary.Length,
-            0, 0, (byte)page.Length,
-            0, 1
-        }.Concat(Encoding.UTF8.GetBytes("shapes.djvi\0page.djvu\0")).ToArray();
+            0, 0, checked((byte)dictionary.Length),
+            0, 0, checked((byte)dictionaryAlias.Length),
+            0, 0, checked((byte)page.Length),
+            0, 0, 1
+        }
+            .Concat(
+                Encoding.UTF8.GetBytes(
+                    "shapes.djvi\0alias.djvi\0page.djvu\0"))
+            .ToArray();
         var compressed = Compress(raw);
-        var dirm = new byte[11 + compressed.Length];
+        var dirm = new byte[15 + compressed.Length];
         dirm[0] = 0x81;
-        dirm[2] = 2;
-        compressed.CopyTo(dirm, 11);
-        var firstOffset = 16 + Chunk("DIRM", dirm).Length;
-        BinaryPrimitives.WriteUInt32BigEndian(dirm.AsSpan(3, 4), (uint)firstOffset);
-        BinaryPrimitives.WriteUInt32BigEndian(dirm.AsSpan(7, 4), (uint)(firstOffset + dictionary.Length));
-        var path = Path.Combine(directory, "djvu-shared-incl.djvu");
-        byte[] Build(byte[] pageData, byte[] dirData) =>
-            Encoding.ASCII.GetBytes("AT&T").Concat(Form("DJVM",
-                Chunk("DIRM", dirData), dictionary, pageData)).ToArray();
+        dirm[2] = 3;
+        compressed.CopyTo(dirm, 15);
+        var firstOffset =
+            16 + Chunk("DIRM", dirm).Length;
+        BinaryPrimitives.WriteUInt32BigEndian(
+            dirm.AsSpan(3, 4),
+            checked((uint)firstOffset));
+        BinaryPrimitives.WriteUInt32BigEndian(
+            dirm.AsSpan(7, 4),
+            checked((uint)
+                (firstOffset + dictionary.Length)));
+        BinaryPrimitives.WriteUInt32BigEndian(
+            dirm.AsSpan(11, 4),
+            checked((uint)
+                (firstOffset +
+                 dictionary.Length +
+                 dictionaryAlias.Length)));
+        var path = Path.Combine(
+            directory,
+            "djvu-shared-incl.djvu");
+        byte[] Build(
+            byte[] pageData,
+            byte[] dirData) =>
+            Encoding.ASCII.GetBytes("AT&T")
+                .Concat(
+                    Form(
+                        "DJVM",
+                        Chunk("DIRM", dirData),
+                        dictionary,
+                        dictionaryAlias,
+                        pageData))
+                .ToArray();
         System.IO.File.WriteAllBytes(path, Build(page, dirm));
         var inspected = DjvuContainerReader.Inspect(path);
         Assert(inspected.Pages.Count == 1 &&
             inspected.Pages[0].ImageLayers.Single().Kind == "Sjbz" &&
-            inspected.Pages[0].ResolvedSharedImageLayers.Single().Kind == "Djbz" &&
-            inspected.Pages[0].ResolvedSharedImageLayers.Single()
+            inspected.Pages[0].ResolvedSharedImageLayers.Count == 2 &&
+            inspected.Pages[0].ResolvedSharedImageLayers.All(
+                layer => layer.Kind == "Djbz") &&
+            inspected.Pages[0].ResolvedSharedImageLayers[0]
+                .ReadPayload().SequenceEqual(new byte[] { 4, 5, 6 }) &&
+            inspected.Pages[0].ResolvedSharedImageLayers[1]
                 .ReadPayload().SequenceEqual(new byte[] { 7, 8, 9 }),
-            "DjVu bundled INCL must resolve the matching DJVI dictionary by DIRM ID and offset.");
+            "DjVu bundled nested INCL must preserve local-first then recursive dictionary order used by DjVuLibre get_fgjd.");
 
         var brokenPage = Form("DJVU",
             Chunk("INFO", info),
@@ -14570,10 +14639,16 @@ internal static class Program
 
         const string dictionaryId =
             "dictionary-id.iff";
+        const string dictionaryAliasId =
+            "dictionary-alias.iff";
         var dictionaryDiskName =
             Path.Combine(
                 "djvu-indirect-parts",
                 "dictionary-file.iff");
+        var dictionaryAliasDiskName =
+            Path.Combine(
+                "djvu-indirect-parts",
+                "dictionary-alias.iff");
         var maskDiskName =
             Path.Combine(
                 "djvu-indirect-parts",
@@ -14582,6 +14657,10 @@ internal static class Program
             Path.Combine(
                 directory,
                 dictionaryDiskName);
+        var dictionaryAliasPath =
+            Path.Combine(
+                directory,
+                dictionaryAliasDiskName);
         var maskPath =
             Path.Combine(
                 directory,
@@ -14603,6 +14682,18 @@ internal static class Program
             DjvuFile(
                 dictionaryForm));
 
+        var dictionaryAliasForm =
+            Form(
+                "DJVI",
+                Chunk(
+                    "INCL",
+                    Encoding.UTF8.GetBytes(
+                        dictionaryId)));
+        File.WriteAllBytes(
+            dictionaryAliasPath,
+            DjvuFile(
+                dictionaryAliasForm));
+
         var maskForm =
             Form(
                 "DJVU",
@@ -14612,7 +14703,7 @@ internal static class Program
                 Chunk(
                     "INCL",
                     Encoding.UTF8.GetBytes(
-                        dictionaryId)),
+                        dictionaryAliasId)),
                 Chunk(
                     "Sjbz",
                     new byte[]
@@ -14641,6 +14732,12 @@ internal static class Program
                                 (byte)0x80,
                                 dictionaryId,
                                 dictionaryDiskName,
+                                null),
+                            (
+                                dictionaryAliasForm,
+                                (byte)0x80,
+                                dictionaryAliasId,
+                                dictionaryAliasDiskName,
                                 null),
                             (
                                 maskForm,
@@ -14674,7 +14771,110 @@ internal static class Program
                         8,
                         9
                     }),
-            "DjVu indirect INCL must bind shared Djbz to its external physical component file.");
+            "DjVu indirect nested INCL must resolve through an external DJVI alias to the physical Djbz component file.");
+
+        const string cycleAId = "cycle-a.iff";
+        const string cycleBId = "cycle-b.iff";
+        var cycleADiskName =
+            Path.Combine(
+                "djvu-indirect-parts",
+                cycleAId);
+        var cycleBDiskName =
+            Path.Combine(
+                "djvu-indirect-parts",
+                cycleBId);
+        var cyclePageDiskName =
+            Path.Combine(
+                "djvu-indirect-parts",
+                "cycle-page.djvu");
+        var cycleAForm =
+            Form(
+                "DJVI",
+                Chunk(
+                    "INCL",
+                    Encoding.UTF8.GetBytes(
+                        cycleBId)));
+        var cycleBForm =
+            Form(
+                "DJVI",
+                Chunk(
+                    "INCL",
+                    Encoding.UTF8.GetBytes(
+                        cycleAId)));
+        var cyclePageForm =
+            Form(
+                "DJVU",
+                Chunk(
+                    "INFO",
+                    info),
+                Chunk(
+                    "INCL",
+                    Encoding.UTF8.GetBytes(
+                        cycleAId)));
+        File.WriteAllBytes(
+            Path.Combine(
+                directory,
+                cycleADiskName),
+            DjvuFile(cycleAForm));
+        File.WriteAllBytes(
+            Path.Combine(
+                directory,
+                cycleBDiskName),
+            DjvuFile(cycleBForm));
+        File.WriteAllBytes(
+            Path.Combine(
+                directory,
+                cyclePageDiskName),
+            DjvuFile(cyclePageForm));
+
+        var cycleIndexPath =
+            Path.Combine(
+                directory,
+                "djvu-indirect-cycle.djvu");
+        File.WriteAllBytes(
+            cycleIndexPath,
+            DjvuFile(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        BuildDirm(
+                            (
+                                cycleAForm,
+                                (byte)0x80,
+                                cycleAId,
+                                cycleADiskName,
+                                null),
+                            (
+                                cycleBForm,
+                                (byte)0x80,
+                                cycleBId,
+                                cycleBDiskName,
+                                null),
+                            (
+                                cyclePageForm,
+                                (byte)0x81,
+                                "cycle-page.djvu",
+                                cyclePageDiskName,
+                                null))))));
+
+        var cycleRejected = false;
+        try
+        {
+            _ = DjvuIndirectDocumentResolver
+                .Resolve(
+                    cycleIndexPath,
+                    DjvuContainerReader
+                        .Inspect(
+                            cycleIndexPath));
+        }
+        catch (InvalidDataException)
+        {
+            cycleRejected = true;
+        }
+        Assert(
+            cycleRejected,
+            "DjVu nested INCL dependency cycles must be rejected explicitly.");
 
         var traversalIndexPath =
             Path.Combine(
@@ -15180,6 +15380,67 @@ internal static class Program
             counterClockwise ==
                 (140d, 60d, 40d, 30d),
             "DjVu page geometry transformer must preserve exact rectangle bounds for all fixed-page rotations.");
+
+        var outsideTextPage =
+            new DjvuPageInfo(100, 100, 300)
+            {
+                Text = "A",
+                TextZone = new DjvuTextZone(
+                    1,
+                    0,
+                    0,
+                    100,
+                    100,
+                    0,
+                    1)
+                {
+                    Children =
+                    [
+                        new DjvuTextZone(
+                            6,
+                            120,
+                            10,
+                            5,
+                            8,
+                            0,
+                            1)
+                    ]
+                }
+            };
+        var outsideOverlay =
+            DjvuTextOverlayBuilder.Build(
+                outsideTextPage,
+                pointsPerPixel: 1);
+        Assert(
+            outsideOverlay.Single() is
+                {
+                    Text: "A",
+                    XPoints: 120,
+                    YPoints: 82,
+                    WidthPoints: 5,
+                    FontSizePoints: 8
+                },
+            "DjVu text overlay must preserve nonempty OCR zones outside INFO bounds instead of clamping or rejecting them.");
+
+        var outsideInteractiveRejected = false;
+        try
+        {
+            _ = DjvuPageGeometryTransformer
+                .TransformRectangle(
+                    outsideTextPage,
+                    120,
+                    10,
+                    5,
+                    8,
+                    pointsPerPixel: 1);
+        }
+        catch (InvalidDataException)
+        {
+            outsideInteractiveRejected = true;
+        }
+        Assert(
+            outsideInteractiveRejected,
+            "DjVu interactive rectangles must remain page-bounded even when OCR text zones may extend outside INFO bounds.");
 
         var splitUtf8Rejected = false;
         try
