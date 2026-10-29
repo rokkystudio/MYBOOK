@@ -163,8 +163,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Инициализирует WebView2 и отключает встроенные браузерные элементы,
-    /// не относящиеся к режиму чтения документа.
+    /// Инициализирует WebView2, отключает browser UI, не относящийся к чтению,
+    /// и оставляет browser accelerator keys включёнными для Ctrl+F поиска
+    /// по flow text и fixed-page selectable text overlays.
     /// </summary>
     private async Task EnsureReaderAsync()
     {
@@ -180,6 +181,7 @@ public partial class MainWindow : Window
 
         core.Settings.AreDefaultContextMenusEnabled = false;
         core.Settings.AreDevToolsEnabled = false;
+        core.Settings.AreBrowserAcceleratorKeysEnabled = true;
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsZoomControlEnabled = true;
 
@@ -779,8 +781,8 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Создаёт лёгкое структурное превью фиксированной страницы:
-    /// ограниченное число текстовых штрихов и блоков изображений
-    /// в исходной геометрии страницы.
+    /// ограниченное число видимых текстовых штрихов и блоков изображений
+    /// в исходной геометрии страницы; прозрачный selectable overlay не рисуется.
     /// </summary>
     private static void PopulatePagePreview(
         Canvas canvas,
@@ -822,7 +824,9 @@ public partial class MainWindow : Window
             canvas.Children.Add(rectangle);
         }
 
-        foreach (var run in page.TextRuns.Take(96))
+        foreach (var run in page.TextRuns
+                     .Where(run => !run.SelectableOverlay)
+                     .Take(96))
         {
             if (string.IsNullOrWhiteSpace(run.Text))
             {
@@ -1126,7 +1130,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Переключает полноэкранный режим чтения по F11, F, Ctrl+F или Enter.
+    /// Переключает полноэкранный режим чтения по F11, plain F или Enter.
+    /// Комбинации с Ctrl/Alt/Shift не перехватываются, поэтому Ctrl+F
+    /// передаётся WebView2 для встроенного поиска по document text layer.
     /// </summary>
     private void MainWindow_OnPreviewKeyDown(
         object sender,
@@ -1135,12 +1141,16 @@ public partial class MainWindow : Window
         var key = e.Key == System.Windows.Input.Key.System
             ? e.SystemKey
             : e.Key;
+        var modifiers =
+            System.Windows.Input.Keyboard.Modifiers;
 
         var toggleFullScreen =
             key == System.Windows.Input.Key.F11 ||
-            key == System.Windows.Input.Key.F ||
-            key == System.Windows.Input.Key.Enter ||
-            key == System.Windows.Input.Key.Return;
+            (modifiers ==
+             System.Windows.Input.ModifierKeys.None &&
+             (key == System.Windows.Input.Key.F ||
+              key == System.Windows.Input.Key.Enter ||
+              key == System.Windows.Input.Key.Return));
 
         if (!toggleFullScreen)
         {

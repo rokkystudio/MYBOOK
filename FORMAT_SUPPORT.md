@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.71
+Версия профиля: 1.5.72
 
 ## Ready for use
 
@@ -18,7 +18,7 @@ MYBOOK считает готовыми к обычному пользовате�
 | `.doc` | Word 97–2003 Binary/CFB reading profile и RTF-файлы с расширением .doc; текст, стили, списки, таблицы, sections, notes, headers/footers, fields, images и поддерживаемый OfficeArt. |
 | `.docx` | Word OpenXML flow document: styles, lists, tables, images, relationships, hyperlinks, bookmarks и section metadata. |
 | `.pdf` | PDF fixed-page reading profile: classic/xref streams, incremental updates, object streams, text/fonts, paths, images, links/outlines, encryption profiles и поддерживаемые stream filters. |
-| `.djvu` | DjVu fixed-page reading profile: bundled/single-page containers, JB2/Smmr masks, IW44/JPEG backgrounds and foregrounds, FGbz palettes, compound composition, INFO rotation, NAVM outlines и ANTa/ANTz maparea links. |
+| `.djvu` | DjVu fixed-page reading profile: bundled/single-page containers, JB2/Smmr masks, IW44/JPEG backgrounds and foregrounds, FGbz palettes, compound composition, INFO rotation, NAVM outlines, ANTa/ANTz maparea links и selectable TXTa/TXTz text-zone overlay. |
 
 “Ready for use” означает, что зарегистрированный формат проходит единый путь
 от открытия пользовательского файла до модели и итогового рендера, имеет
@@ -28,7 +28,7 @@ MYBOOK считает готовыми к обычному пользовате�
 
 ## DjVu fixed-page profile
 
-`.djvu` зарегистрирован в `SupportedFormatRegistry` как reader-backed fixed-page format. `DjvuDocumentReader` проходит общий `DocumentInputGuard`, разбирает container, рендерит каждую поддерживаемую страницу в opaque RGB PNG и создаёт `DocumentFixedPage` с page geometry, text metadata, links и outline navigation. Общий HTML/SVG renderer, WebView2 viewport scaling, боковая плёнка страниц, переходы `page-N`, recent documents и file associations работают через существующую инфраструктуру MYBOOK.
+`.djvu` зарегистрирован в `SupportedFormatRegistry` как reader-backed fixed-page format. `DjvuDocumentReader` проходит общий `DocumentInputGuard`, разбирает container, рендерит каждую поддерживаемую страницу в opaque RGB PNG и создаёт `DocumentFixedPage` с page geometry, searchable/selectable text-zone overlay, links и outline navigation. Общий HTML/SVG renderer, WebView2 viewport scaling, боковая плёнка страниц, переходы `page-N`, Ctrl+F, recent documents и file associations работают через существующую инфраструктуру MYBOOK.
 
 `DjvuContainerReader.Inspect` проверяет `AT&T`, `FORM:DJVU`/`FORM:DJVM`, big-endian chunk lengths, odd-byte padding, nesting/resource limits и обязательный первый `INFO` chunk страницы. Поддерживаются legacy 5-byte `INFO` (width/height/minor version) и current 10-byte `INFO` (major/minor version, raw DPI, gamma, rotation flags). Legacy metadata не дополняется синтетическими DPI/gamma/rotation значениями; fixed-page layout при отсутствии DPI использует один layout point на raster pixel, не меняя source metadata.
 
@@ -47,11 +47,11 @@ BZZ `NAVM` разбирается в bounded recursive outline. Internal page re
 
 `ANTa` и BZZ-compressed `ANTz` проходят strict UTF-8 validation. Поддерживаемые `maparea` shapes — `rect`, `oval` и `poly`; reader сохраняет точную bottom-left pixel geometry и переводит её в top-left fixed-page coordinates. SVG renderer создаёт соответствующие clickable `rect`/`ellipse`/`polygon` regions, внутренние DjVu page targets и безопасные внешние URL. Остальные annotation commands/shapes не аппроксимируются.
 
-`TXTa` и BZZ-compressed `TXTz` извлекают strict UTF-8 page text. Version-1 text-zone tree разбирает PAGE/COLUMN/REGION/PARAGRAPH/LINE/WORD/CHARACTER geometry и UTF-8 byte ranges. Полный page text сохраняется в `DocumentFixedPage.Text`; отдельная searchable/selectable overlay-модель по text zones не входит в текущий профиль.
+`TXTa` и BZZ-compressed `TXTz` извлекают strict UTF-8 page text. Version-1 text-zone tree разбирает PAGE/COLUMN/REGION/PARAGRAPH/LINE/WORD/CHARACTER geometry и UTF-8 byte ranges. `DjvuTextOverlayBuilder` берёт terminal zones без дублирования parent ranges, сохраняет исходные UTF-8 gaps между соседними zones, строго отклоняет split-codepoint/overlap boundaries и создаёт transparent `DocumentFixedTextRun` overlay. Общий SVG renderer использует точную zone width через `textLength/spacingAndGlyphs`, top-aligned geometry, INFO rotation и `user-select:text`; последовательность run text точно восстанавливает `DocumentFixedPage.Text`. Ctrl+F не перехватывается fullscreen hotkey и передаётся WebView2 с включёнными browser accelerator keys.
 
 Resource limits ограничивают file/chunk/nesting counts, decoded BZZ/IW44/JB2 raster sizes, shapes/blits/comments, page count и суммарный PNG payload fixed-page model. Неизвестные/конфликтующие visual layer families, striped `Smmr`, external indirect components и unsupported annotation profiles завершаются явной ошибкой вместо частичного рендера.
 
-Regression покрывает container/DIRM/NAVM/text/annotation parsing, JPEG/IW44/JB2/Smmr decoding, FGbz, compound composition, reader → `DocumentModel` → PNG → HTML/SVG и malformed input. Реальный validation corpus содержит 7 корректных DjVu файлов / 147 страниц и охватывает FG44, FGbz compound, JB2-only, shared/local `Djbz` и NAVM. Четыре legacy fixtures с некорректным UTF-8 внутри `TXTz` завершаются строгой `InvalidDataException`, без producer-specific byte fallback.
+Regression покрывает container/DIRM/NAVM/text/annotation parsing, JPEG/IW44/JB2/Smmr decoding, FGbz, compound composition, reader → `DocumentModel` → PNG/text overlay → HTML/SVG, rotation geometry, UTF-8 zone boundaries и malformed input. Реальный validation corpus содержит 7 корректных DjVu файлов / 147 страниц; 102 text-bearing pages создают 38 859 selectable runs с точным восстановлением page text и geometry внутри page bounds. Corpus также охватывает FG44, FGbz compound, JB2-only, shared/local `Djbz` и NAVM. Четыре legacy fixtures с некорректным UTF-8 внутри `TXTz` завершаются строгой `InvalidDataException`, без producer-specific byte fallback.
 
 ## Readiness gates
 

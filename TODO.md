@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.5.71
+Текущая версия: 1.5.72
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
@@ -56,7 +56,7 @@
 - [x] IFF/DjVu container: `DjvuContainerReader.Inspect` проверяет AT&T signature, big-endian chunk sizes, sibling odd-byte padding, nesting и bounded scanning; последний нечётный child может завершаться ровно на границе FORM без внутреннего pad, как в реальных DjVu. `.djvu` зарегистрирован через `DjvuDocumentReader` в `SupportedFormatRegistry`.
 - [x] `FORM:DJVU` / `FORM:DJVM`: структурный обход вложенных страниц; косвенные DIRM references пока не разрешаются.
 - [ ] Directory/navigation: `DIRM` v1 поддерживает bundled/indirect, count и абсолютные offsets; BZZ metadata распаковывается и разбирается (24-bit sizes, roles, IDs, optional names/titles). Indirect size=0 принимается по спецификации; bundled size обязан быть ненулевым, совпадать с реальным FORM, а role — с FORM:DJVU/DJVI/THUM. BZZ `NAVM` outline разбирается в рекурсивное дерево titles/URLs с bounded depth/count/UTF-8 validation и проверен на реальном DjVu3Spec; внутренние targets используют DjVu ID/relative/TITLE/page/NAME resolution order и выводятся в общую outline-навигацию MYBOOK, external HTTP/HTTPS/mailto URLs остаются внешними. Осталось разрешение внешних indirect DJVM компонентов.
-- [ ] Text layer: plain `TXTa` UTF-8 payload уже извлекается по 24-bit length с привязкой к `FORM:DJVU` и строгой диагностикой некорректной длины, UTF-8 и дублирования; BZZ-compressed `TXTz` декодируется через vendored MIT DjvuNet BS/ZP с bounded output и UTF-8 validation, zone tree версии 1 разбирается с иерархией координат и UTF-8 byte offsets (отдельный regression). Остались преобразование DjVu text zones в reader text/search model и UI-интеграция.
+- [x] Text layer: plain `TXTa` и BZZ-compressed `TXTz` дают strict UTF-8 page text и version-1 zone tree. `DjvuTextOverlayBuilder` преобразует terminal zones в прозрачные selectable `DocumentFixedTextRun`, сохраняет исходные byte-range gaps, проверяет UTF-8 boundaries/overlaps, применяет INFO rotation через общий geometry transformer и точно восстанавливает `DocumentFixedPage.Text`. SVG использует `textLength/spacingAndGlyphs`, top alignment и `user-select:text`; реальный corpus даёт 38 859 runs на 102 text-bearing pages.
 - [x] INFO chunks: обязательная первая позиция в `FORM:DJVU`; поддержаны legacy 5-byte INFO (geometry + minor version, отсутствующая extended metadata не синтезируется) и current 10-byte INFO (major/minor, raw DPI, gamma, rotation flags). `DisplayWidth/DisplayHeight` учитывают 90/270°, JPEG-only/Smmr-only renderer paths применяют initial page rotation. Проверено synthetic, DjVu3Spec и реальным DjVu 1998 version 17.
 - [x] JB2 decoder: page `Sjbz` and local/shared `Djbz` dictionaries now decode through a minimal vendored MIT DjvuNet JB2 core into full-resolution Gray8 masks. Supported dictionary paths include standalone `Sjbz`, local `Djbz+Sjbz`, and bundled `INCL → DIRM → DJVI/Djbz → Sjbz`; ambiguous local+shared dictionaries are rejected. Shape/blit/comment/bitmap allocations are bounded. Strict JB2-only pages render to BGRA32 with INFO rotation. Real 1998/2000/DjVu3Spec masks are SHA-256 regression-locked.
 - [x] IW44 decoder: `BG44`/`FG44` progressive streams are indexed and structurally validated (serial 0..N, slices, version/color mode, first-chunk geometry, chrominance delay, subsampling 1..12). `DjvuIw44PixelDecoder` decodes validated progressive coefficients through the minimal vendored MIT DjvuNet wavelet core into native-resolution BGRA32 with top-left row normalization. BG44 uses DjVu 4-bit linear full-page scaling; FG44 uses the integral nearest-neighbor foreground expansion required by the three-layer stencil model. Real 4-chunk BG44 output and real BG44 + Sjbz + FG44 pages from both 1998 compression fixtures are SHA-256 regression-locked. Additional grayscale/rare IW44 corpus remains useful for compatibility expansion but is not required by the implemented decoder path.
@@ -66,7 +66,7 @@
 
 ## Интерфейс
 
-- [ ] Поиск по документу.
+- [x] Поиск по документу: Ctrl+F не перехватывается fullscreen hotkey; WebView2 browser accelerator keys включены, flow documents и fixed-page selectable text overlays доступны встроенному browser find.
 - [ ] Настройка шрифта, размера, ширины текста и межстрочного интервала.
 - [ ] Последняя позиция чтения для каждого документа.
 - [ ] Закладки.

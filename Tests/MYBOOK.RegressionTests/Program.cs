@@ -13364,6 +13364,42 @@ internal static class Program
             Chunk("FORM", Encoding.ASCII.GetBytes(type)
                 .Concat(chunks.SelectMany(chunk => chunk)).ToArray());
 
+        static byte[] Zone(
+            int kind,
+            int x,
+            int y,
+            int zoneWidth,
+            int zoneHeight,
+            int start,
+            int length,
+            int children)
+        {
+            var value = new byte[17];
+            value[0] = checked((byte)kind);
+
+            foreach (var (offset, number) in new[]
+            {
+                (1, x),
+                (3, y),
+                (5, zoneWidth),
+                (7, zoneHeight),
+                (9, start)
+            })
+            {
+                BinaryPrimitives.WriteUInt16BigEndian(
+                    value.AsSpan(offset, 2),
+                    checked((ushort)(number + 0x8000)));
+            }
+
+            value[11] = checked((byte)(length >> 16));
+            value[12] = checked((byte)(length >> 8));
+            value[13] = checked((byte)length);
+            value[14] = checked((byte)(children >> 16));
+            value[15] = checked((byte)(children >> 8));
+            value[16] = checked((byte)children);
+            return value;
+        }
+
         static byte[] EncodeJpeg(
             int imageWidth,
             int imageHeight,
@@ -13493,13 +13529,56 @@ internal static class Program
             "(maparea \"#+0\" \"Self rectangle\" (rect 1 2 5 4)) " +
             "(maparea \"https://example.org/a\" \"External oval\" (oval 7 1 4 3)) " +
             "(maparea \"#+0\" \"Self polygon\" (poly 1 1 4 1 2 4))");
+
+        var pageText = Encoding.UTF8.GetBytes(
+            "Привет DjVu");
+        var textZones = new byte[] { 1 }
+            .Concat(Zone(
+                1,
+                0,
+                0,
+                width,
+                height,
+                0,
+                pageText.Length,
+                2))
+            .Concat(Zone(
+                6,
+                1,
+                8,
+                7,
+                3,
+                0,
+                12,
+                0))
+            .Concat(Zone(
+                6,
+                1,
+                0,
+                6,
+                3,
+                1,
+                4,
+                0))
+            .ToArray();
+        var textPayload = new byte[]
+        {
+            checked((byte)(pageText.Length >> 16)),
+            checked((byte)(pageText.Length >> 8)),
+            checked((byte)pageText.Length)
+        }
+            .Concat(pageText)
+            .Concat(textZones)
+            .ToArray();
+
         var root = Form(
             "DJVU",
             Chunk("INFO", info),
             Chunk("Smmr", smmr),
             Chunk("BGjp", backgroundJpeg),
             Chunk("FGjp", foregroundJpeg),
-            Chunk("ANTa", annotation));
+            Chunk("ANTa", annotation),
+            Chunk("TXTa", textPayload));
         var path = Path.Combine(
             directory, "djvu-compound-alternatives.djvu");
         File.WriteAllBytes(
@@ -13656,6 +13735,25 @@ internal static class Program
                 new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }),
             "DjVu DocumentModel reader must produce one full-page PNG fixed page.");
 
+        Assert(fixedPage.Text == "Привет DjVu" &&
+            fixedPage.TextRuns.Count == 2 &&
+            fixedPage.TextRuns.All(run =>
+                run.SelectableOverlay &&
+                run.TopAligned &&
+                run.WidthPoints > 0) &&
+            fixedPage.TextRuns[0].Text == "Привет " &&
+            fixedPage.TextRuns[0].XPoints == 1 &&
+            fixedPage.TextRuns[0].YPoints == 8 &&
+            fixedPage.TextRuns[0].WidthPoints == 7 &&
+            fixedPage.TextRuns[0].FontSizePoints == 3 &&
+            fixedPage.TextRuns[1].Text == "DjVu" &&
+            fixedPage.TextRuns[1].XPoints == 9 &&
+            fixedPage.TextRuns[1].YPoints == 8 &&
+            string.Concat(
+                fixedPage.TextRuns.Select(run => run.Text)) ==
+                fixedPage.Text,
+            "DjVu reader must preserve UTF-8 text and exact leaf-zone overlay geometry.");
+
         using (var pngStream = new MemoryStream(
                    fixedPage.ImageRuns[0].Data,
                    writable: false))
@@ -13728,6 +13826,26 @@ internal static class Program
             html,
             "https://example.org/a",
             "DjVu external maparea HTML target");
+        AssertContains(
+            html,
+            "class=\"fixed-page-text-overlay\"",
+            "DjVu selectable text overlay CSS class");
+        AssertContains(
+            html,
+            "textLength=\"7\" lengthAdjust=\"spacingAndGlyphs\"",
+            "DjVu text overlay exact zone width");
+        AssertContains(
+            html,
+            "dominant-baseline=\"text-before-edge\"",
+            "DjVu text overlay top alignment");
+        AssertContains(
+            html,
+            "user-select: text",
+            "DjVu text overlay selection CSS");
+        AssertContains(
+            html,
+            "Привет ",
+            "DjVu text overlay Unicode content");
     }
 
     private static void TestDjvuJpegLayers(string directory)
@@ -14272,6 +14390,108 @@ internal static class Program
             root.Children[1].Y == 458 &&
             root.Children[1].TextStart == 6,
             "DjVu TXTa word zones must reconstruct parent/sibling delta coordinates and UTF-8 offsets.");
+
+        var clockwiseOverlay = DjvuTextOverlayBuilder.Build(
+            new DjvuPageInfo(640, 480, 300)
+            {
+                Rotation = DjvuPageRotation.Clockwise,
+                Text = "Hello World",
+                TextZone = root
+            },
+            pointsPerPixel: 1);
+        Assert(clockwiseOverlay.Count == 2 &&
+            clockwiseOverlay[0].Text == "Hello " &&
+            clockwiseOverlay[0].XPoints == 458 &&
+            clockwiseOverlay[0].YPoints == 20 &&
+            clockwiseOverlay[0].WidthPoints == 12 &&
+            clockwiseOverlay[0].FontSizePoints == 40 &&
+            clockwiseOverlay[1].Text == "World" &&
+            clockwiseOverlay[1].XPoints == 458 &&
+            clockwiseOverlay[1].YPoints == 75 &&
+            clockwiseOverlay[1].WidthPoints == 12 &&
+            clockwiseOverlay[1].FontSizePoints == 50,
+            "DjVu selectable text overlay must rotate leaf-zone geometry with the page surface.");
+
+        var rightSideUp = DjvuPageGeometryTransformer.TransformRectangle(
+            new DjvuPageInfo(100, 200, 300),
+            10,
+            20,
+            30,
+            40,
+            pointsPerPixel: 1);
+        var upsideDown = DjvuPageGeometryTransformer.TransformRectangle(
+            new DjvuPageInfo(100, 200, 300)
+            {
+                Rotation = DjvuPageRotation.UpsideDown
+            },
+            10,
+            20,
+            30,
+            40,
+            pointsPerPixel: 1);
+        var counterClockwise = DjvuPageGeometryTransformer.TransformRectangle(
+            new DjvuPageInfo(100, 200, 300)
+            {
+                Rotation = DjvuPageRotation.CounterClockwise
+            },
+            10,
+            20,
+            30,
+            40,
+            pointsPerPixel: 1);
+        Assert(rightSideUp ==
+                (10d, 140d, 30d, 40d) &&
+            upsideDown ==
+                (60d, 20d, 30d, 40d) &&
+            counterClockwise ==
+                (140d, 60d, 40d, 30d),
+            "DjVu page geometry transformer must preserve exact rectangle bounds for all fixed-page rotations.");
+
+        var splitUtf8Rejected = false;
+        try
+        {
+            _ = DjvuTextOverlayBuilder.Build(
+                new DjvuPageInfo(20, 20, 300)
+                {
+                    Text = "éx",
+                    TextZone = new DjvuTextZone(
+                        1,
+                        0,
+                        0,
+                        20,
+                        20,
+                        0,
+                        3)
+                    {
+                        Children =
+                        [
+                            new DjvuTextZone(
+                                6,
+                                0,
+                                0,
+                                5,
+                                5,
+                                0,
+                                1),
+                            new DjvuTextZone(
+                                6,
+                                6,
+                                0,
+                                5,
+                                5,
+                                1,
+                                2)
+                        ]
+                    }
+                },
+                pointsPerPixel: 1);
+        }
+        catch (InvalidDataException)
+        {
+            splitUtf8Rejected = true;
+        }
+        Assert(splitUtf8Rejected,
+            "DjVu text overlay must reject zone boundaries that split a UTF-8 sequence.");
 
         foreach (var (name, payload) in new[]
         {
