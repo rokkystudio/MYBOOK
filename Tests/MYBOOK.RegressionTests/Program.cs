@@ -65,6 +65,7 @@ internal static class Program
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu shared JB2 links", () => TestDjvuSharedImageLinks(temporaryDirectory)),
             ("DjVu JPEG layers", () => TestDjvuJpegLayers(temporaryDirectory)),
+            ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
@@ -12543,6 +12544,131 @@ internal static class Program
             catch (InvalidDataException) { rejected = true; }
             Assert(rejected, $"DjVu ANTa malformed rect {name} must be rejected.");
         }
+    }
+
+    private static void TestDjvuSmmrMask(string directory)
+    {
+        const int width = 16;
+        const int height = 4;
+        const int stride = 2;
+        byte[] packed =
+        [
+            0b10101010, 0b01010101,
+            0b11110000, 0b00001111,
+            0b11001100, 0b00110011,
+            0b00000000, 0b11111111
+        ];
+        var source = BitmapSource.Create(
+            width, height, 96, 96, PixelFormats.BlackWhite, null, packed, stride);
+        var encoder = new TiffBitmapEncoder { Compression = TiffCompressOption.Ccitt4 };
+        encoder.Frames.Add(BitmapFrame.Create(source));
+        byte[] tiff;
+        using (var memory = new MemoryStream())
+        {
+            encoder.Save(memory);
+            tiff = memory.ToArray();
+        }
+
+        var ifdOffset = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(
+            tiff.AsSpan(4, 4)));
+        var entryCount = BinaryPrimitives.ReadUInt16LittleEndian(
+            tiff.AsSpan(ifdOffset, 2));
+        uint stripOffset = 0;
+        uint stripByteCount = 0;
+        ushort photometric = 0;
+        for (var index = 0; index < entryCount; index++)
+        {
+            var entryOffset = ifdOffset + 2 + index * 12;
+            var tag = BinaryPrimitives.ReadUInt16LittleEndian(
+                tiff.AsSpan(entryOffset, 2));
+            var type = BinaryPrimitives.ReadUInt16LittleEndian(
+                tiff.AsSpan(entryOffset + 2, 2));
+            var count = BinaryPrimitives.ReadUInt32LittleEndian(
+                tiff.AsSpan(entryOffset + 4, 4));
+            if (count != 1) continue;
+            var value = type == 3
+                ? BinaryPrimitives.ReadUInt16LittleEndian(
+                    tiff.AsSpan(entryOffset + 8, 2))
+                : BinaryPrimitives.ReadUInt32LittleEndian(
+                    tiff.AsSpan(entryOffset + 8, 4));
+            if (tag == 262) photometric = checked((ushort)value);
+            else if (tag == 273) stripOffset = value;
+            else if (tag == 279) stripByteCount = value;
+        }
+        Assert(stripOffset > 0 && stripByteCount > 0 &&
+            stripOffset + stripByteCount <= tiff.Length,
+            "DjVu Smmr CCITT test strip is valid.");
+
+        var mmr = tiff.AsSpan(
+            checked((int)stripOffset), checked((int)stripByteCount)).ToArray();
+        var smmr = new byte[8 + mmr.Length];
+        smmr[0] = (byte)'M';
+        smmr[1] = (byte)'M';
+        smmr[2] = (byte)'R';
+        smmr[3] = photometric == 0 ? (byte)0 : (byte)1;
+        BinaryPrimitives.WriteUInt16BigEndian(smmr.AsSpan(4, 2), width);
+        BinaryPrimitives.WriteUInt16BigEndian(smmr.AsSpan(6, 2), height);
+        mmr.CopyTo(smmr, 8);
+
+        static byte[] Chunk(string id, byte[] payload)
+        {
+            var bytes = new byte[8 + payload.Length + (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id).CopyTo(bytes, 0);
+            BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(4, 4), (uint)payload.Length);
+            payload.CopyTo(bytes, 8);
+            return bytes;
+        }
+        static byte[] Form(string type, params byte[][] chunks) =>
+            Chunk("FORM", Encoding.ASCII.GetBytes(type)
+                .Concat(chunks.SelectMany(chunk => chunk)).ToArray());
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(0, 2), width);
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(2, 2), height);
+        var root = Form("DJVU", Chunk("INFO", info), Chunk("Smmr", smmr));
+        var path = Path.Combine(directory, "djvu-smmr.djvu");
+        File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(root).ToArray());
+
+        var layer = DjvuContainerReader.Inspect(path).Pages.Single().ImageLayers.Single();
+        var decoded = DjvuSmmrDecoder.Decode(path, layer);
+
+        BitmapSource reference = source;
+        if (reference.Format != PixelFormats.Gray8)
+            reference = new FormatConvertedBitmap(reference, PixelFormats.Gray8, null, 0);
+        var expected = new byte[width * height];
+        reference.CopyPixels(expected, width, 0);
+
+        Assert(decoded.Width == width && decoded.Height == height &&
+            decoded.Gray8.SequenceEqual(expected),
+            "DjVu regular Smmr must decode through CCITT Group 4 exactly.");
+
+        var stripedRejected = false;
+        try
+        {
+            var striped = (byte[])smmr.Clone();
+            striped[3] |= 0x02;
+            var stripedRoot = Form("DJVU", Chunk("INFO", info), Chunk("Smmr", striped));
+            File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(stripedRoot).ToArray());
+            var stripedLayer = DjvuContainerReader.Inspect(path).Pages.Single().ImageLayers.Single();
+            _ = DjvuSmmrDecoder.Decode(path, stripedLayer);
+        }
+        catch (NotSupportedException) { stripedRejected = true; }
+        Assert(stripedRejected, "DjVu striped Smmr must be explicitly unsupported.");
+
+        var badMagicRejected = false;
+        try
+        {
+            File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(root).ToArray());
+            var bad = DjvuContainerReader.Inspect(path).Pages.Single().ImageLayers.Single();
+            var payload = bad.ReadPayload(path);
+            payload[0] = (byte)'X';
+            var badRoot = Form("DJVU", Chunk("INFO", info), Chunk("Smmr", payload));
+            File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(badRoot).ToArray());
+            var badLayer = DjvuContainerReader.Inspect(path).Pages.Single().ImageLayers.Single();
+            _ = DjvuSmmrDecoder.Decode(path, badLayer);
+        }
+        catch (InvalidDataException) { badMagicRejected = true; }
+        Assert(badMagicRejected, "DjVu Smmr invalid header magic must be rejected.");
     }
 
     private static void TestDjvuJpegLayers(string directory)
