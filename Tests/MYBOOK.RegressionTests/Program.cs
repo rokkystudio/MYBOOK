@@ -72,6 +72,7 @@ internal static class Program
             ("DjVu JB2 pixels", TestDjvuJb2Pixels),
             ("DjVu compound palette", TestDjvuCompoundPalette),
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
+            ("DjVu compound alternatives", () => TestDjvuCompoundAlternatives(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
@@ -13134,19 +13135,34 @@ internal static class Program
                 "DjVu compound scaling must support non-divisible page dimensions.");
         }
 
-        var fg44Path = Path.Combine(specs, "1998_compression.djvu");
-        if (File.Exists(fg44Path))
+        foreach (var (fileName, expectedHash) in new[]
         {
+            ("1998_compression.djvu",
+                "D45D720DCDB1B933CA59CFDAC3CF365EAAF8B5E711F4E49C4D378962BB62A584"),
+            ("1998_lossy_masked.djvu",
+                "285DE5114E3D3666BD438172F84586306C6503DBF1045E9EB2BC86FDEE720E3B")
+        })
+        {
+            var fg44Path = Path.Combine(specs, fileName);
+            if (!File.Exists(fg44Path))
+                continue;
+
             var document = DjvuContainerReader.Inspect(fg44Path);
-            var rejected = false;
-            try
-            {
-                _ = DjvuCompoundPageRenderer.Render(
-                    fg44Path, document.Pages[0]);
-            }
-            catch (NotSupportedException) { rejected = true; }
-            Assert(rejected,
-                "DjVu palette compositor must reject unsupported FG44 foreground layers.");
+            var page = document.Pages[0];
+            Assert(page.BackgroundIw44 is
+                { Width: 852, Height: 1100, SubsampleFactor: 3 } &&
+                page.ForegroundIw44 is
+                { Width: 213, Height: 275, SubsampleFactor: 12 },
+                "Real DjVu three-layer BG44/FG44 reduction metadata.");
+
+            var rendered = DjvuCompoundPageRenderer.Render(
+                fg44Path, page);
+            Assert(rendered.Width == 2556 &&
+                rendered.Height == 3300 &&
+                rendered.Stride == 10224 &&
+                Convert.ToHexString(SHA256.HashData(rendered.Bgra32)) ==
+                expectedHash,
+                "Real BG44 + Sjbz + FG44 compound page must remain byte-stable.");
         }
     }
 
@@ -13322,6 +13338,302 @@ internal static class Program
         Assert(badMagicRejected, "DjVu Smmr invalid header magic must be rejected.");
     }
 
+    private static void TestDjvuCompoundAlternatives(string directory)
+    {
+        const int width = 17;
+        const int height = 13;
+        const int reduction = 3;
+        const int sourceWidth = 6;
+        const int sourceHeight = 5;
+
+        static byte[] Chunk(string id, byte[] payload)
+        {
+            var bytes = new byte[8 + payload.Length + (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id).CopyTo(bytes, 0);
+            BinaryPrimitives.WriteUInt32BigEndian(
+                bytes.AsSpan(4, 4), (uint)payload.Length);
+            payload.CopyTo(bytes, 8);
+            return bytes;
+        }
+
+        static byte[] Form(string type, params byte[][] chunks) =>
+            Chunk("FORM", Encoding.ASCII.GetBytes(type)
+                .Concat(chunks.SelectMany(chunk => chunk)).ToArray());
+
+        static byte[] EncodeJpeg(
+            int imageWidth,
+            int imageHeight,
+            Func<int, int, (byte B, byte G, byte R)> getColor)
+        {
+            var stride = checked(imageWidth * 4);
+            var pixels = new byte[checked(stride * imageHeight)];
+            for (var y = 0; y < imageHeight; y++)
+            {
+                for (var x = 0; x < imageWidth; x++)
+                {
+                    var color = getColor(x, y);
+                    var offset = y * stride + x * 4;
+                    pixels[offset] = color.B;
+                    pixels[offset + 1] = color.G;
+                    pixels[offset + 2] = color.R;
+                    pixels[offset + 3] = 255;
+                }
+            }
+
+            var bitmap = BitmapSource.Create(
+                imageWidth, imageHeight, 96, 96,
+                PixelFormats.Bgra32, null, pixels, stride);
+            var encoder = new JpegBitmapEncoder { QualityLevel = 100 };
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var output = new MemoryStream();
+            encoder.Save(output);
+            return output.ToArray();
+        }
+
+        var packedStride = (width + 7) / 8;
+        var packed = new byte[packedStride * height];
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                if ((x * 3 + y * 5) % 7 >= 3)
+                    continue;
+                packed[y * packedStride + (x >> 3)] |=
+                    (byte)(0x80 >> (x & 7));
+            }
+        }
+
+        var maskSource = BitmapSource.Create(
+            width, height, 96, 96,
+            PixelFormats.BlackWhite, null, packed, packedStride);
+        var tiffEncoder = new TiffBitmapEncoder
+        {
+            Compression = TiffCompressOption.Ccitt4
+        };
+        tiffEncoder.Frames.Add(BitmapFrame.Create(maskSource));
+        byte[] tiff;
+        using (var output = new MemoryStream())
+        {
+            tiffEncoder.Save(output);
+            tiff = output.ToArray();
+        }
+
+        var ifdOffset = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(
+            tiff.AsSpan(4, 4)));
+        var entryCount = BinaryPrimitives.ReadUInt16LittleEndian(
+            tiff.AsSpan(ifdOffset, 2));
+        uint stripOffset = 0;
+        uint stripByteCount = 0;
+        ushort photometric = 0;
+        for (var index = 0; index < entryCount; index++)
+        {
+            var entryOffset = ifdOffset + 2 + index * 12;
+            var tag = BinaryPrimitives.ReadUInt16LittleEndian(
+                tiff.AsSpan(entryOffset, 2));
+            var type = BinaryPrimitives.ReadUInt16LittleEndian(
+                tiff.AsSpan(entryOffset + 2, 2));
+            var count = BinaryPrimitives.ReadUInt32LittleEndian(
+                tiff.AsSpan(entryOffset + 4, 4));
+            if (count != 1)
+                continue;
+
+            var value = type == 3
+                ? BinaryPrimitives.ReadUInt16LittleEndian(
+                    tiff.AsSpan(entryOffset + 8, 2))
+                : BinaryPrimitives.ReadUInt32LittleEndian(
+                    tiff.AsSpan(entryOffset + 8, 4));
+            if (tag == 262)
+                photometric = checked((ushort)value);
+            else if (tag == 273)
+                stripOffset = value;
+            else if (tag == 279)
+                stripByteCount = value;
+        }
+
+        Assert(stripOffset > 0 && stripByteCount > 0 &&
+            stripOffset + stripByteCount <= tiff.Length,
+            "DjVu compound Smmr CCITT source strip is valid.");
+
+        var mmr = tiff.AsSpan(
+            checked((int)stripOffset),
+            checked((int)stripByteCount)).ToArray();
+        var smmr = new byte[8 + mmr.Length];
+        smmr[0] = (byte)'M';
+        smmr[1] = (byte)'M';
+        smmr[2] = (byte)'R';
+        smmr[3] = photometric == 0 ? (byte)0 : (byte)1;
+        BinaryPrimitives.WriteUInt16BigEndian(smmr.AsSpan(4, 2), width);
+        BinaryPrimitives.WriteUInt16BigEndian(smmr.AsSpan(6, 2), height);
+        mmr.CopyTo(smmr, 8);
+
+        var backgroundJpeg = EncodeJpeg(
+            sourceWidth, sourceHeight,
+            (x, y) => (
+                checked((byte)(20 + x * 23)),
+                checked((byte)(30 + y * 31)),
+                checked((byte)(40 + x * 17 + y * 11))));
+        var foregroundJpeg = EncodeJpeg(
+            sourceWidth, sourceHeight,
+            (x, y) => (
+                checked((byte)(220 - y * 19)),
+                checked((byte)(180 - x * 21)),
+                checked((byte)(70 + x * 13 + y * 7))));
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(0, 2), width);
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(2, 2), height);
+
+        var root = Form(
+            "DJVU",
+            Chunk("INFO", info),
+            Chunk("Smmr", smmr),
+            Chunk("BGjp", backgroundJpeg),
+            Chunk("FGjp", foregroundJpeg));
+        var path = Path.Combine(
+            directory, "djvu-compound-alternatives.djvu");
+        File.WriteAllBytes(
+            path,
+            Encoding.ASCII.GetBytes("AT&T").Concat(root).ToArray());
+
+        var page = DjvuContainerReader.Inspect(path).Pages.Single();
+        Assert(page.ImageLayers.Select(layer => layer.Kind)
+            .SequenceEqual(new[] { "Smmr", "BGjp", "FGjp" }),
+            "DjVu compound JPEG alternatives must preserve layer order.");
+
+        var maskLayer = page.ImageLayers.Single(
+            layer => layer.Kind == "Smmr");
+        var backgroundLayer = page.ImageLayers.Single(
+            layer => layer.Kind == "BGjp");
+        var foregroundLayer = page.ImageLayers.Single(
+            layer => layer.Kind == "FGjp");
+        var mask = DjvuSmmrDecoder.Decode(path, maskLayer);
+        var background = DjvuJpegLayerDecoder.Decode(
+            path, backgroundLayer);
+        var foreground = DjvuJpegLayerDecoder.Decode(
+            path, foregroundLayer);
+
+        Assert(DjvuPixelScaler.ResolvePageReduction(
+                background, width, height) == reduction &&
+            DjvuPixelScaler.ResolvePageReduction(
+                foreground, width, height) == reduction,
+            "DjVu JPEG compound layers must resolve their exact page reduction.");
+
+        var scaledBackground = DjvuPixelScaler.ScaleToPage(
+            background, width, height, reduction);
+        var nearestBackground = DjvuPixelScaler.ExpandForegroundToPage(
+            background, width, height, reduction);
+        Assert(!scaledBackground.Bgra32.SequenceEqual(
+                nearestBackground.Bgra32),
+            "DjVu background scaling must use linear interpolation rather than foreground replication.");
+
+        var expandedForeground = DjvuPixelScaler.ExpandForegroundToPage(
+            foreground, width, height, reduction);
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var expandedOffset = y * expandedForeground.Stride + x * 4;
+                var sourceOffset =
+                    (y / reduction) * foreground.Stride +
+                    (x / reduction) * 4;
+                Assert(expandedForeground.Bgra32.AsSpan(
+                        expandedOffset, 4).SequenceEqual(
+                        foreground.Bgra32.AsSpan(sourceOffset, 4)),
+                    "DjVu foreground expansion must replicate integral reduction cells.");
+            }
+        }
+
+        var expected = (byte[])scaledBackground.Bgra32.Clone();
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                if (mask.Gray8[y * width + x] != 0)
+                    continue;
+
+                var targetOffset = y * scaledBackground.Stride + x * 4;
+                var sourceOffset =
+                    (y / reduction) * foreground.Stride +
+                    (x / reduction) * 4;
+                foreground.Bgra32.AsSpan(sourceOffset, 4)
+                    .CopyTo(expected.AsSpan(targetOffset, 4));
+            }
+        }
+
+        var rendered = DjvuCompoundPageRenderer.Render(path, page);
+        Assert(rendered.Width == width &&
+            rendered.Height == height &&
+            rendered.Stride == width * 4 &&
+            rendered.Bgra32.SequenceEqual(expected),
+            "DjVu Smmr + BGjp + FGjp page must composite foreground colors only through black mask pixels.");
+
+        var noForeground = page with
+        {
+            ImageLayers = page.ImageLayers
+                .Where(layer => layer.Kind != "FGjp")
+                .ToArray()
+        };
+        var monochrome = DjvuCompoundPageRenderer.Render(
+            path, noForeground);
+        var expectedMonochrome = (byte[])scaledBackground.Bgra32.Clone();
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                if (mask.Gray8[y * width + x] != 0)
+                    continue;
+
+                var offset = y * scaledBackground.Stride + x * 4;
+                expectedMonochrome[offset] = 0;
+                expectedMonochrome[offset + 1] = 0;
+                expectedMonochrome[offset + 2] = 0;
+                expectedMonochrome[offset + 3] = 255;
+            }
+        }
+        Assert(monochrome.Bgra32.SequenceEqual(expectedMonochrome),
+            "DjVu Smmr compound page without a color foreground must use black mask pixels.");
+
+        var mixedForegroundRejected = false;
+        try
+        {
+            _ = DjvuCompoundPageRenderer.Render(
+                path,
+                page with
+                {
+                    ImageLayers = page.ImageLayers
+                        .Append(foregroundLayer with { Kind = "FG44" })
+                        .ToArray()
+                });
+        }
+        catch (NotSupportedException)
+        {
+            mixedForegroundRejected = true;
+        }
+        Assert(mixedForegroundRejected,
+            "DjVu compound page must reject mixed FG44/FGjp foreground encodings.");
+
+        var smmrDictionaryRejected = false;
+        try
+        {
+            _ = DjvuCompoundPageRenderer.Render(
+                path,
+                page with
+                {
+                    ImageLayers = page.ImageLayers
+                        .Append(maskLayer with { Kind = "Djbz" })
+                        .ToArray()
+                });
+        }
+        catch (NotSupportedException)
+        {
+            smmrDictionaryRejected = true;
+        }
+        Assert(smmrDictionaryRejected,
+            "DjVu Smmr compound page must reject JB2 dictionary layers.");
+    }
+
     private static void TestDjvuJpegLayers(string directory)
     {
         static byte[] Chunk(string id, byte[] payload)
@@ -13392,13 +13704,13 @@ internal static class Program
             doubled.Stride == 16 && doubled.Bgra32.Length == 64 &&
             doubled.Bgra32.AsSpan(0, 4).SequenceEqual(doubled.Bgra32.AsSpan(4, 4)) &&
             doubled.Bgra32.AsSpan(0, 16).SequenceEqual(doubled.Bgra32.AsSpan(16, 16)),
-            "DjVu BGjp-only page must nearest-neighbor scale by an integer factor.");
+            "DjVu BGjp-only page must use the DjVu background scaler.");
 
         var rejectedBadRatio = false;
         try { _ = DjvuJpegPageRenderer.Render(path,
-            jpegOnly with { Width = 3, Height = 4 }); }
+            jpegOnly with { Width = 3, Height = 5 }); }
         catch (InvalidDataException) { rejectedBadRatio = true; }
-        Assert(rejectedBadRatio, "DjVu BGjp nonuniform or fractional scaling must be rejected.");
+        Assert(rejectedBadRatio, "DjVu BGjp geometry outside 1..12 page reductions must be rejected.");
 
         var rejectedSharedPage = false;
         try { _ = DjvuJpegPageRenderer.Render(path,
