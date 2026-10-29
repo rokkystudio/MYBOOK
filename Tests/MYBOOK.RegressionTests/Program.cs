@@ -147,7 +147,7 @@ internal static class Program
         var formats = SupportedFormatRegistry.All;
 
         AssertEqual(
-            10,
+            11,
             formats.Count,
             "Количество зарегистрированных форматов");
 
@@ -166,6 +166,10 @@ internal static class Program
         Assert(
             SupportedFormatRegistry.GetByExtension(".pdf").Reader != null,
             "PDF должен иметь DocumentModel reader.");
+
+        Assert(
+            SupportedFormatRegistry.GetByExtension(".djvu").Reader != null,
+            "DjVu должен иметь DocumentModel reader.");
 
         var filter = SupportedFormatRegistry.BuildOpenFileDialogFilter(
             "Supported documents");
@@ -12663,7 +12667,7 @@ internal static class Program
                 new DjvuPoint(10, 20), new DjvuPoint(30, 20), new DjvuPoint(20, 40) }),
             "DjVu ANTa rectangle and oval links with URL target syntax.");
 
-        var escaped = DjvuAnnotationReader.ReadRectangles(
+        var escaped = DjvuAnnotationReader.ReadMapAreas(
             "(maparea \"#2\" \"it\\'s here\" (rect 1 2 3 4))");
         Assert(escaped.Single().Comment == "it's here",
             "DjVu ANTa single quote escape in comment.");
@@ -12683,7 +12687,7 @@ internal static class Program
         })
         {
             var rejected = false;
-            try { _ = DjvuAnnotationReader.ReadRectangles(text); }
+            try { _ = DjvuAnnotationReader.ReadMapAreas(text); }
             catch (InvalidDataException) { rejected = true; }
             Assert(rejected, $"DjVu ANTa malformed rect {name} must be rejected.");
         }
@@ -13485,12 +13489,17 @@ internal static class Program
         BinaryPrimitives.WriteUInt16BigEndian(
             info.AsSpan(2, 2), height);
 
+        var annotation = Encoding.UTF8.GetBytes(
+            "(maparea \"#+0\" \"Self rectangle\" (rect 1 2 5 4)) " +
+            "(maparea \"https://example.org/a\" \"External oval\" (oval 7 1 4 3)) " +
+            "(maparea \"#+0\" \"Self polygon\" (poly 1 1 4 1 2 4))");
         var root = Form(
             "DJVU",
             Chunk("INFO", info),
             Chunk("Smmr", smmr),
             Chunk("BGjp", backgroundJpeg),
-            Chunk("FGjp", foregroundJpeg));
+            Chunk("FGjp", foregroundJpeg),
+            Chunk("ANTa", annotation));
         var path = Path.Combine(
             directory, "djvu-compound-alternatives.djvu");
         File.WriteAllBytes(
@@ -13632,6 +13641,93 @@ internal static class Program
         }
         Assert(smmrDictionaryRejected,
             "DjVu Smmr compound page must reject JB2 dictionary layers.");
+
+        var model = SupportedFormatRegistry.ReadDocument(path);
+        var fixedPage = model.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+        Assert(model.Title == "djvu-compound-alternatives" &&
+            fixedPage.PageNumber == 1 &&
+            fixedPage.WidthPoints == width &&
+            fixedPage.HeightPoints == height &&
+            fixedPage.ImageRuns.Count == 1 &&
+            fixedPage.ImageRuns[0].ContentType == "image/png" &&
+            fixedPage.ImageRuns[0].Data.AsSpan(0, 8).SequenceEqual(
+                new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }),
+            "DjVu DocumentModel reader must produce one full-page PNG fixed page.");
+
+        using (var pngStream = new MemoryStream(
+                   fixedPage.ImageRuns[0].Data,
+                   writable: false))
+        {
+            var decoder = new PngBitmapDecoder(
+                pngStream,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad);
+            BitmapSource decoded = decoder.Frames.Single();
+            if (decoded.Format != PixelFormats.Bgra32)
+            {
+                decoded = new FormatConvertedBitmap(
+                    decoded,
+                    PixelFormats.Bgra32,
+                    null,
+                    0);
+            }
+
+            var decodedPixels = new byte[
+                checked(width * height * 4)];
+            decoded.CopyPixels(
+                decodedPixels,
+                width * 4,
+                0);
+            Assert(decoded.PixelWidth == width &&
+                decoded.PixelHeight == height &&
+                decodedPixels.SequenceEqual(rendered.Bgra32),
+                "DjVu page PNG must preserve the compositor BGRA32 pixels exactly.");
+        }
+
+        Assert(fixedPage.Links.Count == 3 &&
+            fixedPage.Links[0] is
+            {
+                Shape: DocumentFixedLinkShape.Rectangle,
+                TargetPageNumber: 1,
+                XPoints: 1,
+                YPoints: 7,
+                WidthPoints: 5,
+                HeightPoints: 4,
+                Title: "Self rectangle"
+            } &&
+            fixedPage.Links[1] is
+            {
+                Shape: DocumentFixedLinkShape.Ellipse,
+                Uri: "https://example.org/a"
+            } &&
+            fixedPage.Links[2].Shape == DocumentFixedLinkShape.Polygon &&
+            fixedPage.Links[2].TargetPageNumber == 1 &&
+            fixedPage.Links[2].PolygonPoints.Count == 3 &&
+            fixedPage.Links[2].PolygonPoints[0].XPoints == 1 &&
+            fixedPage.Links[2].PolygonPoints[0].YPoints == 12,
+            "DjVu mapareas must map to exact fixed-page link geometry and relative targets.");
+
+        var html = DocumentHtmlRenderer.Render(
+            model,
+            CreateRenderTheme());
+        AssertContains(
+            html,
+            "href=\"#page-1\"",
+            "DjVu internal maparea HTML target");
+        AssertContains(
+            html,
+            "<ellipse class=\"fixed-page-link\"",
+            "DjVu oval maparea HTML geometry");
+        AssertContains(
+            html,
+            "<polygon class=\"fixed-page-link\"",
+            "DjVu polygon maparea HTML geometry");
+        AssertContains(
+            html,
+            "https://example.org/a",
+            "DjVu external maparea HTML target");
     }
 
     private static void TestDjvuJpegLayers(string directory)
@@ -13881,7 +13977,11 @@ internal static class Program
 
         var pages = new[]
         {
-            new DjvuPageInfo(640, 480, 300) { ComponentId = "p0001.djvu" },
+            new DjvuPageInfo(640, 480, 300)
+            {
+                ComponentId = "p0001.djvu",
+                ComponentTitle = "2"
+            },
             new DjvuPageInfo(640, 480, 300)
             {
                 ComponentId = "p0002.djvu",
@@ -13905,6 +14005,13 @@ internal static class Program
             pages);
         Assert(componentResolved.All(item => item.TargetPageIndex == 1),
             "DjVu NAVM component ID/name/title targets resolve to the matching page.");
+
+        var pageTargetResolver = new DjvuPageTargetResolver(pages);
+        Assert(pageTargetResolver.Resolve("#+1", 0) == 1 &&
+            pageTargetResolver.Resolve("#-1", 1) == 0 &&
+            pageTargetResolver.Resolve("#2", 0) == 0 &&
+            pageTargetResolver.Resolve("2") == 1,
+            "DjVu page target resolver must apply relative displacement and hash title-before-number precedence.");
 
         foreach (var badUrl in new[] { "#3", "#missing.djvu" })
         {

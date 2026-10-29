@@ -3,6 +3,7 @@ using Book.Diagnostics;
 using Book.Documents;
 using Book.Formats.Doc;
 using Book.Formats.Docx;
+using Book.Formats.Djvu;
 using Book.Formats.Epub;
 using Book.Formats.Fb2;
 using Book.Formats.Markdown;
@@ -29,7 +30,8 @@ internal static class SupportedFormatRegistry
         new(".rtf", "Rich Text Format document", "MYBOOK.RtfFile", RtfDocumentReader.Read),
         new(".doc", "Microsoft Word document", "MYBOOK.DocFile", ReadDocCompatibleDocument),
         new(".docx", "Word OpenXML document", "MYBOOK.DocxFile", DocxDocumentReader.Read),
-        new(".pdf", "PDF document", "MYBOOK.PdfFile", PdfDocumentReader.Read)
+        new(".pdf", "PDF document", "MYBOOK.PdfFile", PdfDocumentReader.Read),
+        new(".djvu", "DjVu document", "MYBOOK.DjvuFile", DjvuDocumentReader.Read)
     ];
 
     private static readonly IReadOnlyDictionary<string, SupportedDocumentFormat> FormatsByExtension =

@@ -255,7 +255,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Открывает поддерживаемый документ.
-    /// FB2, EPUB, TXT, Markdown, RTF, DOC, DOCX и PDF преобразуются в нейтральную модель MYBOOK,
+    /// FB2, EPUB, TXT, Markdown, RTF, DOC, DOCX, PDF и DjVu преобразуются в нейтральную модель MYBOOK,
     /// а исходные HTML/HTM открываются WebView2 напрямую.
     /// </summary>
     private async Task OpenDocumentAsync(string path)
