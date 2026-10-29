@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.5.74
+Текущая версия: 1.5.75
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
@@ -62,7 +62,7 @@
 - [x] IW44 decoder: `BG44`/`FG44` progressive streams are indexed and structurally validated (serial 0..N, slices, version/color mode, first-chunk geometry, chrominance delay, subsampling 1..12). `DjvuIw44PixelDecoder` decodes validated progressive coefficients through the minimal vendored MIT DjvuNet wavelet core into native-resolution BGRA32 with top-left row normalization. BG44 uses DjVu 4-bit linear full-page scaling; FG44 uses the integral nearest-neighbor foreground expansion required by the three-layer stencil model. Real 4-chunk BG44 output and real BG44 + Sjbz + FG44 pages from both 1998 compression fixtures are SHA-256 regression-locked. Additional grayscale/rare IW44 corpus remains useful for compatibility expansion but is not required by the implemented decoder path.
 - [x] Background/foreground composition: `DjvuCompoundPageRenderer` supports one `Sjbz`/JB2 or regular `Smmr` mask, optional `BG44` or `BGjp` background, and optional `FGbz`, `FG44` or `FGjp` foreground colors. BG44/BGjp backgrounds use DjVu 4-bit linear scaling; FG44/FGjp foreground rasters use integral nearest-neighbor expansion before binary-mask selection; FGbz preserves exact per-blit palette colors. Local/shared Djbz, white-background and black-foreground fallbacks, ceil-divided layer geometry, top-left alignment and INFO rotation are supported. Real BG44 + Sjbz + FGbz and BG44 + Sjbz + FG44 pages are SHA-256 regression-tested; synthetic `Smmr + BGjp + FGjp` covers the alternative encodings. Conflicting/duplicate visual families and striped Smmr are rejected explicitly.
 - [x] Постраничный reader/UI renderer: `DjvuPageRenderer` выбирает строгий visual profile, `DjvuDocumentReader` создаёт `DocumentFixedPage` с полноразмерным PNG surface, а общий fixed-page HTML/SVG renderer и боковая плёнка MYBOOK обеспечивают viewport scaling и навигацию по страницам.
-- [ ] Links/annotations: `INCL` references рекурсивно разрешают bundled/indirect role-0 dictionaries и role-3 shared annotations; nested shared `INCL` поддержан с cycle/depth/resource validation. Shared `ANTa`/`ANTz` подставляются точно в позиции INCL; `rect`/`oval`/`poly` mapareas сохраняют geometry/comment/targets и рендерятся clickable SVG regions. Остались остальные annotation commands/shapes за пределами поддерживаемого maparea profile.
+- [ ] Links/annotations: `INCL` references рекурсивно разрешают bundled/indirect role-0 dictionaries и role-3 shared annotations; nested shared `INCL` поддержан с cycle/depth/resource validation. Shared `ANTa`/`ANTz` подставляются точно в позиции INCL. Все пять стандартных hyperlink shapes (`rect`/`oval`/`poly`/`text`/`line`) сохраняют geometry/comment/URL metadata и рендерятся transparent clickable SVG regions; `line` использует обе endpoints и exact `(width w)` с default 1. Остался visual-annotation слой: border/hilite/opacity, line arrow/color, text back/text colors/pushpin и decorative mapareas с пустым URL, а также прочие top-level annotation commands.
 
 ## Интерфейс
 

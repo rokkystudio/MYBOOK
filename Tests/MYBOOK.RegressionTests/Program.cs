@@ -75,7 +75,7 @@ internal static class Program
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
             ("DjVu compound alternatives", () => TestDjvuCompoundAlternatives(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
-            ("DjVu ANTa rectangular links", TestDjvuMapAreas),
+            ("DjVu ANTa mapareas", TestDjvuMapAreas),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
@@ -12650,14 +12650,17 @@ internal static class Program
             (maparea (url "#+1" "_self") "Next page" (rect 150 75 80 30) (xor))
             (maparea "" "Other geometry" (oval 0 0 10 10))
             (maparea "#page" "Triangle" (poly 10 20 30 20 20 40))
+            (maparea "#2" "Text box" (text 5 6 7 8) (backclr #FFFF80))
+            (maparea (url "https://example.org/line" "_blank") "Line" (line 2 3 12 9) (width 3) (arrow))
             """;
         var areas = DjvuAnnotationReader.ReadMapAreas(annotation);
-        Assert(areas.Count == 4 &&
+        Assert(areas.Count == 6 &&
             areas[0].Url == "https://example.org/a" &&
             areas[0].Comment == "Description" &&
             areas[0].X == 10 && areas[0].Y == 20 &&
             areas[0].Width == 100 && areas[0].Height == 50 &&
             areas[1].Url == "#+1" &&
+            areas[1].Target == "_self" &&
             areas[1].X == 150 && areas[1].Height == 30 &&
             areas[2].Shape == "oval" && areas[2].X == 0 &&
             areas[2].Width == 10 && areas[2].Height == 10 &&
@@ -12665,13 +12668,35 @@ internal static class Program
             areas[3].X == 10 && areas[3].Y == 20 &&
             areas[3].Width == 20 && areas[3].Height == 20 &&
             areas[3].Vertices.SequenceEqual(new[] {
-                new DjvuPoint(10, 20), new DjvuPoint(30, 20), new DjvuPoint(20, 40) }),
-            "DjVu ANTa rectangle and oval links with URL target syntax.");
+                new DjvuPoint(10, 20), new DjvuPoint(30, 20), new DjvuPoint(20, 40) }) &&
+            areas[4] is
+            {
+                Shape: "text",
+                Url: "#2",
+                X: 5,
+                Y: 6,
+                Width: 7,
+                Height: 8
+            } &&
+            areas[5].Shape == "line" &&
+            areas[5].Target == "_blank" &&
+            areas[5].LineWidthPixels == 3 &&
+            areas[5].Vertices.SequenceEqual(new[]
+            {
+                new DjvuPoint(2, 3),
+                new DjvuPoint(12, 9)
+            }),
+            "DjVu ANTa maparea parser must preserve all five standard shapes, URL targets and line width.");
 
         var escaped = DjvuAnnotationReader.ReadMapAreas(
             "(maparea \"#2\" \"it\\'s here\" (rect 1 2 3 4))");
         Assert(escaped.Single().Comment == "it's here",
             "DjVu ANTa single quote escape in comment.");
+
+        var defaultLine = DjvuAnnotationReader.ReadMapAreas(
+            "(maparea \"#1\" \"Default line\" (line 1 2 3 4))");
+        Assert(defaultLine.Single().LineWidthPixels == 1,
+            "DjVu ANTa line width must default to one pixel.");
 
         foreach (var (name, text) in new[]
         {
@@ -12684,6 +12709,10 @@ internal static class Program
             ("bad-poly-negative", "(maparea \"x\" \"comment\" (poly 1 2 -3 4 5 6))"),
             ("bad-poly-arity", "(maparea \"x\" \"comment\" (poly 1 2 3 4 5))"),
             ("bad-poly-flat", "(maparea \"x\" \"comment\" (poly 1 2 1 5 1 7))"),
+            ("bad-text", "(maparea \"x\" \"comment\" (text 1 2 0 4))"),
+            ("bad-line-point", "(maparea \"x\" \"comment\" (line 1 2 1 2))"),
+            ("bad-line-width", "(maparea \"x\" \"comment\" (line 1 2 3 4) (width 0))"),
+            ("duplicate-line-width", "(maparea \"x\" \"comment\" (line 1 2 3 4) (width 2) (width 3))"),
             ("unclosed-string", "(maparea \"x")
         })
         {
@@ -13548,7 +13577,9 @@ internal static class Program
         var annotation = Encoding.UTF8.GetBytes(
             "(maparea \"#+0\" \"Self rectangle\" (rect 1 2 5 4)) " +
             "(maparea \"https://example.org/a\" \"External oval\" (oval 7 1 4 3)) " +
-            "(maparea \"#+0\" \"Self polygon\" (poly 1 1 4 1 2 4))");
+            "(maparea \"#+0\" \"Self polygon\" (poly 1 1 4 1 2 4)) " +
+            "(maparea \"#+0\" \"Self text\" (text 10 5 4 3) (backclr #FFFF80)) " +
+            "(maparea \"https://example.org/line\" \"External line\" (line 0 12 16 0) (width 2) (arrow))");
 
         var pageText = Encoding.UTF8.GetBytes(
             "Привет DjVu");
@@ -13802,7 +13833,7 @@ internal static class Program
                 "DjVu page PNG must preserve the compositor BGRA32 pixels exactly.");
         }
 
-        Assert(fixedPage.Links.Count == 3 &&
+        Assert(fixedPage.Links.Count == 5 &&
             fixedPage.Links[0] is
             {
                 Shape: DocumentFixedLinkShape.Rectangle,
@@ -13822,8 +13853,26 @@ internal static class Program
             fixedPage.Links[2].TargetPageNumber == 1 &&
             fixedPage.Links[2].PolygonPoints.Count == 3 &&
             fixedPage.Links[2].PolygonPoints[0].XPoints == 1 &&
-            fixedPage.Links[2].PolygonPoints[0].YPoints == 12,
-            "DjVu mapareas must map to exact fixed-page link geometry and relative targets.");
+            fixedPage.Links[2].PolygonPoints[0].YPoints == 12 &&
+            fixedPage.Links[3] is
+            {
+                Shape: DocumentFixedLinkShape.Rectangle,
+                TargetPageNumber: 1,
+                XPoints: 10,
+                YPoints: 5,
+                WidthPoints: 4,
+                HeightPoints: 3,
+                Title: "Self text"
+            } &&
+            fixedPage.Links[4].Shape == DocumentFixedLinkShape.Line &&
+            fixedPage.Links[4].Uri == "https://example.org/line" &&
+            fixedPage.Links[4].LineWidthPoints == 2 &&
+            fixedPage.Links[4].LinePoints.Count == 2 &&
+            fixedPage.Links[4].LinePoints[0].XPoints == 0 &&
+            fixedPage.Links[4].LinePoints[0].YPoints == 1 &&
+            fixedPage.Links[4].LinePoints[1].XPoints == 16 &&
+            fixedPage.Links[4].LinePoints[1].YPoints == 13,
+            "DjVu mapareas must map all five standard shapes to exact fixed-page hyperlink geometry.");
 
         var html = DocumentHtmlRenderer.Render(
             model,
@@ -13842,8 +13891,16 @@ internal static class Program
             "DjVu polygon maparea HTML geometry");
         AssertContains(
             html,
+            "<line class=\"fixed-page-link\" fill=\"none\" stroke=\"transparent\" pointer-events=\"stroke\" x1=\"0\" y1=\"1\" x2=\"16\" y2=\"13\" stroke-width=\"2\"",
+            "DjVu line maparea HTML geometry");
+        AssertContains(
+            html,
             "https://example.org/a",
             "DjVu external maparea HTML target");
+        AssertContains(
+            html,
+            "https://example.org/line",
+            "DjVu external line maparea HTML target");
         AssertContains(
             html,
             "class=\"fixed-page-text-overlay\"",
