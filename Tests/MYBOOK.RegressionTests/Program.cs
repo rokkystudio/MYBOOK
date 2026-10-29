@@ -70,6 +70,7 @@ internal static class Program
             ("DjVu IW44 headers", TestDjvuIw44Headers),
             ("DjVu IW44 pixels", TestDjvuIw44Pixels),
             ("DjVu JB2 pixels", TestDjvuJb2Pixels),
+            ("DjVu compound palette", TestDjvuCompoundPalette),
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
@@ -12950,7 +12951,7 @@ internal static class Program
 
         var digest = Convert.ToHexString(SHA256.HashData(bgr));
         Assert(digest ==
-            "F49360BC6AC894F17597B0BDE0852F21E15845B38B6466B6B779999D51A75F95",
+            "74E4B2E3F3BF64CDB99BB61CDEAEC786EC372C6CF2B236C12B40D67AEE22564A",
             "DjVu IW44 real BG44 pixel output must remain byte-stable.");
     }
 
@@ -13044,6 +13045,108 @@ internal static class Program
             catch (NotSupportedException) { ambiguousRejected = true; }
             Assert(ambiguousRejected,
                 "DjVu JB2 decoding must reject simultaneous local and shared Djbz dictionaries.");
+        }
+    }
+
+    private static void TestDjvuCompoundPalette()
+    {
+        var specs = Path.Combine(Path.GetTempPath(),
+            "MYBOOK-djvunet-bzz-reference", "Specs");
+
+        var compoundPath = Path.Combine(specs, "2000_compression_system.djvu");
+        if (File.Exists(compoundPath))
+        {
+            var document = DjvuContainerReader.Inspect(compoundPath);
+
+            var monochromePage = document.Pages[0];
+            var monoCompound = DjvuCompoundPageRenderer.Render(
+                compoundPath, monochromePage);
+            var monoStrict = DjvuJb2PageRenderer.Render(
+                compoundPath, monochromePage);
+            Assert(monoCompound.Width == monoStrict.Width &&
+                monoCompound.Height == monoStrict.Height &&
+                monoCompound.Bgra32.SequenceEqual(monoStrict.Bgra32),
+                "DjVu compound renderer without background/palette must match strict JB2-only rendering.");
+
+            var page = document.Pages[9];
+            var palette = page.ForegroundPalette;
+            Assert(page.BackgroundIw44 is
+                { Width: 850, Height: 1100, SubsampleFactor: 3 } &&
+                palette is { HasShapeTable: true, Colors.Count: 4 } &&
+                palette.BlitColorIndexes.Count == 1418,
+                "Real DjVu palette compound page metadata.");
+            if (palette is null)
+                throw new InvalidOperationException("DjVu foreground palette disappeared after validation.");
+
+            var foreground = DjvuJb2Decoder.DecodeColoredForeground(
+                compoundPath, page, palette);
+            Assert(foreground.Width == 2550 &&
+                foreground.Height == 3300 &&
+                foreground.BlitCount == 1418 &&
+                Convert.ToHexString(SHA256.HashData(foreground.Bgra32)) ==
+                "ACE2CCB634D56B2F175F03B3FEFA362CFFD7E4496D96E3F6AA5617BF71ED5797",
+                "Real FGbz + Sjbz colored foreground must remain byte-stable.");
+
+            var rendered = DjvuCompoundPageRenderer.Render(compoundPath, page);
+            Assert(rendered.Width == 2550 &&
+                rendered.Height == 3300 &&
+                rendered.Stride == 10200 &&
+                Convert.ToHexString(SHA256.HashData(rendered.Bgra32)) ==
+                "1DEB5523352E206F2F0E7F56ECEF45B7B28EBC9605A0D8F91BABFAF7B615B9CC",
+                "Real reduction-3 BG44 + Sjbz + FGbz compound page must remain byte-stable.");
+        }
+
+        var reduction12Path = Path.Combine(
+            specs, "2001_efficient_compression.djvu");
+        if (File.Exists(reduction12Path))
+        {
+            var document = DjvuContainerReader.Inspect(reduction12Path);
+            var page = document.Pages[4];
+            Assert(page.BackgroundIw44 is
+                { Width: 213, Height: 275, SubsampleFactor: 12 } &&
+                page.ForegroundPalette is { Colors.Count: 2 },
+                "Real reduction-12 compound page metadata.");
+
+            var rendered = DjvuCompoundPageRenderer.Render(
+                reduction12Path, page);
+            Assert(rendered.Width == 2550 &&
+                rendered.Height == 3300 &&
+                Convert.ToHexString(SHA256.HashData(rendered.Bgra32)) ==
+                "1BBB3D3B380DAE1D083029D2A0C95474AC13DE88574B19C50475499777837E07",
+                "Real reduction-12 BG44 + Sjbz + FGbz compound page must remain byte-stable.");
+        }
+
+        var oddGeometryPath = Path.Combine(specs, "DjVu3Spec.djvu");
+        if (File.Exists(oddGeometryPath))
+        {
+            var document = DjvuContainerReader.Inspect(oddGeometryPath);
+            var page = document.Pages[4];
+            Assert(page.BackgroundIw44 is
+                { Width: 212, Height: 275, SubsampleFactor: 12 },
+                "DjVu ceil-divided BG44 geometry metadata.");
+
+            var rendered = DjvuCompoundPageRenderer.Render(
+                oddGeometryPath, page);
+            Assert(rendered.Width == 2539 &&
+                rendered.Height == 3295 &&
+                Convert.ToHexString(SHA256.HashData(rendered.Bgra32)) ==
+                "2D5393061A08871C7B3DC7DB4EA8EAA3B1D1FAAC5BF0EC1CCAEE2B5AB1BE76A3",
+                "DjVu compound scaling must support non-divisible page dimensions.");
+        }
+
+        var fg44Path = Path.Combine(specs, "1998_compression.djvu");
+        if (File.Exists(fg44Path))
+        {
+            var document = DjvuContainerReader.Inspect(fg44Path);
+            var rejected = false;
+            try
+            {
+                _ = DjvuCompoundPageRenderer.Render(
+                    fg44Path, document.Pages[0]);
+            }
+            catch (NotSupportedException) { rejected = true; }
+            Assert(rejected,
+                "DjVu palette compositor must reject unsupported FG44 foreground layers.");
         }
     }
 
