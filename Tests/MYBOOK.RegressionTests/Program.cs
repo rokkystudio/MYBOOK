@@ -63,6 +63,7 @@ internal static class Program
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
+            ("DjVu indirect DJVM", () => TestDjvuIndirectDocument(temporaryDirectory)),
             ("DjVu NAVM outline", () => TestDjvuNavigation(temporaryDirectory)),
             ("DjVu shared JB2 links", () => TestDjvuSharedImageLinks(temporaryDirectory)),
             ("DjVu JPEG layers", () => TestDjvuJpegLayers(temporaryDirectory)),
@@ -12348,9 +12349,9 @@ internal static class Program
             imageIndex.SharedImageLayers.Single().Kind == "Djbz" &&
             imageIndex.Pages[0].ImageLayers[0].IsJb2 &&
             imageIndex.Pages[0].ImageLayers[1].IsIw44 &&
-            imageIndex.Pages[0].ImageLayers[0].ReadPayload(path)
+            imageIndex.Pages[0].ImageLayers[0].ReadPayload()
                 .SequenceEqual(new byte[] { 0xA1, 0xB2 }) &&
-            imageIndex.Pages[0].ImageLayers[2].ReadPayload(path)
+            imageIndex.Pages[0].ImageLayers[2].ReadPayload()
                 .SequenceEqual(new byte[] { 1, 10, 0xBB }) &&
             imageIndex.Pages[0].BackgroundIw44 is
             {
@@ -12362,14 +12363,14 @@ internal static class Program
                 SubsampleFactor: 2,
                 TotalSlices: 82
             } &&
-            imageIndex.SharedImageLayers[0].ReadPayload(path)
+            imageIndex.SharedImageLayers[0].ReadPayload()
                 .SequenceEqual(new byte[] { 6, 7, 8, 9 }),
             "DjVu page/shared JB2 and IW44 layers must preserve stream offsets and order.");
 
         var invalidLayer = imageIndex.Pages[0].ImageLayers[0] with
             { Offset = int.MaxValue };
         var invalidRangeRejected = false;
-        try { _ = invalidLayer.ReadPayload(path); }
+        try { _ = invalidLayer.ReadPayload(); }
         catch (InvalidDataException) { invalidRangeRejected = true; }
         Assert(invalidRangeRejected, "DjVu image layer cannot read outside file bounds.");
 
@@ -12934,7 +12935,7 @@ internal static class Program
             .Where(layer => layer.Kind == "BG44")
             .ToArray();
         var decoded = DjvuIw44PixelDecoder.Decode(
-            sample, layers, page.Width, page.Height);
+            layers, page.Width, page.Height);
 
         Assert(decoded.Width == 850 &&
             decoded.Height == 1100 &&
@@ -12970,7 +12971,7 @@ internal static class Program
         {
             var standalone = DjvuContainerReader.Inspect(standalonePath);
             var page = standalone.Pages[0];
-            var mask = DjvuJb2Decoder.DecodePage(standalonePath, page);
+            var mask = DjvuJb2Decoder.DecodePage(page);
             Assert(mask is
                 {
                     Width: 2556,
@@ -12984,7 +12985,7 @@ internal static class Program
                 "Real standalone Sjbz page must decode to a stable JB2 mask.");
 
             var mixedRejected = false;
-            try { _ = DjvuJb2PageRenderer.Render(standalonePath, page); }
+            try { _ = DjvuJb2PageRenderer.Render(page); }
             catch (NotSupportedException) { mixedRejected = true; }
             Assert(mixedRejected,
                 "DjVu JB2-only renderer must reject pages that also contain IW44 layers.");
@@ -12995,7 +12996,7 @@ internal static class Program
         {
             var shared = DjvuContainerReader.Inspect(sharedPath);
             var page = shared.Pages[0];
-            var mask = DjvuJb2Decoder.DecodePage(sharedPath, page);
+            var mask = DjvuJb2Decoder.DecodePage(page);
             Assert(mask is
                 {
                     Width: 2550,
@@ -13008,7 +13009,7 @@ internal static class Program
                 "EE44549512020D5C5F4B27D4FE2A7D33C5ECACE015E49C55CDA3E100FDC2F606",
                 "Real shared Djbz -> Sjbz page must decode to a stable JB2 mask.");
 
-            var rendered = DjvuJb2PageRenderer.Render(sharedPath, page);
+            var rendered = DjvuJb2PageRenderer.Render(page);
             Assert(rendered.Width == 2550 && rendered.Height == 3300 &&
                 rendered.Stride == 2550 * 4 &&
                 rendered.Bgra32.Length == 2550 * 3300 * 4,
@@ -13023,7 +13024,7 @@ internal static class Program
         {
             var document = DjvuContainerReader.Inspect(localDictionaryPath);
             var localPage = document.Pages[0];
-            var mask = DjvuJb2Decoder.DecodePage(localDictionaryPath, localPage);
+            var mask = DjvuJb2Decoder.DecodePage(localPage);
             Assert(mask is
                 {
                     Width: 2539,
@@ -13040,7 +13041,6 @@ internal static class Program
             try
             {
                 _ = DjvuJb2Decoder.DecodePage(
-                    localDictionaryPath,
                     localPage with
                     {
                         ResolvedSharedImageLayers =
@@ -13065,9 +13065,9 @@ internal static class Program
 
             var monochromePage = document.Pages[0];
             var monoCompound = DjvuCompoundPageRenderer.Render(
-                compoundPath, monochromePage);
+                monochromePage);
             var monoStrict = DjvuJb2PageRenderer.Render(
-                compoundPath, monochromePage);
+                monochromePage);
             Assert(monoCompound.Width == monoStrict.Width &&
                 monoCompound.Height == monoStrict.Height &&
                 monoCompound.Bgra32.SequenceEqual(monoStrict.Bgra32),
@@ -13084,7 +13084,7 @@ internal static class Program
                 throw new InvalidOperationException("DjVu foreground palette disappeared after validation.");
 
             var foreground = DjvuJb2Decoder.DecodeColoredForeground(
-                compoundPath, page, palette);
+                page, palette);
             Assert(foreground.Width == 2550 &&
                 foreground.Height == 3300 &&
                 foreground.BlitCount == 1418 &&
@@ -13092,7 +13092,7 @@ internal static class Program
                 "ACE2CCB634D56B2F175F03B3FEFA362CFFD7E4496D96E3F6AA5617BF71ED5797",
                 "Real FGbz + Sjbz colored foreground must remain byte-stable.");
 
-            var rendered = DjvuCompoundPageRenderer.Render(compoundPath, page);
+            var rendered = DjvuCompoundPageRenderer.Render(page);
             Assert(rendered.Width == 2550 &&
                 rendered.Height == 3300 &&
                 rendered.Stride == 10200 &&
@@ -13113,7 +13113,7 @@ internal static class Program
                 "Real reduction-12 compound page metadata.");
 
             var rendered = DjvuCompoundPageRenderer.Render(
-                reduction12Path, page);
+                page);
             Assert(rendered.Width == 2550 &&
                 rendered.Height == 3300 &&
                 Convert.ToHexString(SHA256.HashData(rendered.Bgra32)) ==
@@ -13131,7 +13131,7 @@ internal static class Program
                 "DjVu ceil-divided BG44 geometry metadata.");
 
             var rendered = DjvuCompoundPageRenderer.Render(
-                oddGeometryPath, page);
+                page);
             Assert(rendered.Width == 2539 &&
                 rendered.Height == 3295 &&
                 Convert.ToHexString(SHA256.HashData(rendered.Bgra32)) ==
@@ -13160,7 +13160,7 @@ internal static class Program
                 "Real DjVu three-layer BG44/FG44 reduction metadata.");
 
             var rendered = DjvuCompoundPageRenderer.Render(
-                fg44Path, page);
+                page);
             Assert(rendered.Width == 2556 &&
                 rendered.Height == 3300 &&
                 rendered.Stride == 10224 &&
@@ -13254,7 +13254,7 @@ internal static class Program
         File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(root).ToArray());
 
         var layer = DjvuContainerReader.Inspect(path).Pages.Single().ImageLayers.Single();
-        var decoded = DjvuSmmrDecoder.Decode(path, layer);
+        var decoded = DjvuSmmrDecoder.Decode(layer);
 
         BitmapSource reference = source;
         if (reference.Format != PixelFormats.Gray8)
@@ -13267,12 +13267,12 @@ internal static class Program
             "DjVu regular Smmr must decode through CCITT Group 4 exactly.");
 
         var pageInfo = DjvuContainerReader.Inspect(path).Pages.Single();
-        var rendered = DjvuSmmrPageRenderer.Render(path, pageInfo);
+        var rendered = DjvuSmmrPageRenderer.Render(pageInfo);
         Assert(rendered.Width == width && rendered.Height == height &&
             rendered.Stride == width * 4 && rendered.Bgra32.Length == width * height * 4,
             "DjVu Smmr-only page renderer returns full-size BGRA32 pixels.");
 
-        var clockwise = DjvuSmmrPageRenderer.Render(path,
+        var clockwise = DjvuSmmrPageRenderer.Render(
             pageInfo with { Rotation = DjvuPageRotation.Clockwise });
         Assert(clockwise.Width == height && clockwise.Height == width &&
             clockwise.Stride == height * 4 &&
@@ -13293,14 +13293,14 @@ internal static class Program
         }
 
         var geometryRejected = false;
-        try { _ = DjvuSmmrPageRenderer.Render(path,
+        try { _ = DjvuSmmrPageRenderer.Render(
             pageInfo with { Width = width + 1 }); }
         catch (InvalidDataException) { geometryRejected = true; }
         Assert(geometryRejected,
             "DjVu Smmr-only page renderer rejects mask/page geometry mismatch.");
 
         var mixedRejected = false;
-        try { _ = DjvuSmmrPageRenderer.Render(path,
+        try { _ = DjvuSmmrPageRenderer.Render(
             pageInfo with
             {
                 ImageLayers = new[]
@@ -13321,7 +13321,7 @@ internal static class Program
             var stripedRoot = Form("DJVU", Chunk("INFO", info), Chunk("Smmr", striped));
             File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(stripedRoot).ToArray());
             var stripedLayer = DjvuContainerReader.Inspect(path).Pages.Single().ImageLayers.Single();
-            _ = DjvuSmmrDecoder.Decode(path, stripedLayer);
+            _ = DjvuSmmrDecoder.Decode(stripedLayer);
         }
         catch (NotSupportedException) { stripedRejected = true; }
         Assert(stripedRejected, "DjVu striped Smmr must be explicitly unsupported.");
@@ -13331,12 +13331,12 @@ internal static class Program
         {
             File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(root).ToArray());
             var bad = DjvuContainerReader.Inspect(path).Pages.Single().ImageLayers.Single();
-            var payload = bad.ReadPayload(path);
+            var payload = bad.ReadPayload();
             payload[0] = (byte)'X';
             var badRoot = Form("DJVU", Chunk("INFO", info), Chunk("Smmr", payload));
             File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(badRoot).ToArray());
             var badLayer = DjvuContainerReader.Inspect(path).Pages.Single().ImageLayers.Single();
-            _ = DjvuSmmrDecoder.Decode(path, badLayer);
+            _ = DjvuSmmrDecoder.Decode(badLayer);
         }
         catch (InvalidDataException) { badMagicRejected = true; }
         Assert(badMagicRejected, "DjVu Smmr invalid header magic must be rejected.");
@@ -13596,11 +13596,11 @@ internal static class Program
             layer => layer.Kind == "BGjp");
         var foregroundLayer = page.ImageLayers.Single(
             layer => layer.Kind == "FGjp");
-        var mask = DjvuSmmrDecoder.Decode(path, maskLayer);
+        var mask = DjvuSmmrDecoder.Decode(maskLayer);
         var background = DjvuJpegLayerDecoder.Decode(
-            path, backgroundLayer);
+            backgroundLayer);
         var foreground = DjvuJpegLayerDecoder.Decode(
-            path, foregroundLayer);
+            foregroundLayer);
 
         Assert(DjvuPixelScaler.ResolvePageReduction(
                 background, width, height) == reduction &&
@@ -13650,7 +13650,7 @@ internal static class Program
             }
         }
 
-        var rendered = DjvuCompoundPageRenderer.Render(path, page);
+        var rendered = DjvuCompoundPageRenderer.Render(page);
         Assert(rendered.Width == width &&
             rendered.Height == height &&
             rendered.Stride == width * 4 &&
@@ -13664,7 +13664,7 @@ internal static class Program
                 .ToArray()
         };
         var monochrome = DjvuCompoundPageRenderer.Render(
-            path, noForeground);
+            noForeground);
         var expectedMonochrome = (byte[])scaledBackground.Bgra32.Clone();
         for (var y = 0; y < height; y++)
         {
@@ -13687,7 +13687,6 @@ internal static class Program
         try
         {
             _ = DjvuCompoundPageRenderer.Render(
-                path,
                 page with
                 {
                     ImageLayers = page.ImageLayers
@@ -13706,7 +13705,6 @@ internal static class Program
         try
         {
             _ = DjvuCompoundPageRenderer.Render(
-                path,
                 page with
                 {
                     ImageLayers = page.ImageLayers
@@ -13889,7 +13887,7 @@ internal static class Program
             "DjVu JPEG background and foreground layers must be indexed.");
         foreach (var layer in page.ImageLayers)
         {
-            var image = DjvuJpegLayerDecoder.Decode(path, layer);
+            var image = DjvuJpegLayerDecoder.Decode(layer);
             Assert(image.Width == 2 && image.Height == 2 &&
                 image.Stride == 8 && image.Bgra32.Length == 16 &&
                 image.Bgra32[2] > 150 && image.Bgra32[3] == 255,
@@ -13897,7 +13895,7 @@ internal static class Program
         }
 
         var rejectedMixedPage = false;
-        try { _ = DjvuJpegPageRenderer.Render(path, page); }
+        try { _ = DjvuJpegPageRenderer.Render(page); }
         catch (NotSupportedException) { rejectedMixedPage = true; }
         Assert(rejectedMixedPage,
             "DjVu JPEG-only renderer must not omit foreground layers.");
@@ -13906,13 +13904,13 @@ internal static class Program
         {
             ImageLayers = new[] { page.ImageLayers[0] }
         };
-        var rendered = DjvuJpegPageRenderer.Render(path, jpegOnly);
+        var rendered = DjvuJpegPageRenderer.Render(jpegOnly);
         Assert(rendered.Width == 2 && rendered.Height == 2 &&
             rendered.Stride == 8 && rendered.Bgra32.Length == 16 &&
             rendered.Bgra32[2] > 150,
             "DjVu BGjp-only page must render original-sized BGRA pixels.");
 
-        var doubled = DjvuJpegPageRenderer.Render(path,
+        var doubled = DjvuJpegPageRenderer.Render(
             jpegOnly with { Width = 4, Height = 4 });
         Assert(doubled.Width == 4 && doubled.Height == 4 &&
             doubled.Stride == 16 && doubled.Bgra32.Length == 64 &&
@@ -13921,32 +13919,32 @@ internal static class Program
             "DjVu BGjp-only page must use the DjVu background scaler.");
 
         var rejectedBadRatio = false;
-        try { _ = DjvuJpegPageRenderer.Render(path,
+        try { _ = DjvuJpegPageRenderer.Render(
             jpegOnly with { Width = 3, Height = 5 }); }
         catch (InvalidDataException) { rejectedBadRatio = true; }
         Assert(rejectedBadRatio, "DjVu BGjp geometry outside 1..12 page reductions must be rejected.");
 
         var rejectedSharedPage = false;
-        try { _ = DjvuJpegPageRenderer.Render(path,
+        try { _ = DjvuJpegPageRenderer.Render(
             jpegOnly with { ResolvedSharedImageLayers = new[] { page.ImageLayers[1] } }); }
         catch (NotSupportedException) { rejectedSharedPage = true; }
         Assert(rejectedSharedPage,
             "DjVu JPEG-only renderer must not silently omit resolved shared layers.");
 
         var rejectedWrongType = false;
-        try { _ = DjvuJpegLayerDecoder.Decode(path,
+        try { _ = DjvuJpegLayerDecoder.Decode(
             page.ImageLayers[0] with { Kind = "BG44" }); }
         catch (NotSupportedException) { rejectedWrongType = true; }
         Assert(rejectedWrongType, "DjVu JPEG layer decoder rejects IW44.");
 
         var rejectedRange = false;
-        try { _ = DjvuJpegLayerDecoder.Decode(path,
+        try { _ = DjvuJpegLayerDecoder.Decode(
             page.ImageLayers[0] with { Offset = int.MaxValue }); }
         catch (InvalidDataException) { rejectedRange = true; }
         Assert(rejectedRange, "DjVu JPEG layer rejects out-of-bounds payload.");
 
         var rejectedMarker = false;
-        try { _ = DjvuJpegLayerDecoder.Decode(path,
+        try { _ = DjvuJpegLayerDecoder.Decode(
             page.ImageLayers[0] with { Offset = page.ImageLayers[0].Offset + 1 }); }
         catch (InvalidDataException) { rejectedMarker = true; }
         Assert(rejectedMarker, "DjVu JPEG layer rejects invalid JPEG markers.");
@@ -14004,7 +14002,7 @@ internal static class Program
             inspected.Pages[0].ImageLayers.Single().Kind == "Sjbz" &&
             inspected.Pages[0].ResolvedSharedImageLayers.Single().Kind == "Djbz" &&
             inspected.Pages[0].ResolvedSharedImageLayers.Single()
-                .ReadPayload(path).SequenceEqual(new byte[] { 7, 8, 9 }),
+                .ReadPayload().SequenceEqual(new byte[] { 7, 8, 9 }),
             "DjVu bundled INCL must resolve the matching DJVI dictionary by DIRM ID and offset.");
 
         var brokenPage = Form("DJVU",
@@ -14019,6 +14017,742 @@ internal static class Program
         }
         catch (InvalidDataException) { broken = true; }
         Assert(broken, "DjVu unresolved bundled INCL dictionary must be rejected.");
+
+        var beforeAnnotation =
+            "(maparea \"https://before.example/\" \"Before\" (rect 0 0 10 10))";
+        var sharedAnnotationText =
+            "(maparea \"https://shared.example/\" \"Shared\" (rect 10 0 10 10))";
+        var afterAnnotation =
+            "(maparea \"https://after.example/\" \"After\" (rect 20 0 10 10))";
+        var sharedAnnotation = Form(
+            "DJVI",
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    sharedAnnotationText)));
+        var annotatedPage = Form(
+            "DJVU",
+            Chunk("INFO", info),
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    beforeAnnotation)),
+            Chunk(
+                "INCL",
+                Encoding.UTF8.GetBytes(
+                    "shared-anno.iff")),
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    afterAnnotation)));
+
+        var annotationRaw = new byte[]
+        {
+            0, 0,
+            checked((byte)sharedAnnotation.Length),
+            0, 0,
+            checked((byte)annotatedPage.Length),
+            3,
+            1
+        }
+            .Concat(
+                Encoding.UTF8.GetBytes(
+                    "shared-anno.iff\0annotated.djvu\0"))
+            .ToArray();
+        var annotationCompressed =
+            Compress(annotationRaw);
+        var annotationDirm =
+            new byte[
+                11 +
+                annotationCompressed.Length];
+        annotationDirm[0] = 0x81;
+        annotationDirm[2] = 2;
+        annotationCompressed.CopyTo(
+            annotationDirm,
+            11);
+
+        var annotationFirstOffset =
+            16 +
+            Chunk(
+                "DIRM",
+                annotationDirm)
+            .Length;
+        BinaryPrimitives.WriteUInt32BigEndian(
+            annotationDirm.AsSpan(3, 4),
+            checked((uint)
+                annotationFirstOffset));
+        BinaryPrimitives.WriteUInt32BigEndian(
+            annotationDirm.AsSpan(7, 4),
+            checked((uint)
+                (annotationFirstOffset +
+                 sharedAnnotation.Length)));
+
+        var annotationPath =
+            Path.Combine(
+                directory,
+                "djvu-shared-annotation.djvu");
+        File.WriteAllBytes(
+            annotationPath,
+            Encoding.ASCII.GetBytes("AT&T")
+                .Concat(
+                    Form(
+                        "DJVM",
+                        Chunk(
+                            "DIRM",
+                            annotationDirm),
+                        sharedAnnotation,
+                        annotatedPage))
+                .ToArray());
+
+        var annotated =
+            DjvuContainerReader.Inspect(
+                annotationPath)
+            .Pages.Single();
+        Assert(
+            annotated.ResolvedSharedImageLayers.Count == 0 &&
+            annotated.Annotations.SequenceEqual(
+                new[]
+                {
+                    beforeAnnotation,
+                    sharedAnnotationText,
+                    afterAnnotation
+                }) &&
+            annotated.MapAreas
+                .Select(area => area.Comment)
+                .SequenceEqual(
+                    new[]
+                    {
+                        "Before",
+                        "Shared",
+                        "After"
+                    }),
+            "DjVu bundled role-3 shared annotation must expand at the page INCL position.");
+    }
+
+    private static void TestDjvuIndirectDocument(
+        string directory)
+    {
+        static byte[] Chunk(
+            string id,
+            byte[] payload)
+        {
+            var chunk = new byte[
+                8 + payload.Length +
+                (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id)
+                .CopyTo(chunk, 0);
+            BinaryPrimitives.WriteUInt32BigEndian(
+                chunk.AsSpan(4, 4),
+                checked((uint)payload.Length));
+            payload.CopyTo(
+                chunk,
+                8);
+            return chunk;
+        }
+
+        static byte[] Form(
+            string type,
+            params byte[][] chunks) =>
+            Chunk(
+                "FORM",
+                Encoding.ASCII.GetBytes(type)
+                    .Concat(
+                        chunks.SelectMany(
+                            chunk => chunk))
+                    .ToArray());
+
+        static byte[] DjvuFile(
+            byte[] form) =>
+            Encoding.ASCII.GetBytes("AT&T")
+                .Concat(form)
+                .ToArray();
+
+        static byte[] Compress(
+            byte[] data)
+        {
+            using var output =
+                new MemoryStream();
+            using (var encoder =
+                   new DjvuNet.Compression
+                       .BSOutputStream(
+                           output,
+                           1024))
+            {
+                encoder.Write(
+                    data,
+                    0,
+                    data.Length);
+            }
+
+            return output.ToArray();
+        }
+
+        static void WriteZString(
+            Stream stream,
+            string value)
+        {
+            var bytes =
+                Encoding.UTF8.GetBytes(
+                    value);
+            stream.Write(bytes);
+            stream.WriteByte(0);
+        }
+
+        static byte[] BuildDirm(
+            params (
+                byte[] Form,
+                byte Flags,
+                string Id,
+                string? Name,
+                string? Title)[]
+                components)
+        {
+            using var raw =
+                new MemoryStream();
+
+            foreach (var component in
+                     components)
+            {
+                if (component.Form.Length >
+                    0xFFFFFF)
+                {
+                    throw new InvalidOperationException(
+                        "Synthetic DjVu indirect component is too large.");
+                }
+
+                raw.WriteByte(
+                    checked((byte)(
+                        (component.Form.Length >>
+                         16) & 0xFF)));
+                raw.WriteByte(
+                    checked((byte)(
+                        (component.Form.Length >>
+                         8) & 0xFF)));
+                raw.WriteByte(
+                    checked((byte)(
+                        component.Form.Length &
+                        0xFF)));
+            }
+
+            foreach (var component in
+                     components)
+            {
+                raw.WriteByte(
+                    component.Flags);
+            }
+
+            foreach (var component in
+                     components)
+            {
+                WriteZString(
+                    raw,
+                    component.Id);
+
+                if ((component.Flags &
+                     0x80) != 0)
+                {
+                    WriteZString(
+                        raw,
+                        component.Name
+                        ?? throw new InvalidOperationException(
+                            "Synthetic DIRM hasname requires Name."));
+                }
+
+                if ((component.Flags &
+                     0x40) != 0)
+                {
+                    WriteZString(
+                        raw,
+                        component.Title
+                        ?? throw new InvalidOperationException(
+                            "Synthetic DIRM hastitle requires Title."));
+                }
+            }
+
+            var compressed =
+                Compress(
+                    raw.ToArray());
+            return new byte[]
+            {
+                0x01,
+                checked((byte)(
+                    components.Length >>
+                    8)),
+                checked((byte)
+                    components.Length)
+            }
+                .Concat(compressed)
+                .ToArray();
+        }
+
+        static byte[] Bookmark(
+            string title,
+            string url)
+        {
+            var titleBytes =
+                Encoding.UTF8.GetBytes(
+                    title);
+            var urlBytes =
+                Encoding.UTF8.GetBytes(
+                    url);
+            using var output =
+                new MemoryStream();
+            output.WriteByte(0);
+
+            foreach (var bytes in
+                     new[]
+                     {
+                         titleBytes,
+                         urlBytes
+                     })
+            {
+                output.WriteByte(
+                    checked((byte)(
+                        (bytes.Length >>
+                         16) & 0xFF)));
+                output.WriteByte(
+                    checked((byte)(
+                        (bytes.Length >>
+                         8) & 0xFF)));
+                output.WriteByte(
+                    checked((byte)(
+                        bytes.Length &
+                        0xFF)));
+                output.Write(bytes);
+            }
+
+            return output.ToArray();
+        }
+
+        static byte[] EncodeJpeg()
+        {
+            const int imageWidth = 2;
+            const int imageHeight = 2;
+            const int stride =
+                imageWidth * 4;
+            var pixels = new byte[]
+            {
+                20, 40, 220, 255,
+                30, 180, 40, 255,
+                200, 50, 50, 255,
+                170, 190, 210, 255
+            };
+            var bitmap =
+                BitmapSource.Create(
+                    imageWidth,
+                    imageHeight,
+                    96,
+                    96,
+                    PixelFormats.Bgra32,
+                    null,
+                    pixels,
+                    stride);
+            var encoder =
+                new JpegBitmapEncoder
+                {
+                    QualityLevel = 100
+                };
+            encoder.Frames.Add(
+                BitmapFrame.Create(
+                    bitmap));
+            using var output =
+                new MemoryStream();
+            encoder.Save(output);
+            return output.ToArray();
+        }
+
+        var componentDirectory =
+            Path.Combine(
+                directory,
+                "djvu-indirect-parts");
+        Directory.CreateDirectory(
+            componentDirectory);
+
+        const string sharedId =
+            "shared-id.iff";
+        const string pageId =
+            "page-id.djvu";
+        var sharedDiskName =
+            Path.Combine(
+                "djvu-indirect-parts",
+                "shared-file.iff");
+        var pageDiskName =
+            Path.Combine(
+                "djvu-indirect-parts",
+                "page-file.djvu");
+        var sharedPath =
+            Path.Combine(
+                directory,
+                sharedDiskName);
+        var pagePath =
+            Path.Combine(
+                directory,
+                pageDiskName);
+
+        var beforeAnnotation =
+            "(maparea \"https://before.example/\" \"Before\" (rect 0 0 1 1))";
+        var sharedAnnotation =
+            "(maparea \"https://shared.example/\" \"Shared\" (rect 1 0 1 1))";
+        var afterAnnotation =
+            "(maparea \"https://after.example/\" \"After\" (rect 2 0 1 1))";
+
+        var sharedForm =
+            Form(
+                "DJVI",
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        sharedAnnotation)));
+        File.WriteAllBytes(
+            sharedPath,
+            DjvuFile(sharedForm));
+
+        var info =
+            new byte[10];
+        BinaryPrimitives
+            .WriteUInt16BigEndian(
+                info.AsSpan(0, 2),
+                4);
+        BinaryPrimitives
+            .WriteUInt16BigEndian(
+                info.AsSpan(2, 2),
+                4);
+        BinaryPrimitives
+            .WriteUInt16LittleEndian(
+                info.AsSpan(6, 2),
+                300);
+        info[8] = 22;
+
+        var pageForm =
+            Form(
+                "DJVU",
+                Chunk(
+                    "INFO",
+                    info),
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        beforeAnnotation)),
+                Chunk(
+                    "INCL",
+                    Encoding.UTF8.GetBytes(
+                        sharedId)),
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        afterAnnotation)),
+                Chunk(
+                    "BGjp",
+                    EncodeJpeg()));
+        File.WriteAllBytes(
+            pagePath,
+            DjvuFile(pageForm));
+
+        var dirm =
+            BuildDirm(
+                (
+                    sharedForm,
+                    (byte)0x80,
+                    sharedId,
+                    sharedDiskName,
+                    null),
+                (
+                    pageForm,
+                    (byte)0xC1,
+                    pageId,
+                    pageDiskName,
+                    "Indirect Page"));
+
+        var navigation =
+            new byte[] { 0, 1 }
+                .Concat(
+                    Bookmark(
+                        "Indirect",
+                        "#" + pageId))
+                .ToArray();
+        var indexPath =
+            Path.Combine(
+                directory,
+                "djvu-indirect.djvu");
+        File.WriteAllBytes(
+            indexPath,
+            DjvuFile(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        dirm),
+                    Chunk(
+                        "NAVM",
+                        Compress(
+                            navigation)))));
+
+        var index =
+            DjvuContainerReader.Inspect(
+                indexPath);
+        Assert(
+            index.Directory is
+                {
+                    Bundled: false,
+                    ComponentCount: 2
+                } &&
+            index.Pages.Count == 0 &&
+            index.Navigation.Single()
+                .TargetPageIndex == null,
+            "DjVu indirect index must expose DIRM/NAVM without pretending external pages are embedded.");
+
+        var resolved =
+            DjvuIndirectDocumentResolver
+                .Resolve(
+                    indexPath,
+                    index);
+        var resolvedPage =
+            resolved.Pages.Single();
+
+        Assert(
+            resolvedPage.ComponentId ==
+                pageId &&
+            resolvedPage.ComponentName ==
+                pageDiskName &&
+            resolvedPage.ComponentTitle ==
+                "Indirect Page" &&
+            resolvedPage.ImageLayers.Single()
+                .SourcePath ==
+                Path.GetFullPath(
+                    pagePath) &&
+            resolvedPage.Annotations
+                .SequenceEqual(
+                    new[]
+                    {
+                        beforeAnnotation,
+                        sharedAnnotation,
+                        afterAnnotation
+                    }) &&
+            resolvedPage.MapAreas
+                .Select(area => area.Comment)
+                .SequenceEqual(
+                    new[]
+                    {
+                        "Before",
+                        "Shared",
+                        "After"
+                    }) &&
+            resolved.Navigation.Single()
+                .TargetPageIndex == 0,
+            "DjVu indirect resolver must use DIRM Name for disk access, Id for INCL/NAVM and expand shared annotations at the INCL position.");
+
+        var model =
+            SupportedFormatRegistry
+                .ReadDocument(
+                    indexPath);
+        var fixedPage =
+            model.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single();
+
+        Assert(
+            fixedPage.ImageRuns.Count == 1 &&
+            fixedPage.ImageRuns[0]
+                .ContentType ==
+                "image/png" &&
+            fixedPage.Links
+                .Select(link => link.Title)
+                .SequenceEqual(
+                    new[]
+                    {
+                        "Before",
+                        "Shared",
+                        "After"
+                    }) &&
+            model.Outlines.Single()
+                .TargetPageNumber == 1,
+            "DjVu indirect document must render through SupportedFormatRegistry with shared links and resolved NAVM outline.");
+
+        const string dictionaryId =
+            "dictionary-id.iff";
+        var dictionaryDiskName =
+            Path.Combine(
+                "djvu-indirect-parts",
+                "dictionary-file.iff");
+        var maskDiskName =
+            Path.Combine(
+                "djvu-indirect-parts",
+                "mask-file.djvu");
+        var dictionaryPath =
+            Path.Combine(
+                directory,
+                dictionaryDiskName);
+        var maskPath =
+            Path.Combine(
+                directory,
+                maskDiskName);
+
+        var dictionaryForm =
+            Form(
+                "DJVI",
+                Chunk(
+                    "Djbz",
+                    new byte[]
+                    {
+                        7,
+                        8,
+                        9
+                    }));
+        File.WriteAllBytes(
+            dictionaryPath,
+            DjvuFile(
+                dictionaryForm));
+
+        var maskForm =
+            Form(
+                "DJVU",
+                Chunk(
+                    "INFO",
+                    info),
+                Chunk(
+                    "INCL",
+                    Encoding.UTF8.GetBytes(
+                        dictionaryId)),
+                Chunk(
+                    "Sjbz",
+                    new byte[]
+                    {
+                        1,
+                        2
+                    }));
+        File.WriteAllBytes(
+            maskPath,
+            DjvuFile(maskForm));
+
+        var dictionaryIndexPath =
+            Path.Combine(
+                directory,
+                "djvu-indirect-dictionary.djvu");
+        File.WriteAllBytes(
+            dictionaryIndexPath,
+            DjvuFile(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        BuildDirm(
+                            (
+                                dictionaryForm,
+                                (byte)0x80,
+                                dictionaryId,
+                                dictionaryDiskName,
+                                null),
+                            (
+                                maskForm,
+                                (byte)0x81,
+                                "mask-id.djvu",
+                                maskDiskName,
+                                null))))));
+
+        var dictionaryResolved =
+            DjvuIndirectDocumentResolver
+                .Resolve(
+                    dictionaryIndexPath,
+                    DjvuContainerReader
+                        .Inspect(
+                            dictionaryIndexPath));
+        var inheritedLayer =
+            dictionaryResolved.Pages
+                .Single()
+                .ResolvedSharedImageLayers
+                .Single();
+        Assert(
+            inheritedLayer.Kind == "Djbz" &&
+            inheritedLayer.SourcePath ==
+                Path.GetFullPath(
+                    dictionaryPath) &&
+            inheritedLayer.ReadPayload()
+                .SequenceEqual(
+                    new byte[]
+                    {
+                        7,
+                        8,
+                        9
+                    }),
+            "DjVu indirect INCL must bind shared Djbz to its external physical component file.");
+
+        var traversalIndexPath =
+            Path.Combine(
+                directory,
+                "djvu-indirect-traversal.djvu");
+        File.WriteAllBytes(
+            traversalIndexPath,
+            DjvuFile(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        BuildDirm(
+                            (
+                                pageForm,
+                                (byte)0x81,
+                                "escape.djvu",
+                                Path.Combine(
+                                    "..",
+                                    "outside.djvu"),
+                                null))))));
+        var traversalRejected =
+            false;
+        try
+        {
+            _ = DjvuIndirectDocumentResolver
+                .Resolve(
+                    traversalIndexPath,
+                    DjvuContainerReader
+                        .Inspect(
+                            traversalIndexPath));
+        }
+        catch (InvalidDataException)
+        {
+            traversalRejected = true;
+        }
+
+        Assert(
+            traversalRejected,
+            "DjVu indirect component filename must not escape the index directory.");
+
+        var roleMismatchPath =
+            Path.Combine(
+                directory,
+                "djvu-indirect-role.djvu");
+        File.WriteAllBytes(
+            roleMismatchPath,
+            DjvuFile(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        BuildDirm(
+                            (
+                                sharedForm,
+                                (byte)0x81,
+                                "wrong-role.djvu",
+                                sharedDiskName,
+                                null))))));
+        var roleRejected =
+            false;
+        try
+        {
+            _ = DjvuIndirectDocumentResolver
+                .Resolve(
+                    roleMismatchPath,
+                    DjvuContainerReader
+                        .Inspect(
+                            roleMismatchPath));
+        }
+        catch (InvalidDataException)
+        {
+            roleRejected = true;
+        }
+
+        Assert(
+            roleRejected,
+            "DjVu indirect DIRM role must match the external component FORM type.");
     }
 
     private static void TestDjvuNavigation(string directory)

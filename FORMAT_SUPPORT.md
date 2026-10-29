@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.5.72
+Версия профиля: 1.5.73
 
 ## Ready for use
 
@@ -18,7 +18,7 @@ MYBOOK считает готовыми к обычному пользовате�
 | `.doc` | Word 97–2003 Binary/CFB reading profile и RTF-файлы с расширением .doc; текст, стили, списки, таблицы, sections, notes, headers/footers, fields, images и поддерживаемый OfficeArt. |
 | `.docx` | Word OpenXML flow document: styles, lists, tables, images, relationships, hyperlinks, bookmarks и section metadata. |
 | `.pdf` | PDF fixed-page reading profile: classic/xref streams, incremental updates, object streams, text/fonts, paths, images, links/outlines, encryption profiles и поддерживаемые stream filters. |
-| `.djvu` | DjVu fixed-page reading profile: bundled/single-page containers, JB2/Smmr masks, IW44/JPEG backgrounds and foregrounds, FGbz palettes, compound composition, INFO rotation, NAVM outlines, ANTa/ANTz maparea links и selectable TXTa/TXTz text-zone overlay. |
+| `.djvu` | DjVu fixed-page reading profile: single-page, bundled и indirect DJVM containers; JB2/Smmr masks, IW44/JPEG backgrounds/foregrounds, FGbz palettes, compound composition, INFO rotation, NAVM outlines, shared/page ANTa/ANTz mapareas и selectable TXTa/TXTz text-zone overlay. |
 
 “Ready for use” означает, что зарегистрированный формат проходит единый путь
 от открытия пользовательского файла до модели и итогового рендера, имеет
@@ -41,17 +41,17 @@ Visual profile включает:
 - compound composition из одного `Sjbz`/JB2 или `Smmr` mask, optional `BG44`/`BGjp` background и optional `FGbz`/`FG44`/`FGjp` foreground colors;
 - DjVu 4-bit linear scaling для reduced backgrounds, integral nearest-neighbor expansion для reduced foreground color rasters и final `INFO` rotation.
 
-`DIRM` v1 поддерживает bundled и indirect metadata, component roles, IDs, names и titles. Bundled component offsets/sizes сверяются с реальными `FORM:DJVU`/`DJVI`/`THUM`. External files из indirect DJVM не разрешаются и завершаются явным unsupported path.
+`DIRM` v1 поддерживает bundled и indirect metadata, component roles, IDs, names и titles. Bundled offsets/sizes/roles сверяются с реальными `FORM:DJVU`/`DJVI`/`THUM`. Для indirect DJVM `DjvuIndirectDocumentResolver` загружает page/shared components относительно каталога index-файла: physical filename берётся из DIRM `Name`, если он присутствует, иначе из component `Id`, а `INCL` и NAVM продолжают разрешаться по component ID. Rooted/path-traversal names, отсутствующие files, DIRM size mismatch и role/FORM mismatch отклоняются. Каждый `DjvuImageChunk` хранит собственный `SourcePath`, поэтому raster decoders читают payload непосредственно из page/shared component и не принимают index path. Суммарный объём реально открываемых external page/shared files ограничен 256 MiB.
 
 BZZ `NAVM` разбирается в bounded recursive outline. Internal page references используют DjVu resolution order ID → signed relative displacement → TITLE → page number → NAME; relative targets разрешаются относительно содержащей страницы. External HTTP/HTTPS/mailto URLs остаются внешними. Outline передаётся в `DocumentOutlineItem` и использует общую навигацию MYBOOK.
 
-`ANTa` и BZZ-compressed `ANTz` проходят strict UTF-8 validation. Поддерживаемые `maparea` shapes — `rect`, `oval` и `poly`; reader сохраняет точную bottom-left pixel geometry и переводит её в top-left fixed-page coordinates. SVG renderer создаёт соответствующие clickable `rect`/`ellipse`/`polygon` regions, внутренние DjVu page targets и безопасные внешние URL. Остальные annotation commands/shapes не аппроксимируются.
+`ANTa` и BZZ-compressed `ANTz` проходят strict UTF-8 validation. Поддерживаемые `maparea` shapes — `rect`, `oval` и `poly`; reader сохраняет точную bottom-left pixel geometry и переводит её в top-left fixed-page coordinates. Page `INCL` разворачивает annotations из bundled или indirect role-0/role-3 `FORM:DJVI` точно в позиции marker, не меняя порядок локальных annotations. SVG renderer создаёт соответствующие clickable `rect`/`ellipse`/`polygon` regions, внутренние DjVu page targets и безопасные внешние URL. Остальные annotation commands/shapes не аппроксимируются.
 
 `TXTa` и BZZ-compressed `TXTz` извлекают strict UTF-8 page text. Version-1 text-zone tree разбирает PAGE/COLUMN/REGION/PARAGRAPH/LINE/WORD/CHARACTER geometry и UTF-8 byte ranges. `DjvuTextOverlayBuilder` берёт terminal zones без дублирования parent ranges, сохраняет исходные UTF-8 gaps между соседними zones, строго отклоняет split-codepoint/overlap boundaries и создаёт transparent `DocumentFixedTextRun` overlay. Общий SVG renderer использует точную zone width через `textLength/spacingAndGlyphs`, top-aligned geometry, INFO rotation и `user-select:text`; последовательность run text точно восстанавливает `DocumentFixedPage.Text`. Ctrl+F не перехватывается fullscreen hotkey и передаётся WebView2 с включёнными browser accelerator keys.
 
-Resource limits ограничивают file/chunk/nesting counts, decoded BZZ/IW44/JB2 raster sizes, shapes/blits/comments, page count и суммарный PNG payload fixed-page model. Неизвестные/конфликтующие visual layer families, striped `Smmr`, external indirect components и unsupported annotation profiles завершаются явной ошибкой вместо частичного рендера.
+Resource limits ограничивают file/chunk/nesting counts, decoded BZZ/IW44/JB2 raster sizes, shapes/blits/comments, page count, суммарный indirect component input и PNG payload fixed-page model. Неизвестные/конфликтующие visual layer families, striped `Smmr`, nested `INCL` внутри shared `FORM:DJVI`, более одной inherited `Djbz` dictionary для одной JB2 page и unsupported annotation profiles завершаются явной ошибкой вместо частичного рендера.
 
-Regression покрывает container/DIRM/NAVM/text/annotation parsing, JPEG/IW44/JB2/Smmr decoding, FGbz, compound composition, reader → `DocumentModel` → PNG/text overlay → HTML/SVG, rotation geometry, UTF-8 zone boundaries и malformed input. Реальный validation corpus содержит 7 корректных DjVu файлов / 147 страниц; 102 text-bearing pages создают 38 859 selectable runs с точным восстановлением page text и geometry внутри page bounds. Corpus также охватывает FG44, FGbz compound, JB2-only, shared/local `Djbz` и NAVM. Четыре legacy fixtures с некорректным UTF-8 внутри `TXTz` завершаются строгой `InvalidDataException`, без producer-specific byte fallback.
+Regression покрывает container/DIRM/NAVM/text/annotation parsing, bundled и indirect shared components, external `SourcePath` binding, JPEG/IW44/JB2/Smmr decoding, FGbz, compound composition, reader → `DocumentModel` → PNG/text overlay → HTML/SVG, rotation geometry, UTF-8 zone boundaries, traversal/role/size errors и malformed input. Основной real validation corpus содержит 7 корректных DjVu файлов / 147 страниц; 102 text-bearing pages создают 38 859 selectable runs. Дополнительно real `boy_jb2.djvu`, подключённый как external page через indirect DIRM index, проходит полный reader/render path; real bundled `czech.djvu` подтверждает role-3 shared annotation resolution на 85 страницах. Полный visual render `czech.djvu` остаётся вне профиля из-за двух inherited `Djbz` dictionaries. Четыре legacy fixtures с некорректным UTF-8 внутри `TXTz` завершаются строгой `InvalidDataException`, без producer-specific byte fallback.
 
 ## Readiness gates
 
