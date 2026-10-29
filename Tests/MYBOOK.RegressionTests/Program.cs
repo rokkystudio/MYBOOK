@@ -12924,15 +12924,62 @@ internal static class Program
         Assert(unsupported, "DjVu unsupported DIRM version must be rejected.");
 
         var indirect = DjvuDirectoryReader.Read(new byte[] { 1, 0, 1 }
-            .Concat(Compress(new byte[] { 0, 0, 5, 0, (byte)'p', 0 })).ToArray(), 100);
+            .Concat(Compress(new byte[] { 0, 0, 0, 0, (byte)'p', 0 })).ToArray(), 100);
         Assert(!indirect.Bundled && indirect.ComponentCount == 1 &&
             indirect.Offsets.Count == 0 && indirect.Components.Single() is
-                { Id: "p", Size: 5, IsShared: true, Offset: null },
+                { Id: "p", Size: 0, IsShared: true, Offset: null },
             "DjVu indirect DIRM should not require bundled offsets.");
+        var bundledZeroSize = new byte[] { 0x81, 0, 1, 0, 0, 0, 20 }
+            .Concat(Compress(new byte[] { 0, 0, 0, 0, (byte)'x', 0 })).ToArray();
+        var bundledZeroRejected = false;
+        try { _ = DjvuDirectoryReader.Read(bundledZeroSize, 100); }
+        catch (InvalidDataException) { bundledZeroRejected = true; }
+        Assert(bundledZeroRejected,
+            "DjVu bundled DIRM component size zero must be rejected.");
+
+        var mismatchedRaw = (byte[])raw.Clone();
+        mismatchedRaw[2] = checked((byte)(page.Length - 1));
+        var mismatchedCompressed = Compress(mismatchedRaw);
+        var mismatchedMetadata = new byte[11 + mismatchedCompressed.Length];
+        mismatchedMetadata[0] = 0x81;
+        mismatchedMetadata[2] = 2;
+        mismatchedCompressed.CopyTo(mismatchedMetadata, 11);
+        var mismatchedFirstPage = 16 + Chunk("DIRM", mismatchedMetadata).Length;
+        BinaryPrimitives.WriteUInt32BigEndian(
+            mismatchedMetadata.AsSpan(3, 4), (uint)mismatchedFirstPage);
+        BinaryPrimitives.WriteUInt32BigEndian(
+            mismatchedMetadata.AsSpan(7, 4), (uint)(mismatchedFirstPage + page.Length));
+        System.IO.File.WriteAllBytes(path, File(Form("DJVM",
+            Chunk("DIRM", mismatchedMetadata), page, page)));
+        var sizeMismatchRejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { sizeMismatchRejected = true; }
+        Assert(sizeMismatchRejected,
+            "DjVu bundled DIRM component size must match the target FORM size.");
+
+        var roleMismatchRaw = (byte[])raw.Clone();
+        roleMismatchRaw[6] = 0xC0; // declares shared DJVI, but target is FORM:DJVU
+        var roleMismatchCompressed = Compress(roleMismatchRaw);
+        var roleMismatchMetadata = new byte[11 + roleMismatchCompressed.Length];
+        roleMismatchMetadata[0] = 0x81;
+        roleMismatchMetadata[2] = 2;
+        roleMismatchCompressed.CopyTo(roleMismatchMetadata, 11);
+        var roleMismatchFirstPage = 16 + Chunk("DIRM", roleMismatchMetadata).Length;
+        BinaryPrimitives.WriteUInt32BigEndian(
+            roleMismatchMetadata.AsSpan(3, 4), (uint)roleMismatchFirstPage);
+        BinaryPrimitives.WriteUInt32BigEndian(
+            roleMismatchMetadata.AsSpan(7, 4), (uint)(roleMismatchFirstPage + page.Length));
+        System.IO.File.WriteAllBytes(path, File(Form("DJVM",
+            Chunk("DIRM", roleMismatchMetadata), page, page)));
+        var roleMismatchRejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { roleMismatchRejected = true; }
+        Assert(roleMismatchRejected,
+            "DjVu DIRM page/shared role must match the target FORM type.");
+
         foreach (var (caseName, metadataBytes) in new[]
         {
             ("invalid-role", new byte[] { 0, 0, 5, 0x05, (byte)'x', 0 }),
-            ("zero-size", new byte[] { 0, 0, 0, 0x01, (byte)'x', 0 }),
             ("missing-id", new byte[] { 0, 0, 5, 0x01, (byte)'x' }),
             ("invalid-utf8", new byte[] { 0, 0, 5, 0x01, 0xC3, 0x28, 0 }),
             ("trailing-data", new byte[] { 0, 0, 5, 0x01, (byte)'x', 0, 42 })
