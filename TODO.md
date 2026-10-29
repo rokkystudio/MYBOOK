@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.5.63
+Текущая версия: 1.5.64
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
@@ -57,7 +57,7 @@
 - [x] `FORM:DJVU` / `FORM:DJVM`: структурный обход вложенных страниц; косвенные DIRM references пока не разрешаются.
 - [ ] Directory/navigation: `DIRM` v1 поддерживает bundled/indirect, count и абсолютные offsets; BZZ metadata распаковывается и разбирается (24-bit sizes, roles, IDs, optional names/titles). Indirect size=0 принимается по спецификации; bundled size обязан быть ненулевым, совпадать с реальным FORM, а role — с FORM:DJVU/DJVI/THUM. BZZ `NAVM` outline теперь разбирается в рекурсивное дерево titles/URLs с bounded depth/count/UTF-8 validation и проверен на реальном DjVu3Spec; numeric `#N`/`N` и bundled page component ID/name/title targets разрешаются в zero-based page index, invalid/ambiguous internal targets отклоняются, external URLs остаются внешними. UI-навигация по закладкам и разрешение внешних indirect компонентов пока не реализованы. Отдельный regression.
 - [ ] Text layer: plain `TXTa` UTF-8 payload уже извлекается по 24-bit length с привязкой к `FORM:DJVU` и строгой диагностикой некорректной длины, UTF-8 и дублирования; BZZ-compressed `TXTz` now decoded through vendored MIT DjvuNet BS/ZP with bounded output and UTF-8 validation, zone tree версии 1 теперь разбирается с иерархией координат и UTF-8 byte offsets (отдельный regression), полный многослойный renderer остаётся неподдерживаемым.
-- [x] INFO chunks: geometry и DPI с отрицательными regression-тестами; это metadata inspection, не изображение страницы.
+- [x] INFO chunks: фиксированные 10 байт, обязательная первая позиция в `FORM:DJVU`, geometry, encoder major/minor version, raw DPI (включая 0), gamma и rotation flags; `DisplayWidth/DisplayHeight` учитывают 90/270°, а работающие JPEG-only/Smmr-only renderer paths применяют initial page rotation. Проверено synthetic и реальным DjVu3Spec.
 - [ ] JB2 decoder: page `Sjbz` and shared `Djbz` payload offsets/lengths are now indexed and can be read via validated `DjvuImageChunk.ReadPayload`; bundled INCL-to-DIRM-to-DJVI dictionary payload references are now resolved per page and validated; actual bitmap decoding is still pending.
 - [ ] IW44 decoder: `BG44`/`FG44` progressive layer streams are indexed in order; `FGbz`, `Smmr`, `BGjp`, `FGjp` are also enumerated with exact payload ranges. BGjp/FGjp JPEG pixel decoding is now implemented using bounded BGRA32 WPF JPEG conversion and end-to-end regression; A strict BGjp-only page renderer now produces BGRA32 with bounded integer scaling and rejects mixed image layers. Regular non-striped `Smmr` Fax-G4/MMR masks now decode through the shared CCITT Group 4 path with exact pixel regression; strict Smmr-only pages now render to full-resolution BGRA32 with geometry validation, while striped Smmr remains unsupported. IW44/JB2 pixel decoding and multi-layer page compositing are still pending.
 - [ ] Background/foreground composition.

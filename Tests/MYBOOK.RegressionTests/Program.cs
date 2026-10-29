@@ -12257,15 +12257,38 @@ internal static class Program
         var info = new byte[10];
         BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(0, 2), 640);
         BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(2, 2), 480);
+        info[4] = 26;
+        info[5] = 0;
         BinaryPrimitives.WriteUInt16LittleEndian(info.AsSpan(6, 2), 300);
         info[8] = 22;
-        var page = Form("DJVU", Chunk("ODD!", new byte[] { 1, 2, 3 }), Chunk("INFO", info));
+        var page = Form("DJVU", Chunk("INFO", info), Chunk("ODD!", new byte[] { 1, 2, 3 }));
         var path = Path.Combine(directory, "djvu-inspect.djvu");
         System.IO.File.WriteAllBytes(path, File(page));
         var inspected = DjvuContainerReader.Inspect(path);
         Assert(inspected.FormType == "DJVU" && inspected.Pages.Count == 1 &&
             inspected.Pages[0].Width == 640 && inspected.Pages[0].Height == 480 &&
-            inspected.Pages[0].Dpi == 300, "DjVu INFO geometry/DPI.");
+            inspected.Pages[0].DisplayWidth == 640 && inspected.Pages[0].DisplayHeight == 480 &&
+            inspected.Pages[0].Dpi == 300 &&
+            inspected.Pages[0].MinorVersion == 26 && inspected.Pages[0].MajorVersion == 0 &&
+            Math.Abs(inspected.Pages[0].Gamma - 2.2) < 0.001 &&
+            inspected.Pages[0].Rotation == DjvuPageRotation.RightSideUp &&
+            inspected.Pages[0].InfoFlags == 0,
+            "DjVu INFO geometry/version/DPI/gamma/rotation.");
+
+        var rotatedInfo = (byte[])info.Clone();
+        rotatedInfo[9] = 5;
+        System.IO.File.WriteAllBytes(path, File(Form("DJVU", Chunk("INFO", rotatedInfo))));
+        var rotatedPageInfo = DjvuContainerReader.Inspect(path).Pages.Single();
+        Assert(rotatedPageInfo.Rotation == DjvuPageRotation.Clockwise &&
+            rotatedPageInfo.DisplayWidth == 480 && rotatedPageInfo.DisplayHeight == 640,
+            "DjVu INFO clockwise rotation swaps display geometry.");
+
+        System.IO.File.WriteAllBytes(path, File(Form("DJVU",
+            Chunk("ODD!", new byte[] { 1, 2, 3 }), Chunk("INFO", info))));
+        var infoOrderRejected = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { infoOrderRejected = true; }
+        Assert(infoOrderRejected, "DjVu page FORM must begin with INFO.");
 
         var multi = Form("DJVM", page, page);
         System.IO.File.WriteAllBytes(path, File(multi));
@@ -12329,7 +12352,7 @@ internal static class Program
         textPayload[1] = (byte)(utf8Text.Length >> 8);
         textPayload[2] = (byte)utf8Text.Length;
         utf8Text.CopyTo(textPayload.AsSpan(3));
-        var textPage = Form("DJVU", Chunk("TXTa", textPayload), Chunk("INFO", info));
+        var textPage = Form("DJVU", Chunk("INFO", info), Chunk("TXTa", textPayload));
         System.IO.File.WriteAllBytes(path, File(textPage));
         Assert(DjvuContainerReader.Inspect(path).Pages.Single().Text ==
             "Hello DjVu — Привет", "DjVu TXTa UTF-8 text extraction.");
@@ -12468,6 +12491,21 @@ internal static class Program
         try { _ = DjvuContainerReader.Inspect(path); }
         catch (InvalidDataException) { failed = true; }
         Assert(failed, "DjVu zero-width INFO must be rejected.");
+
+        var zeroDpi = (byte[])info.Clone();
+        zeroDpi[6] = 0;
+        zeroDpi[7] = 0;
+        System.IO.File.WriteAllBytes(path, File(Form("DJVU", Chunk("INFO", zeroDpi))));
+        Assert(DjvuContainerReader.Inspect(path).Pages.Single().Dpi == 0,
+            "DjVu INFO preserves a zero DPI value without inventing metadata.");
+
+        System.IO.File.WriteAllBytes(path, File(Form("DJVU",
+            Chunk("INFO", info.Concat(new byte[] { 0 }).ToArray()))));
+        failed = false;
+        try { _ = DjvuContainerReader.Inspect(path); }
+        catch (InvalidDataException) { failed = true; }
+        Assert(failed, "DjVu INFO must contain exactly 10 bytes.");
+
     }
 
     private static void TestDjvuBzzRealText()
@@ -12668,6 +12706,16 @@ internal static class Program
         Assert(rendered.Width == width && rendered.Height == height &&
             rendered.Stride == width * 4 && rendered.Bgra32.Length == width * height * 4,
             "DjVu Smmr-only page renderer returns full-size BGRA32 pixels.");
+
+        var clockwise = DjvuSmmrPageRenderer.Render(path,
+            pageInfo with { Rotation = DjvuPageRotation.Clockwise });
+        Assert(clockwise.Width == height && clockwise.Height == width &&
+            clockwise.Stride == height * 4 &&
+            clockwise.Bgra32[0] == expected[(height - 1) * width] &&
+            clockwise.Bgra32[1] == expected[(height - 1) * width] &&
+            clockwise.Bgra32[2] == expected[(height - 1) * width] &&
+            clockwise.Bgra32[3] == 255,
+            "DjVu INFO clockwise rotation is applied to rendered Smmr pixels.");
         for (var i = 0; i < expected.Length; i++)
         {
             var gray = expected[i];
@@ -13045,10 +13093,16 @@ internal static class Program
             Assert(real.Navigation.Count > 0 &&
                 flattened.Length > 1 &&
                 real.Pages.Count > 1 &&
+                real.Pages[0].Width == 2539 && real.Pages[0].Height == 3295 &&
+                real.Pages[0].MajorVersion == 0 && real.Pages[0].MinorVersion == 25 &&
+                real.Pages[0].Dpi == 300 &&
+                Math.Abs(real.Pages[0].Gamma - 2.2) < 0.001 &&
+                real.Pages[0].Rotation == DjvuPageRotation.RightSideUp &&
+                real.Pages[0].InfoFlags == 0x01 &&
                 real.Pages[1].ComponentId == "p0002.djvu" &&
                 flattened.First(item => item.Url == "#1").TargetPageIndex == 0 &&
                 flattened.First(item => item.Url == "#p0002.djvu").TargetPageIndex == 1,
-                "Real DjVu3Spec NAVM outline must resolve numeric and component-ID page targets.");
+                "Real DjVu3Spec INFO and NAVM metadata must decode consistently.");
         }
 
         var duplicateRoot = Form("DJVM",
