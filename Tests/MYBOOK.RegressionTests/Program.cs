@@ -64,6 +64,7 @@ internal static class Program
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu shared JB2 links", () => TestDjvuSharedImageLinks(temporaryDirectory)),
+            ("DjVu JPEG layers", () => TestDjvuJpegLayers(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
@@ -12542,6 +12543,73 @@ internal static class Program
             catch (InvalidDataException) { rejected = true; }
             Assert(rejected, $"DjVu ANTa malformed rect {name} must be rejected.");
         }
+    }
+
+    private static void TestDjvuJpegLayers(string directory)
+    {
+        static byte[] Chunk(string id, byte[] payload)
+        {
+            var bytes = new byte[8 + payload.Length + (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id).CopyTo(bytes, 0);
+            BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(4, 4), (uint)payload.Length);
+            payload.CopyTo(bytes, 8);
+            return bytes;
+        }
+        static byte[] Form(string type, params byte[][] chunks) =>
+            Chunk("FORM", Encoding.ASCII.GetBytes(type)
+                .Concat(chunks.SelectMany(chunk => chunk)).ToArray());
+
+        var pixels = new byte[]
+        {
+            15, 30, 225, 255, 15, 30, 225, 255,
+            15, 30, 225, 255, 15, 30, 225, 255
+        };
+        var bitmap = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32,
+            null, pixels, 8);
+        var encoder = new JpegBitmapEncoder { QualityLevel = 100 };
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var output = new MemoryStream();
+        encoder.Save(output);
+        var jpeg = output.ToArray();
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(0, 2), 2);
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(2, 2), 2);
+        var root = Form("DJVU", Chunk("INFO", info),
+            Chunk("BGjp", jpeg), Chunk("FGjp", jpeg));
+        var path = Path.Combine(directory, "djvu-jpeg-layer.djvu");
+        File.WriteAllBytes(path, Encoding.ASCII.GetBytes("AT&T").Concat(root).ToArray());
+
+        var page = DjvuContainerReader.Inspect(path).Pages.Single();
+        Assert(page.ImageLayers.Select(layer => layer.Kind)
+            .SequenceEqual(new[] { "BGjp", "FGjp" }),
+            "DjVu JPEG background and foreground layers must be indexed.");
+        foreach (var layer in page.ImageLayers)
+        {
+            var image = DjvuJpegLayerDecoder.Decode(path, layer);
+            Assert(image.Width == 2 && image.Height == 2 &&
+                image.Stride == 8 && image.Bgra32.Length == 16 &&
+                image.Bgra32[2] > 150 && image.Bgra32[3] == 255,
+                "DjVu JPEG layer decodes to bounded BGRA32 pixels.");
+        }
+
+        var rejectedWrongType = false;
+        try { _ = DjvuJpegLayerDecoder.Decode(path,
+            page.ImageLayers[0] with { Kind = "BG44" }); }
+        catch (NotSupportedException) { rejectedWrongType = true; }
+        Assert(rejectedWrongType, "DjVu JPEG layer decoder rejects IW44.");
+
+        var rejectedRange = false;
+        try { _ = DjvuJpegLayerDecoder.Decode(path,
+            page.ImageLayers[0] with { Offset = int.MaxValue }); }
+        catch (InvalidDataException) { rejectedRange = true; }
+        Assert(rejectedRange, "DjVu JPEG layer rejects out-of-bounds payload.");
+
+        var rejectedMarker = false;
+        try { _ = DjvuJpegLayerDecoder.Decode(path,
+            page.ImageLayers[0] with { Offset = page.ImageLayers[0].Offset + 1 }); }
+        catch (InvalidDataException) { rejectedMarker = true; }
+        Assert(rejectedMarker, "DjVu JPEG layer rejects invalid JPEG markers.");
     }
 
     private static void TestDjvuSharedImageLinks(string directory)
