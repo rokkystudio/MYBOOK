@@ -63,6 +63,7 @@ internal static class Program
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
+            ("DjVu shared JB2 links", () => TestDjvuSharedImageLinks(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
@@ -12541,6 +12542,75 @@ internal static class Program
             catch (InvalidDataException) { rejected = true; }
             Assert(rejected, $"DjVu ANTa malformed rect {name} must be rejected.");
         }
+    }
+
+    private static void TestDjvuSharedImageLinks(string directory)
+    {
+        static byte[] Chunk(string id, byte[] payload)
+        {
+            var chunk = new byte[8 + payload.Length + (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id).CopyTo(chunk, 0);
+            BinaryPrimitives.WriteUInt32BigEndian(chunk.AsSpan(4, 4), (uint)payload.Length);
+            payload.CopyTo(chunk, 8);
+            return chunk;
+        }
+        static byte[] Form(string type, params byte[][] chunks) =>
+            Chunk("FORM", Encoding.ASCII.GetBytes(type)
+                .Concat(chunks.SelectMany(x => x)).ToArray());
+        static byte[] Compress(byte[] raw)
+        {
+            using var output = new MemoryStream();
+            using (var encoder = new DjvuNet.Compression.BSOutputStream(output, 1024))
+                encoder.Write(raw, 0, raw.Length);
+            return output.ToArray();
+        }
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(0, 2), 640);
+        BinaryPrimitives.WriteUInt16BigEndian(info.AsSpan(2, 2), 480);
+        var dictionary = Form("DJVI", Chunk("Djbz", new byte[] { 7, 8, 9 }));
+        var page = Form("DJVU",
+            Chunk("INFO", info),
+            Chunk("INCL", Encoding.UTF8.GetBytes("shapes.djvi")),
+            Chunk("Sjbz", new byte[] { 1, 2 }));
+        var raw = new byte[]
+        {
+            0, 0, (byte)dictionary.Length,
+            0, 0, (byte)page.Length,
+            0, 1
+        }.Concat(Encoding.UTF8.GetBytes("shapes.djvi\0page.djvu\0")).ToArray();
+        var compressed = Compress(raw);
+        var dirm = new byte[11 + compressed.Length];
+        dirm[0] = 0x81;
+        dirm[2] = 2;
+        compressed.CopyTo(dirm, 11);
+        var firstOffset = 16 + Chunk("DIRM", dirm).Length;
+        BinaryPrimitives.WriteUInt32BigEndian(dirm.AsSpan(3, 4), (uint)firstOffset);
+        BinaryPrimitives.WriteUInt32BigEndian(dirm.AsSpan(7, 4), (uint)(firstOffset + dictionary.Length));
+        var path = Path.Combine(directory, "djvu-shared-incl.djvu");
+        byte[] Build(byte[] pageData, byte[] dirData) =>
+            Encoding.ASCII.GetBytes("AT&T").Concat(Form("DJVM",
+                Chunk("DIRM", dirData), dictionary, pageData)).ToArray();
+        System.IO.File.WriteAllBytes(path, Build(page, dirm));
+        var inspected = DjvuContainerReader.Inspect(path);
+        Assert(inspected.Pages.Count == 1 &&
+            inspected.Pages[0].ImageLayers.Single().Kind == "Sjbz" &&
+            inspected.Pages[0].ResolvedSharedImageLayers.Single().Kind == "Djbz" &&
+            inspected.Pages[0].ResolvedSharedImageLayers.Single()
+                .ReadPayload(path).SequenceEqual(new byte[] { 7, 8, 9 }),
+            "DjVu bundled INCL must resolve the matching DJVI dictionary by DIRM ID and offset.");
+
+        var brokenPage = Form("DJVU",
+            Chunk("INFO", info),
+            Chunk("INCL", Encoding.UTF8.GetBytes("missing.djvi")),
+            Chunk("Sjbz", new byte[] { 1, 2 }));
+        var broken = false;
+        try
+        {
+            System.IO.File.WriteAllBytes(path, Build(brokenPage, dirm));
+            _ = DjvuContainerReader.Inspect(path);
+        }
+        catch (InvalidDataException) { broken = true; }
+        Assert(broken, "DjVu unresolved bundled INCL dictionary must be rejected.");
     }
 
     private static void TestDjvuDirectory(string directory)
