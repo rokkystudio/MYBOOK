@@ -9,9 +9,9 @@
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
         <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-        <Version>1.5.67</Version>
-        <AssemblyVersion>1.5.67.0</AssemblyVersion>
-        <FileVersion>1.5.67.0</FileVersion>
+        <Version>1.5.68</Version>
+        <AssemblyVersion>1.5.68.0</AssemblyVersion>
+        <FileVersion>1.5.68.0</FileVersion>
         <InformationalVersion>1.2.44</InformationalVersion>
     </PropertyGroup>
 
@@ -65,6 +65,9 @@
                  CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\SHARED\Book\Formats\Djvu\VendorIw44\LICENSE.md"
                  Link="ThirdParty\DjvuNet.Iw44\LICENSE.md"
+                 CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\SHARED\Book\Formats\Djvu\VendorJb2\LICENSE.md"
+                 Link="ThirdParty\DjvuNet.Jb2\LICENSE.md"
                  CopyToOutputDirectory="PreserveNewest" />
 
         <Resource Include="..\SHARED\Flags\Assets\**\*.png">

@@ -69,6 +69,7 @@ internal static class Program
             ("DjVu FGbz palette", () => TestDjvuForegroundPalette(temporaryDirectory)),
             ("DjVu IW44 headers", TestDjvuIw44Headers),
             ("DjVu IW44 pixels", TestDjvuIw44Pixels),
+            ("DjVu JB2 pixels", TestDjvuJb2Pixels),
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa rectangular links", TestDjvuMapAreas),
@@ -12951,6 +12952,99 @@ internal static class Program
         Assert(digest ==
             "F49360BC6AC894F17597B0BDE0852F21E15845B38B6466B6B779999D51A75F95",
             "DjVu IW44 real BG44 pixel output must remain byte-stable.");
+    }
+
+    private static void TestDjvuJb2Pixels()
+    {
+        var specs = Path.Combine(Path.GetTempPath(),
+            "MYBOOK-djvunet-bzz-reference", "Specs");
+
+        var standalonePath = Path.Combine(specs, "1998_compression.djvu");
+        if (File.Exists(standalonePath))
+        {
+            var standalone = DjvuContainerReader.Inspect(standalonePath);
+            var page = standalone.Pages[0];
+            var mask = DjvuJb2Decoder.DecodePage(standalonePath, page);
+            Assert(mask is
+                {
+                    Width: 2556,
+                    Height: 3300,
+                    ShapeCount: 3187,
+                    BlitCount: 3210,
+                    InheritedShapeCount: 0
+                } &&
+                Convert.ToHexString(SHA256.HashData(mask.Gray8)) ==
+                "C6228D1E6196EA3A42FA52E25B04D9867B18AE121ED957BDEA1FABAA30D54073",
+                "Real standalone Sjbz page must decode to a stable JB2 mask.");
+
+            var mixedRejected = false;
+            try { _ = DjvuJb2PageRenderer.Render(standalonePath, page); }
+            catch (NotSupportedException) { mixedRejected = true; }
+            Assert(mixedRejected,
+                "DjVu JB2-only renderer must reject pages that also contain IW44 layers.");
+        }
+
+        var sharedPath = Path.Combine(specs, "2000_compression_system.djvu");
+        if (File.Exists(sharedPath))
+        {
+            var shared = DjvuContainerReader.Inspect(sharedPath);
+            var page = shared.Pages[0];
+            var mask = DjvuJb2Decoder.DecodePage(sharedPath, page);
+            Assert(mask is
+                {
+                    Width: 2550,
+                    Height: 3300,
+                    ShapeCount: 277,
+                    BlitCount: 273,
+                    InheritedShapeCount: 228
+                } &&
+                Convert.ToHexString(SHA256.HashData(mask.Gray8)) ==
+                "EE44549512020D5C5F4B27D4FE2A7D33C5ECACE015E49C55CDA3E100FDC2F606",
+                "Real shared Djbz -> Sjbz page must decode to a stable JB2 mask.");
+
+            var rendered = DjvuJb2PageRenderer.Render(sharedPath, page);
+            Assert(rendered.Width == 2550 && rendered.Height == 3300 &&
+                rendered.Stride == 2550 * 4 &&
+                rendered.Bgra32.Length == 2550 * 3300 * 4,
+                "DjVu JB2-only page renderer must produce full-size BGRA32 output.");
+            for (var i = 0; i < 128; i++)
+                Assert(rendered.Bgra32[i * 4 + 3] == 255,
+                    "DjVu JB2-only page renderer alpha must be opaque.");
+        }
+
+        var localDictionaryPath = Path.Combine(specs, "DjVu3Spec.djvu");
+        if (File.Exists(localDictionaryPath))
+        {
+            var document = DjvuContainerReader.Inspect(localDictionaryPath);
+            var localPage = document.Pages[0];
+            var mask = DjvuJb2Decoder.DecodePage(localDictionaryPath, localPage);
+            Assert(mask is
+                {
+                    Width: 2539,
+                    Height: 3295,
+                    ShapeCount: 365,
+                    BlitCount: 2693,
+                    InheritedShapeCount: 353
+                } &&
+                Convert.ToHexString(SHA256.HashData(mask.Gray8)) ==
+                "D87822CF2B6AA115B7DAFED224AAA10579483451A41319C3978555639E3C63E9",
+                "Real local Djbz + Sjbz page must decode to a stable JB2 mask.");
+
+            var ambiguousRejected = false;
+            try
+            {
+                _ = DjvuJb2Decoder.DecodePage(
+                    localDictionaryPath,
+                    localPage with
+                    {
+                        ResolvedSharedImageLayers =
+                            document.Pages[1].ResolvedSharedImageLayers
+                    });
+            }
+            catch (NotSupportedException) { ambiguousRejected = true; }
+            Assert(ambiguousRejected,
+                "DjVu JB2 decoding must reject simultaneous local and shared Djbz dictionaries.");
+        }
     }
 
     private static void TestDjvuSmmrMask(string directory)
