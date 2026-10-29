@@ -12925,6 +12925,16 @@ internal static class Program
             return stream.ToArray();
         }
 
+        static IEnumerable<DjvuBookmark> Flatten(IEnumerable<DjvuBookmark> bookmarks)
+        {
+            foreach (var bookmark in bookmarks)
+            {
+                yield return bookmark;
+                foreach (var child in Flatten(bookmark.Children))
+                    yield return child;
+            }
+        }
+
         static byte[] Bookmark(string title, string url, params byte[][] children)
         {
             var titleBytes = Encoding.UTF8.GetBytes(title);
@@ -12964,6 +12974,47 @@ internal static class Program
             navigation.Sum(item => item.TotalCount) == 3,
             "DjVu NAVM BZZ outline tree preserves titles, URLs and nesting.");
 
+        var pages = new[]
+        {
+            new DjvuPageInfo(640, 480, 300) { ComponentId = "p0001.djvu" },
+            new DjvuPageInfo(640, 480, 300)
+            {
+                ComponentId = "p0002.djvu",
+                ComponentName = "second",
+                ComponentTitle = "Second page"
+            }
+        };
+        var resolved = DjvuNavigationResolver.Resolve(navigation, pages);
+        Assert(resolved[0].TargetPageIndex == 0 &&
+            resolved[0].Children.Single().TargetPageIndex == 1 &&
+            resolved[1].TargetPageIndex == null,
+            "DjVu NAVM numeric targets resolve to zero-based page indexes while external URLs remain unresolved.");
+
+        var componentResolved = DjvuNavigationResolver.Resolve(
+            new[]
+            {
+                new DjvuBookmark("By ID", "#p0002.djvu", Array.Empty<DjvuBookmark>()),
+                new DjvuBookmark("By name", "#second", Array.Empty<DjvuBookmark>()),
+                new DjvuBookmark("By title", "#Second page", Array.Empty<DjvuBookmark>())
+            },
+            pages);
+        Assert(componentResolved.All(item => item.TargetPageIndex == 1),
+            "DjVu NAVM component ID/name/title targets resolve to the matching page.");
+
+        foreach (var badUrl in new[] { "#3", "#missing.djvu" })
+        {
+            var badTargetRejected = false;
+            try
+            {
+                _ = DjvuNavigationResolver.Resolve(
+                    new[] { new DjvuBookmark("Bad", badUrl, Array.Empty<DjvuBookmark>()) },
+                    pages);
+            }
+            catch (InvalidDataException) { badTargetRejected = true; }
+            Assert(badTargetRejected,
+                $"DjVu NAVM invalid internal target {badUrl} must be rejected.");
+        }
+
         var badCount = (byte[])raw.Clone();
         badCount[1] = 2;
         var badCountRejected = false;
@@ -12990,9 +13041,14 @@ internal static class Program
         if (File.Exists(realSample))
         {
             var real = DjvuContainerReader.Inspect(realSample);
+            var flattened = Flatten(real.Navigation).ToArray();
             Assert(real.Navigation.Count > 0 &&
-                real.Navigation.Sum(item => item.TotalCount) > 1,
-                "Real DjVu3Spec NAVM outline must decode to a nonempty bookmark tree.");
+                flattened.Length > 1 &&
+                real.Pages.Count > 1 &&
+                real.Pages[1].ComponentId == "p0002.djvu" &&
+                flattened.First(item => item.Url == "#1").TargetPageIndex == 0 &&
+                flattened.First(item => item.Url == "#p0002.djvu").TargetPageIndex == 1,
+                "Real DjVu3Spec NAVM outline must resolve numeric and component-ID page targets.");
         }
 
         var duplicateRoot = Form("DJVM",

@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.5.62
+Текущая версия: 1.5.63
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
@@ -55,7 +55,7 @@
 
 - [x] IFF/DjVu container: отдельный `DjvuContainerReader.Inspect` проверяет AT&T signature, big-endian chunk sizes, sibling odd-byte padding, nesting и bounded scanning; последний нечётный child может завершаться ровно на границе FORM без внутреннего pad, как в реальных DjVu; пока не зарегистрирован для чтения.
 - [x] `FORM:DJVU` / `FORM:DJVM`: структурный обход вложенных страниц; косвенные DIRM references пока не разрешаются.
-- [ ] Directory/navigation: `DIRM` v1 поддерживает bundled/indirect, count и абсолютные offsets; BZZ metadata распаковывается и разбирается (24-bit sizes, roles, IDs, optional names/titles). Indirect size=0 принимается по спецификации; bundled size обязан быть ненулевым, совпадать с реальным FORM, а role — с FORM:DJVU/DJVI/THUM. BZZ `NAVM` outline теперь разбирается в рекурсивное дерево titles/URLs с bounded depth/count/UTF-8 validation и проверен на реальном DjVu3Spec; UI-навигация по закладкам и разрешение внешних indirect компонентов пока не реализованы. Отдельный regression.
+- [ ] Directory/navigation: `DIRM` v1 поддерживает bundled/indirect, count и абсолютные offsets; BZZ metadata распаковывается и разбирается (24-bit sizes, roles, IDs, optional names/titles). Indirect size=0 принимается по спецификации; bundled size обязан быть ненулевым, совпадать с реальным FORM, а role — с FORM:DJVU/DJVI/THUM. BZZ `NAVM` outline теперь разбирается в рекурсивное дерево titles/URLs с bounded depth/count/UTF-8 validation и проверен на реальном DjVu3Spec; numeric `#N`/`N` и bundled page component ID/name/title targets разрешаются в zero-based page index, invalid/ambiguous internal targets отклоняются, external URLs остаются внешними. UI-навигация по закладкам и разрешение внешних indirect компонентов пока не реализованы. Отдельный regression.
 - [ ] Text layer: plain `TXTa` UTF-8 payload уже извлекается по 24-bit length с привязкой к `FORM:DJVU` и строгой диагностикой некорректной длины, UTF-8 и дублирования; BZZ-compressed `TXTz` now decoded through vendored MIT DjvuNet BS/ZP with bounded output and UTF-8 validation, zone tree версии 1 теперь разбирается с иерархией координат и UTF-8 byte offsets (отдельный regression), полный многослойный renderer остаётся неподдерживаемым.
 - [x] INFO chunks: geometry и DPI с отрицательными regression-тестами; это metadata inspection, не изображение страницы.
 - [ ] JB2 decoder: page `Sjbz` and shared `Djbz` payload offsets/lengths are now indexed and can be read via validated `DjvuImageChunk.ReadPayload`; bundled INCL-to-DIRM-to-DJVI dictionary payload references are now resolved per page and validated; actual bitmap decoding is still pending.
