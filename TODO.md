@@ -1,6 +1,6 @@
 # MYBOOK TODO
 
-Текущая версия: 1.9.2
+Текущая версия: 1.9.3
 
 Версионирование релизных шагов: начиная с 1.9.1, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.9.2, 1.9.3 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
 
@@ -10,7 +10,7 @@
 
 ## Архитектура и тесты
 
-- [ ] Добавить общий слой пользовательских render overrides для всех потоковых форматов: полное или частичное переопределение семейства шрифта, размера, начертания, цвета текста и фона без потери исходной модели документа.
+- [ ] Расширить базовую пользовательскую типографику потоковых форматов до полноценных render overrides: семейство шрифта/размер уже настраиваются как inherited CSS defaults с сохранением source inline styles; остаются явные способы полностью/частично переопределить исходные inline fonts/size, начертание, цвет текста и фона без потери исходной DocumentModel.
 - [ ] Добавить независимые коррекции яркости, контраста и насыщенности для текста, фона и изображений, включая изображения внутри страницы, с нейтральными значениями без визуального изменения исходного документа.
 - [ ] Сохранять исходные встроенные шрифты/цвета/стили форматов в модели независимо от пользовательских render overrides, чтобы настройки чтения применялись только на этапе рендера.
 - [ ] Расширить fuzz/mutation corpus для DOC/PDF за пределы детерминированного malformed-input набора и подключить его к длительному quality-прогону.
@@ -74,7 +74,7 @@
 ## Интерфейс
 
 - [x] Поиск по документу: Ctrl+F не перехватывается fullscreen hotkey; WebView2 browser accelerator keys включены, flow documents и fixed-page selectable text overlays доступны встроенному browser find.
-- [ ] Настройка шрифта, размера, ширины текста и межстрочного интервала.
+- [x] Базовая типографика потоковых документов: вкладка «Чтение» предоставляет 6 точных системных font presets (Georgia, Segoe UI, Arial, Times New Roman, Verdana, Consolas), размер 12–36 CSS px, ширину области чтения 480–1400 CSS px и line-height 110–250%. WPF preview показывает выбранный шрифт/интервал; Reset выбирает defaults, Apply записывает JSON. `DocumentReadingTypography` задаёт типизированные параметры с явными validation errors; `AppSettingsStore` сохраняет их в `%LOCALAPPDATA%\MYBOOK\settings.json` и загружает старые JSON без нового поля с нейтральными defaults (19 px, 980 px, 162%, Georgia). `DocumentHtmlRenderer.Render` применяет свойства через CSS variables только к `flow-document`, сохраняя исходные inline font styles; `CreateTypographyScript` обновляет уже открытую книгу после закрытия Settings без повторного reader pass. Direct local HTML, fixed-page PDF/DjVu, user WebView ZoomFactor и исходная DocumentModel не изменяются. Заголовки MainWindow/SettingsWindow получают версию из assembly вместо hardcoded `1.0.43`; regression проверяет JSON round-trip, все шрифты, CSS/JS, source inline preservation, fixed-page isolation и invalid limits.
 - [ ] Последняя позиция чтения для каждого документа.
 - [ ] Закладки.
 - [ ] Режим одной/двух страниц для фиксированной верстки.
@@ -83,7 +83,7 @@
 ## Settings
 
 - [x] DjVu участвует в файловых ассоциациях через общий `SupportedFormatRegistry`: `.djvu` использует `MYBOOK.DjvuFile`, standalone legacy `.iw4` — `MYBOOK.Iw4File`.
-- [ ] Вкладка чтения/типографики.
+- [x] Вкладка чтения/типографики: четыре контролируемых параметра, WPF preview, Apply и Reset с явными локализованными сообщениями; сохранённый профиль применяется только к сгенерированному потоковому документу.
 - [ ] Вкладка поведения приложения.
 - [ ] Настройки WebView2 и безопасности локального HTML.
 

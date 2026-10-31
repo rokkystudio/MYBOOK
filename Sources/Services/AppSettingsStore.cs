@@ -24,8 +24,9 @@ internal sealed class AppSettingsStore
     }
 
     /// <summary>
-    /// Возвращает сохранённые настройки или значения по умолчанию,
-    /// если файл настроек ещё не существует.
+    /// Возвращает настройки из локального JSON либо defaults, если файл
+    /// отсутствует. Сохранённые значения типографики валидируются явно;
+    /// некорректная версия settings.json не подменяется defaults.
     /// </summary>
     public AppSettings Load()
     {
@@ -35,15 +36,36 @@ internal sealed class AppSettingsStore
         }
 
         var json = File.ReadAllText(path_);
-        return JsonSerializer.Deserialize<AppSettings>(json)
-               ?? throw new InvalidDataException($"Не удалось прочитать настройки: {path_}");
+        var settings =
+            JsonSerializer.Deserialize<AppSettings>(json)
+            ?? throw new InvalidDataException(
+                $"Не удалось прочитать настройки: {path_}");
+
+        if (settings.ReadingTypography == null)
+        {
+            throw new InvalidDataException(
+                "В настройках отсутствует объект типографики.");
+        }
+
+        settings.ReadingTypography.Validate();
+        return settings;
     }
 
     /// <summary>
-    /// Сохраняет текущие настройки интерфейса в локальный JSON-файл.
+    /// Сохраняет настройки интерфейса и validated reading typography
+    /// в локальный JSON-файл; некорректные значения не записываются.
     /// </summary>
     public void Save(AppSettings settings)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (settings.ReadingTypography == null)
+        {
+            throw new InvalidDataException(
+                "В настройках отсутствует объект типографики.");
+        }
+
+        settings.ReadingTypography.Validate();
+
         var directory = Path.GetDirectoryName(path_)
                         ?? throw new InvalidOperationException($"Не удалось определить каталог настроек: {path_}");
 

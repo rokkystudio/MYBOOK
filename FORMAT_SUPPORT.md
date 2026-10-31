@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.2
+Версия профиля: 1.9.3
 
 ## Ready for use
 
@@ -26,6 +26,12 @@ MYBOOK считает готовыми к обычному пользовате�
 контролируемый отказ на повреждённом/неподдерживаемом вводе и покрыт
 регрессионными fixtures. Это не означает реализацию каждого редкого элемента
 соответствующей спецификации.
+
+## Чтение и настройки типографики
+
+Вкладка **Settings → Чтение** задаёт базовую типографику всех reader-backed потоковых форматов (`.fb2`, `.epub`, `.txt`, `.md`, `.rtf`, `.doc`, `.docx`) и сохраняет параметры в `%LOCALAPPDATA%\\MYBOOK\\settings.json` через `AppSettings.ReadingTypography`. Типизированный `DocumentReadingTypography` поддерживает шесть явных шрифтовых семейств (`Georgia`, `Segoe UI`, `Arial`, `Times New Roman`, `Verdana`, `Consolas`), базовый размер 12–36 CSS px, ширину reader content 480–1400 CSS px и line-height 110–250%. Neutral defaults: `Georgia`, `19px`, `980px`, `1.62`, совпадающие с базовой HTML-типографикой предыдущих версий. Неизвестное имя шрифта и числа вне допустимого диапазона отклоняются явной ошибкой без эвристических fallback. Старый JSON без `ReadingTypography` получает нейтральные defaults; сохранённый объект с некорректными значениями не замещается автоматически.
+
+Окно настроек предлагает WPF preview, восстановление defaults без записи и отдельную кнопку Apply для сохранения. После закрытия окна настроек `MainWindow` применяет сохранённые CSS variables к уже открытому сгенерированному flow document через `DocumentHtmlRenderer.CreateTypographyScript`, без повторного чтения файла. Обновление целиком отделено от `WebView2.ZoomFactor` и переключения цветовой темы. Рендерер использует `body.flow-document` только для reflow documents без fixed-page блоков: source `DocumentInline.FontFamily`/`FontSizePoints` и другие inline/paragraph styles остаются неизменными и имеют приоритет над inherited базовой типографикой. PDF/DjVu SVG/fixed-page layout и пользовательский локальный HTML (`.html`/`.htm`, открываемый напрямую в WebView2) не получают reflow overrides. Значения CSS fonts формируются только из фиксированного enum, числовые значения проверяются и форматируются инвариантно; JavaScript arguments проходят JSON encoding. В обоих заголовках приложения отображается актуальная assembly version, синхронизированная с `MYBOOK.csproj`. Регрессия проверяет presets/defaults, JSON round-trip, CSS/JS, независимость source formatting/fixed pages и отказ на invalid values.
 
 ## DjVu fixed-page profile
 

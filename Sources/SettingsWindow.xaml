@@ -5,7 +5,7 @@
         Title="Settings"
         Style="{StaticResource NeoFixedWindowStyle}"
         Width="660"
-        Height="560"
+        Height="640"
         WindowStartupLocation="CenterOwner"
         Background="Transparent"
         Foreground="{DynamicResource TextBrush}">
@@ -22,7 +22,6 @@
                              Grid.Row="0"
                              TitleText="Settings"
                              SubtitleText="MYBOOK"
-                             VersionText="1.0.43"
                              ShowIcon="True"
                              ShowLanguageButton="False"
                              ShowThemeButton="False"
@@ -75,6 +74,96 @@
                                         Click="WindowsDefaultsButton_OnClick" />
                             </StackPanel>
                         </Grid>
+                    </Border>
+                </TabItem>
+                <TabItem x:Name="ReadingTab">
+                    <Border Padding="18"
+                            Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <TextBlock x:Name="ReadingDescriptionText"
+                                           Margin="0,0,0,18"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource MutedTextBrush}" />
+
+                                <TextBlock x:Name="ReadingFontLabelText"
+                                           Margin="0,0,0,6" />
+                                <ComboBox x:Name="ReadingFontComboBox"
+                                          Margin="0,0,0,16"
+                                          MinHeight="30"
+                                          SelectionChanged="ReadingTypography_OnSelectionChanged" />
+
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock x:Name="ReadingFontSizeLabelText" />
+                                    <TextBlock x:Name="ReadingFontSizeValueText"
+                                               DockPanel.Dock="Right"
+                                               HorizontalAlignment="Right" />
+                                </DockPanel>
+                                <Slider x:Name="ReadingFontSizeSlider"
+                                        Minimum="12"
+                                        Maximum="36"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ReadingTypography_OnValueChanged"
+                                        Margin="0,0,0,16" />
+
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock x:Name="ReadingWidthLabelText" />
+                                    <TextBlock x:Name="ReadingWidthValueText"
+                                               DockPanel.Dock="Right"
+                                               HorizontalAlignment="Right" />
+                                </DockPanel>
+                                <Slider x:Name="ReadingWidthSlider"
+                                        Minimum="480"
+                                        Maximum="1400"
+                                        TickFrequency="20"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ReadingTypography_OnValueChanged"
+                                        Margin="0,0,0,16" />
+
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock x:Name="ReadingLineHeightLabelText" />
+                                    <TextBlock x:Name="ReadingLineHeightValueText"
+                                               DockPanel.Dock="Right"
+                                               HorizontalAlignment="Right" />
+                                </DockPanel>
+                                <Slider x:Name="ReadingLineHeightSlider"
+                                        Minimum="110"
+                                        Maximum="250"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ReadingTypography_OnValueChanged"
+                                        Margin="0,0,0,18" />
+
+                                <Border Padding="14"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        Background="{DynamicResource BackgroundBrush}">
+                                    <TextBlock x:Name="ReadingPreviewText"
+                                               TextWrapping="Wrap"
+                                               LineStackingStrategy="BlockLineHeight" />
+                                </Border>
+
+                                <TextBlock x:Name="ReadingStatusText"
+                                           Margin="0,12,0,10"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource MutedTextBrush}" />
+
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Right">
+                                    <Button x:Name="ReadingResetButton"
+                                            Margin="0,0,10,0"
+                                            Style="{StaticResource NeoToolBarButtonStyle}"
+                                            Click="ReadingResetButton_OnClick" />
+                                    <Button x:Name="ReadingApplyButton"
+                                            Style="{StaticResource NeoToolBarButtonStyle}"
+                                            Click="ReadingApplyButton_OnClick" />
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Border>
                 </TabItem>
             </TabControl>

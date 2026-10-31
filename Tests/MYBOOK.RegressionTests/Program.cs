@@ -21,7 +21,7 @@ namespace MYBOOK.RegressionTests;
 /// <summary>
 /// Запускает автономные regression-тесты readers без WPF-окон и WebView2.
 /// </summary>
-internal static class Program
+internal static partial class Program
 {
     [STAThread]
     private static int Main(string[] args)
@@ -36,6 +36,7 @@ internal static class Program
         var tests = new (string Name, Action Test)[]
         {
             ("Supported format registry", TestSupportedFormatRegistry),
+            ("Reading typography settings", TestReadingTypographySettings),
             ("Document input guard", () => TestDocumentInputGuard(temporaryDirectory)),
             ("Binary malformed inputs", () => TestBinaryMalformedInputs(temporaryDirectory)),
             ("TXT reader", () => TestTextReader(temporaryDirectory)),

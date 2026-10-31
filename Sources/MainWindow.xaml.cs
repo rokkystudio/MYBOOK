@@ -65,6 +65,14 @@ public partial class MainWindow : Window
 
         Icon = AppIconService.Load();
         TitleBar.IconSource = Icon;
+
+        var version =
+            typeof(MainWindow).Assembly.GetName().Version
+            ?? throw new InvalidOperationException(
+                "MYBOOK assembly version is unavailable.");
+        TitleBar.VersionText =
+            $"{version.Major}.{version.Minor}.{version.Build}";
+
         SettingsIcon.Source = NeoAssetService.LoadImage(NeoAssetPaths.Settings);
 
         LocalizationService.LanguageChanged += LocalizationService_LanguageChanged;
@@ -298,7 +306,8 @@ public partial class MainWindow : Window
 
                 var html = DocumentHtmlRenderer.Render(
                     document,
-                    ThemeService.CreateDocumentRenderTheme(settings_.Theme));
+                    ThemeService.CreateDocumentRenderTheme(settings_.Theme),
+                    settings_.ReadingTypography);
                 var htmlPath = GetReaderHtmlPath();
 
                 File.WriteAllText(
@@ -1376,15 +1385,50 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Открывает модальное окно настроек MYBOOK.
+    /// Открывает модальное окно настроек и применяет сохранённую пользователем
+    /// типографику к текущему сгенерированному HTML через CSS variables.
+    /// Исходный локальный HTML и fixed-page изображения не модифицируются;
+    /// повторный парсинг книги не требуется.
     /// </summary>
-    private void SettingsButton_OnClick(object sender, RoutedEventArgs e)
+    private async void SettingsButton_OnClick(
+        object sender,
+        RoutedEventArgs e)
     {
-        var window = new SettingsWindow
+        var previousTypography =
+            settings_.ReadingTypography;
+        var window = new SettingsWindow(
+            settingsStore_,
+            settings_)
         {
             Owner = this
         };
 
         window.ShowDialog();
+
+        if (settings_.ReadingTypography ==
+                previousTypography ||
+            !generatedDocumentOpen_ ||
+            !readerInitialized_ ||
+            Reader.CoreWebView2 == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Reader.CoreWebView2.ExecuteScriptAsync(
+                DocumentHtmlRenderer.CreateTypographyScript(
+                    settings_.ReadingTypography));
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(
+                this,
+                error.Message,
+                LocalizationService.Text(
+                    "reading_settings_error"),
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 }
