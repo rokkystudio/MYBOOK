@@ -74,6 +74,7 @@ internal static class Program
             ("DjVu compound palette", TestDjvuCompoundPalette),
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
             ("DjVu compound alternatives", () => TestDjvuCompoundAlternatives(temporaryDirectory)),
+            ("DjVu initial page layout", TestDjvuInitialPageLayout),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa mapareas", TestDjvuMapAreas),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
@@ -13514,6 +13515,35 @@ internal static class Program
                 Convert.ToHexString(SHA256.HashData(rendered.Bgra32)) ==
                 "1DEB5523352E206F2F0E7F56ECEF45B7B28EBC9605A0D8F91BABFAF7B615B9CC",
                 "Real reduction-3 BG44 + Sjbz + FGbz compound page must remain byte-stable.");
+
+            foreach (var (
+                         mode,
+                         expectedHash) in
+                     new[]
+                     {
+                         (
+                             DjvuPageRenderMode.Foreground,
+                             "B6FEDDCB33C7E08184226D95DD5BBA5EC2641AB8D36E84ADE9043F0CD669E82F"),
+                         (
+                             DjvuPageRenderMode.Background,
+                             "1D3607977837E155644210162F7B720E99F8C2DAF08B5C7D9E652D53F3D6D2E1"),
+                         (
+                             DjvuPageRenderMode.BlackAndWhite,
+                             "1C96524206F2DE57EC70297888E1BAE9A47E9B87BEEF7BAD31108A7C7021BD9B")
+                     })
+            {
+                var modePixels =
+                    DjvuPageRenderer.Render(
+                        page,
+                        mode);
+                Assert(modePixels.Width == 2550 &&
+                    modePixels.Height == 3300 &&
+                    Convert.ToHexString(
+                        SHA256.HashData(
+                            modePixels.Bgra32)) ==
+                        expectedHash,
+                    $"Real JB2 + FGbz + BG44 {mode} source-layer display must remain byte-stable.");
+            }
         }
 
         var reduction12Path = Path.Combine(
@@ -14082,6 +14112,39 @@ internal static class Program
             rendered.Bgra32.SequenceEqual(expected),
             "DjVu Smmr + BGjp + FGjp page must composite foreground colors only through black mask pixels.");
 
+        var backgroundMode = DjvuPageRenderer.Render(
+            page,
+            DjvuPageRenderMode.Background);
+        var foregroundMode = DjvuPageRenderer.Render(
+            page,
+            DjvuPageRenderMode.Foreground);
+        var blackAndWhiteMode = DjvuPageRenderer.Render(
+            page,
+            DjvuPageRenderMode.BlackAndWhite);
+
+        Assert(backgroundMode.Bgra32.SequenceEqual(
+                scaledBackground.Bgra32),
+            "DjVu background-only mode must show the decoded background without the stencil.");
+        for (var pixel = 0; pixel < width * height; pixel++)
+        {
+            var offset = pixel * 4;
+            var ink = mask.Gray8[pixel] == 0;
+            var foregroundPixels = expandedForeground.Bgra32;
+            for (var channel = 0; channel < 3; channel++)
+            {
+                Assert(foregroundMode.Bgra32[offset + channel] ==
+                        (ink
+                            ? foregroundPixels[offset + channel]
+                            : (byte)255) &&
+                    blackAndWhiteMode.Bgra32[offset + channel] ==
+                        mask.Gray8[pixel],
+                    "DjVu foreground-only mode must use white paper plus source colors; black-and-white mode must show the mask.");
+            }
+            Assert(foregroundMode.Bgra32[offset + 3] == 255 &&
+                blackAndWhiteMode.Bgra32[offset + 3] == 255,
+                "DjVu non-color source modes must preserve opaque alpha.");
+        }
+
         var noForeground = page with
         {
             ImageLayers = page.ImageLayers
@@ -14152,6 +14215,8 @@ internal static class Program
             fixedPage.PageNumber == 1 &&
             fixedPage.WidthPoints == width &&
             fixedPage.HeightPoints == height &&
+            fixedPage.SourceWidthPixels == width &&
+            fixedPage.SourceHeightPixels == height &&
             fixedPage.ImageRuns.Count == 1 &&
             fixedPage.ImageRuns[0].ContentType == "image/png" &&
             fixedPage.ImageRuns[0].Data.AsSpan(0, 8).SequenceEqual(
@@ -14313,6 +14378,14 @@ internal static class Program
             "DjVu initial numeric zoom metadata");
         AssertContains(
             html,
+            "<div class=\"fixed-page-viewport\" data-horizontal-align=\"right\" data-vertical-align=\"bottom\" data-page-zoom=\"percent\" style=\"--fixed-page-width:" +
+                (width * (96.0 / 72.0) * 125 / 100.0).ToString(
+                    "R",
+                    CultureInfo.InvariantCulture) +
+                "px;\"",
+            "DjVu reader initial zoom/alignment must control its own responsive fixed-page viewport.");
+        AssertContains(
+            html,
             "data-initial-display-mode=\"color\"",
             "DjVu initial display mode metadata");
         AssertContains(
@@ -14419,6 +14492,360 @@ internal static class Program
             html,
             "Привет ",
             "DjVu text overlay Unicode content");
+
+        foreach (var (
+                     modeName,
+                     modeKind,
+                     modePixels) in
+                 new[]
+                 {
+                     (
+                         "color",
+                         DocumentFixedPageDisplayMode.Color,
+                         rendered.Bgra32),
+                     (
+                         "fore",
+                         DocumentFixedPageDisplayMode.Foreground,
+                         foregroundMode.Bgra32),
+                     (
+                         "back",
+                         DocumentFixedPageDisplayMode.Background,
+                         backgroundMode.Bgra32),
+                     (
+                         "bw",
+                         DocumentFixedPageDisplayMode.BlackAndWhite,
+                         blackAndWhiteMode.Bgra32)
+                 })
+        {
+            var modeForm = Form(
+                "DJVU",
+                Chunk("INFO", info),
+                Chunk("Smmr", smmr),
+                Chunk("BGjp", backgroundJpeg),
+                Chunk("FGjp", foregroundJpeg),
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        $"(mode {modeName})")));
+            var modePath = Path.Combine(
+                directory,
+                $"djvu-initial-mode-{modeName}.djvu");
+            File.WriteAllBytes(
+                modePath,
+                Encoding.ASCII.GetBytes("AT&T")
+                    .Concat(modeForm)
+                    .ToArray());
+
+            var modeModel =
+                DjvuDocumentReader.Read(modePath);
+            var modePage =
+                modeModel.Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single();
+            Assert(modePage.Presentation?.InitialDisplayMode ==
+                modeKind &&
+                modePage.ImageRuns.Count == 1,
+                $"DjVu initial {modeName} display mode must survive in fixed-page presentation.");
+
+            using var imageStream = new MemoryStream(
+                modePage.ImageRuns[0].Data,
+                writable: false);
+            var pngDecoder = new PngBitmapDecoder(
+                imageStream,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad);
+            BitmapSource pngFrame =
+                pngDecoder.Frames.Single();
+            if (pngFrame.Format != PixelFormats.Bgra32)
+            {
+                pngFrame = new FormatConvertedBitmap(
+                    pngFrame,
+                    PixelFormats.Bgra32,
+                    null,
+                    0);
+            }
+
+            var actualPixels =
+                new byte[checked(width * height * 4)];
+            pngFrame.CopyPixels(
+                actualPixels,
+                width * 4,
+                0);
+            Assert(actualPixels.SequenceEqual(
+                    modePixels),
+                $"DjVu initial {modeName} display mode must select matching source-layer pixels in the full reader path.");
+        }
+
+        var missingBackgroundRejected = false;
+        try
+        {
+            _ = DjvuPageRenderer.Render(
+                page with
+                {
+                    ImageLayers = page.ImageLayers
+                        .Where(layer =>
+                            layer.Kind != "BGjp")
+                        .ToArray()
+                },
+                DjvuPageRenderMode.Background);
+        }
+        catch (NotSupportedException)
+        {
+            missingBackgroundRejected = true;
+        }
+        Assert(missingBackgroundRejected,
+            "DjVu background-only mode must reject pages without an image background layer.");
+
+        var missingMaskRejected = false;
+        try
+        {
+            _ = DjvuPageRenderer.Render(
+                page with
+                {
+                    ImageLayers = page.ImageLayers
+                        .Where(layer =>
+                            layer.Kind == "BGjp")
+                        .ToArray()
+                },
+                DjvuPageRenderMode.BlackAndWhite);
+        }
+        catch (NotSupportedException)
+        {
+            missingMaskRejected = true;
+        }
+        Assert(missingMaskRejected,
+            "DjVu mask-only mode must reject pages without a JB2/Smmr foreground mask.");
+    }
+
+    /// <summary>
+    /// Проверяет source-scoped zoom и alignment для fixed-page HTML. Режимы
+    /// сохраняют user WebView zoom независимым; responsive варианты используют
+    /// viewport CSS, а native/numeric — точные raster/point размеры.
+    /// </summary>
+    private static void TestDjvuInitialPageLayout()
+    {
+        var png = RasterPngEncoder.Encode(
+            new byte[]
+            {
+                255, 255, 255
+            },
+            1,
+            1,
+            3);
+
+        foreach (var (
+                     zoomKind,
+                     percent,
+                     expectedLayout) in
+                 new[]
+                 {
+                     (
+                         DocumentFixedPageZoomKind.Page,
+                         (int?)null,
+                         "data-page-zoom=\"page\" style=\"--fixed-page-aspect:2;\""),
+                     (
+                         DocumentFixedPageZoomKind.Width,
+                         (int?)null,
+                         "data-page-zoom=\"width\""),
+                     (
+                         DocumentFixedPageZoomKind.OneToOne,
+                         (int?)null,
+                         "data-page-zoom=\"one2one\" style=\"--fixed-page-width:600px;\""),
+                     (
+                         DocumentFixedPageZoomKind.Stretch,
+                         (int?)null,
+                         "data-page-zoom=\"stretch\""),
+                     (
+                         DocumentFixedPageZoomKind.Percent,
+                         (int?)125,
+                         "data-page-zoom=\"percent\" style=\"--fixed-page-width:" +
+                         (200 * (96.0 / 72.0) * 125 / 100.0).ToString(
+                             "R",
+                             CultureInfo.InvariantCulture) +
+                         "px;\"")
+                 })
+        {
+            var page = new DocumentFixedPage
+            {
+                PageNumber = 1,
+                WidthPoints = 200,
+                HeightPoints = 100,
+                SourceWidthPixels = 600,
+                SourceHeightPixels = 300,
+                Presentation =
+                    new DocumentFixedPagePresentation
+                    {
+                        InitialZoom = new DocumentFixedPageZoom
+                        {
+                            Kind = zoomKind,
+                            Percent = percent
+                        },
+                        HorizontalAlignment =
+                            DocumentFixedPageHorizontalAlignment.Right,
+                        VerticalAlignment =
+                            DocumentFixedPageVerticalAlignment.Bottom
+                    },
+                ImageRuns =
+                [
+                    new DocumentFixedImageRun
+                    {
+                        PaintOrder = 0,
+                        Data = png,
+                        ContentType = "image/png",
+                        TransformA = 200,
+                        TransformB = 0,
+                        TransformC = 0,
+                        TransformD = 100,
+                        TransformE = 0,
+                        TransformF = 0
+                    }
+                ]
+            };
+            var html = DocumentHtmlRenderer.Render(
+                new DocumentModel
+                {
+                    Title = "DjVu presentation layout",
+                    Blocks = [page]
+                },
+                CreateRenderTheme());
+            AssertContains(
+                html,
+                "<div class=\"fixed-page-viewport\" data-horizontal-align=\"right\" data-vertical-align=\"bottom\"",
+                "DjVu viewer source alignment must apply to an individual page viewport.");
+            AssertContains(
+                html,
+                expectedLayout,
+                $"DjVu source {zoomKind} zoom must generate its own CSS layout.");
+            AssertContains(
+                html,
+                ".fixed-page-viewport[data-vertical-align=\"bottom\"] { justify-content: flex-end; }",
+                "DjVu vertical alignment must be implemented by viewport flex layout.");
+            AssertContains(
+                html,
+                ".fixed-page-viewport[data-horizontal-align=\"right\"] { align-items: flex-end; }",
+                "DjVu horizontal alignment must be implemented by viewport flex layout.");
+            AssertContains(
+                html,
+                "</section>" + Environment.NewLine + "</div>",
+                "DjVu source-zoom page viewport must close after the fixed page.");
+            if (zoomKind == DocumentFixedPageZoomKind.Stretch)
+            {
+                AssertContains(
+                    html,
+                    "preserveAspectRatio=\"none\"",
+                    "DjVu stretch zoom must resize both SVG axes.");
+            }
+            else
+            {
+                AssertContains(
+                    html,
+                    "preserveAspectRatio=\"xMidYMin meet\"",
+                    "DjVu non-stretch zoom must preserve the page aspect ratio.");
+            }
+        }
+
+        var noHint = new DocumentFixedPage
+        {
+            PageNumber = 1,
+            WidthPoints = 200,
+            HeightPoints = 100
+        };
+        var defaultHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "Fixed page default layout",
+                Blocks = [noHint]
+            },
+            CreateRenderTheme());
+        Assert(!defaultHtml.Contains(
+                "<div class=\"fixed-page-viewport\"",
+                StringComparison.Ordinal),
+            "Fixed pages without explicit source presentation must retain the normal document layout.");
+
+        var invalidOneToOne = new DocumentFixedPage
+        {
+            PageNumber = 1,
+            WidthPoints = 200,
+            HeightPoints = 100,
+            Presentation = new DocumentFixedPagePresentation
+            {
+                InitialZoom = new DocumentFixedPageZoom
+                {
+                    Kind = DocumentFixedPageZoomKind.OneToOne
+                }
+            }
+        };
+        var nativeGeometryRejected = false;
+        try
+        {
+            _ = DocumentHtmlRenderer.Render(
+                new DocumentModel
+                {
+                    Title = "Invalid one-to-one geometry",
+                    Blocks = [invalidOneToOne]
+                },
+                CreateRenderTheme());
+        }
+        catch (InvalidOperationException)
+        {
+            nativeGeometryRejected = true;
+        }
+        Assert(nativeGeometryRejected,
+            "DjVu one-to-one zoom must reject a page without native pixel geometry.");
+
+        var invalidGeometry = new DocumentFixedPage
+        {
+            PageNumber = 1,
+            WidthPoints = 0,
+            HeightPoints = 100
+        };
+        var invalidGeometryRejected = false;
+        try
+        {
+            _ = DocumentHtmlRenderer.Render(
+                new DocumentModel
+                {
+                    Title = "Invalid fixed-page geometry",
+                    Blocks = [invalidGeometry]
+                },
+                CreateRenderTheme());
+        }
+        catch (InvalidOperationException)
+        {
+            invalidGeometryRejected = true;
+        }
+        Assert(invalidGeometryRejected,
+            "Fixed-page renderer must reject zero geometry instead of silently clamping source dimensions.");
+
+        var narrowPage = new DocumentFixedPage
+        {
+            PageNumber = 1,
+            WidthPoints = 0.012,
+            HeightPoints = 1,
+            Presentation = new DocumentFixedPagePresentation
+            {
+                InitialZoom = new DocumentFixedPageZoom
+                {
+                    Kind = DocumentFixedPageZoomKind.Percent,
+                    Percent = 1
+                }
+            }
+        };
+        var narrowHtml = DocumentHtmlRenderer.Render(
+            new DocumentModel
+            {
+                Title = "Narrow DjVu page",
+                Blocks = [narrowPage]
+            },
+            CreateRenderTheme());
+        AssertContains(
+            narrowHtml,
+            "data-page-zoom=\"percent\" style=\"--fixed-page-width:" +
+                (0.012 * (96.0 / 72.0) / 100.0).ToString(
+                    "R",
+                    CultureInfo.InvariantCulture) +
+                "px;\"",
+            "DjVu 1% source zoom must preserve small positive CSS widths without rounding to zero.");
     }
 
     private static void TestDjvuJpegLayers(string directory)
