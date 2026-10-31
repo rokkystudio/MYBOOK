@@ -77,6 +77,7 @@ internal static class Program
             ("DjVu initial page layout", TestDjvuInitialPageLayout),
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa mapareas", TestDjvuMapAreas),
+            ("DjVu printed annotations", () => TestDjvuPrintedAnnotations(temporaryDirectory)),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
@@ -12673,6 +12674,244 @@ internal static class Program
         var reconstructed = DjvuBzzDecoder.Decode(compressed);
         Assert(reconstructed.SequenceEqual(original),
             "DjVu BZZ encoder/decoder must preserve exact UTF-8 bytes.");
+    }
+
+    /// <summary>
+    /// Проверяет print-only phead/pfoot из DjVu 3: строгое распознавание
+    /// левой, центральной и правой позиций, decoder merge ANTa/ANTz,
+    /// перенос в DocumentFixedPagePresentation и безопасный вывод через
+    /// @media print без экранного overlay и HTML injection.
+    /// </summary>
+    private static void TestDjvuPrintedAnnotations(
+        string directory)
+    {
+        var parsed = DjvuAnnotationReader.Read(
+            """
+            (phead "left::Left header" "center::Center header" "right::Right header")
+            (pfoot "left::" "center::Footer & info")
+            (unknown_print_command (nested "ignored"))
+            """);
+        Assert(parsed.PrintedHeaderSpecified &&
+            parsed.PrintedHeader is
+            {
+                Left: "Left header",
+                Center: "Center header",
+                Right: "Right header"
+            } &&
+            parsed.PrintedFooterSpecified &&
+            parsed.PrintedFooter is
+            {
+                Left: "",
+                Center: "Footer & info",
+                Right: null
+            },
+            "DjVu phead/pfoot parser must preserve exactly three print-only positions and distinguish absent from empty text.");
+
+        var merged = DjvuAnnotationReader.Merge(
+            new[]
+            {
+                """
+                (phead "left::Shared title" "center::Shared center")
+                (pfoot "center::Shared footer")
+                """,
+                """
+                (phead "right::Page title")
+                """,
+                """
+                (pfoot "left::Page footer" "right::Page number")
+                """
+            });
+        Assert(merged.PrintedHeader is
+            {
+                Left: null,
+                Center: null,
+                Right: "Page title"
+            } &&
+            merged.PrintedFooter is
+            {
+                Left: "Page footer",
+                Center: null,
+                Right: "Page number"
+            },
+            "DjVu later phead/pfoot expressions must replace their corresponding print layout independently.");
+
+        foreach (var malformed in new[]
+        {
+            "(phead)",
+            "(pfoot)",
+            "(phead \"left::A\" \"left::B\")",
+            "(pfoot \"center::A\" \"center::B\")",
+            "(phead \"middle::A\")",
+            "(pfoot \"top::A\")",
+            "(phead \"left:A\")",
+            "(phead left::Unquoted)",
+            "(pfoot (center \"Nested\"))",
+            "(phead \"left::A\" \"center::B\" \"right::C\" \"left::D\")"
+        })
+        {
+            var rejected = false;
+            try
+            {
+                _ = DjvuAnnotationReader.Read(
+                    malformed);
+            }
+            catch (InvalidDataException)
+            {
+                rejected = true;
+            }
+
+            Assert(rejected,
+                $"DjVu malformed print-only annotation must be rejected: {malformed}");
+        }
+
+        static byte[] Chunk(
+            string id,
+            byte[] payload)
+        {
+            var bytes = new byte[
+                8 +
+                payload.Length +
+                (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id).CopyTo(
+                bytes,
+                0);
+            BinaryPrimitives.WriteUInt32BigEndian(
+                bytes.AsSpan(4, 4),
+                checked((uint)payload.Length));
+            payload.CopyTo(
+                bytes,
+                8);
+            return bytes;
+        }
+
+        static byte[] Form(
+            string type,
+            params byte[][] chunks) =>
+            Chunk(
+                "FORM",
+                Encoding.ASCII.GetBytes(type)
+                    .Concat(
+                        chunks.SelectMany(
+                            chunk => chunk))
+                    .ToArray());
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(0, 2),
+            16);
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(2, 2),
+            12);
+
+        var overrideAnnotation =
+            Encoding.UTF8.GetBytes(
+                """
+                (phead "left::Printed <script>alert(1)</script>" "right::Page 1")
+                """);
+        using var compressedOutput =
+            new MemoryStream();
+        using (var compressor =
+                   new DjvuNet.Compression.BSOutputStream(
+                       compressedOutput,
+                       1024))
+        {
+            compressor.Write(
+                overrideAnnotation,
+                0,
+                overrideAnnotation.Length);
+        }
+
+        var form = Form(
+            "DJVU",
+            Chunk("INFO", info),
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    """
+                    (phead "center::Old header")
+                    (pfoot "center::Footer & <details>print only</details>")
+                    """)),
+            Chunk(
+                "ANTz",
+                compressedOutput.ToArray()));
+
+        var path = Path.Combine(
+            directory,
+            "djvu-printed-annotations.djvu");
+        File.WriteAllBytes(
+            path,
+            Encoding.ASCII.GetBytes("AT&T")
+                .Concat(form)
+                .ToArray());
+
+        var model = DjvuDocumentReader.Read(
+            path);
+        var page = model.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+        Assert(page.Presentation?.PrintedHeader is
+            {
+                Left: "Printed <script>alert(1)</script>",
+                Center: null,
+                Right: "Page 1"
+            } &&
+            page.Presentation.PrintedFooter is
+            {
+                Left: null,
+                Center: "Footer & <details>print only</details>",
+                Right: null
+            } &&
+            page.ImageRuns.Count == 1,
+            "DjVu full reader must preserve print headers/footers from merged ANTa chunks without changing page raster.");
+
+        var html = DocumentHtmlRenderer.Render(
+            model,
+            CreateRenderTheme());
+        AssertContains(
+            html,
+            ".fixed-page-print-header,",
+            "DjVu print annotations must be hidden by screen CSS.");
+        AssertContains(
+            html,
+            "@media print {",
+            "DjVu print annotations must only appear in print media.");
+        AssertContains(
+            html,
+            "<div class=\"fixed-page-print-header\" aria-hidden=\"true\">",
+            "DjVu printed header HTML container.");
+        AssertContains(
+            html,
+            "<span class=\"fixed-page-print-left\">Printed &lt;script&gt;alert(1)&lt;/script&gt;</span>",
+            "DjVu printed header content must be HTML-escaped.");
+        AssertContains(
+            html,
+            "<span class=\"fixed-page-print-right\">Page 1</span>",
+            "DjVu printed header right position.");
+        AssertContains(
+            html,
+            "<span class=\"fixed-page-print-center\">Footer &amp; &lt;details&gt;print only&lt;/details&gt;</span>",
+            "DjVu printed footer content must be HTML-escaped.");
+        Assert(!html.Contains(
+                "<script>alert(1)</script>",
+                StringComparison.Ordinal) &&
+            !html.Contains(
+                "<details>print only</details>",
+                StringComparison.Ordinal),
+            "DjVu print annotations must never inject executable HTML.");
+
+        var headerIndex = html.IndexOf(
+            "<div class=\"fixed-page-print-header\"",
+            StringComparison.Ordinal);
+        var svgIndex = html.IndexOf(
+            "<svg class=\"fixed-page-svg\"",
+            StringComparison.Ordinal);
+        var footerIndex = html.IndexOf(
+            "<div class=\"fixed-page-print-footer\"",
+            StringComparison.Ordinal);
+        Assert(headerIndex >= 0 &&
+            svgIndex > headerIndex &&
+            footerIndex > svgIndex,
+            "DjVu printed header/footer must surround the page image without becoming its overlay.");
     }
 
     private static void TestDjvuMapAreas()
