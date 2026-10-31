@@ -78,6 +78,7 @@ internal static class Program
             ("DjVu BZZ codec and TXTz", TestDjvuBzzRealText),
             ("DjVu ANTa mapareas", TestDjvuMapAreas),
             ("DjVu printed annotations", () => TestDjvuPrintedAnnotations(temporaryDirectory)),
+            ("DjVu extension diagnostics", () => TestDjvuUnrecognizedAnnotations(temporaryDirectory)),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
@@ -12912,6 +12913,326 @@ internal static class Program
             svgIndex > headerIndex &&
             footerIndex > svgIndex,
             "DjVu printed header/footer must surround the page image without becoming its overlay.");
+    }
+
+    /// <summary>
+    /// Проверяет точные имена и область неизвестных DjVu expressions,
+    /// последовательное объединение ANTa/ANTz, bounded diagnostic count,
+    /// неизменность известных maparea/zoom и отсутствие raw extension
+    /// payload в HTML, где выводится только безопасный numeric count.
+    /// </summary>
+    private static void TestDjvuUnrecognizedAnnotations(
+        string directory)
+    {
+        var first = """
+            (vendor_document (nested (feature "not rendered")))
+            (maparea "https://example.org" "Known link" (rect 2 3 5 6) (border #00FF00) (vendor_border (nested 42)))
+            (zoom d125)
+            """;
+        var second = """
+            (maparea "" "Unrecognized shape" (pentagon 1 2 3 4 5 6) (vendor_color #FF00FF))
+            (<script> "not executable")
+            """;
+
+        var parsed = DjvuAnnotationReader.Read(
+            first);
+        Assert(parsed.MapAreas.Count == 1 &&
+            parsed.MapAreas[0].BorderStyle ==
+                DjvuMapAreaBorderStyle.Solid &&
+            parsed.MapAreas[0].BorderColor ==
+                "#00FF00" &&
+            parsed.Zoom is
+                {
+                    Kind: DjvuZoomKind.Percent,
+                    Percent: 125
+                } &&
+            parsed.UnrecognizedExpressions.SequenceEqual(
+                new[]
+                {
+                    new DjvuUnrecognizedAnnotationExpression(
+                        DjvuUnrecognizedAnnotationScope.TopLevel,
+                        "vendor_document"),
+                    new DjvuUnrecognizedAnnotationExpression(
+                        DjvuUnrecognizedAnnotationScope.MapAreaOption,
+                        "vendor_border")
+                }),
+            "DjVu parser must preserve scopes and source order for unknown top-level expressions and maparea options.");
+
+        var merged = DjvuAnnotationReader.Merge(
+            new[] { first, second });
+        Assert(merged.MapAreas.Count == 1 &&
+            merged.Zoom is
+                {
+                    Kind: DjvuZoomKind.Percent,
+                    Percent: 125
+                } &&
+            merged.UnrecognizedExpressions.SequenceEqual(
+                new[]
+                {
+                    new DjvuUnrecognizedAnnotationExpression(
+                        DjvuUnrecognizedAnnotationScope.TopLevel,
+                        "vendor_document"),
+                    new DjvuUnrecognizedAnnotationExpression(
+                        DjvuUnrecognizedAnnotationScope.MapAreaOption,
+                        "vendor_border"),
+                    new DjvuUnrecognizedAnnotationExpression(
+                        DjvuUnrecognizedAnnotationScope.MapAreaShape,
+                        "pentagon"),
+                    new DjvuUnrecognizedAnnotationExpression(
+                        DjvuUnrecognizedAnnotationScope.TopLevel,
+                        "<script>")
+                }),
+            "DjVu merged unknown expressions must retain exact names, scopes and chunk order without interpreting unknown shapes.");
+
+        var diagnosticLimitRejected = false;
+        try
+        {
+            _ = DjvuAnnotationReader.Read(
+                string.Concat(
+                    Enumerable.Repeat(
+                        "(vendor_extension)",
+                        10_001)));
+        }
+        catch (InvalidDataException)
+        {
+            diagnosticLimitRejected = true;
+        }
+        Assert(diagnosticLimitRejected,
+            "DjVu unknown extension diagnostics must have an explicit per-chunk resource limit.");
+
+        var mergedLimitRejected = false;
+        try
+        {
+            var extensions = string.Concat(
+                Enumerable.Repeat(
+                    "(vendor_extension)",
+                    10_000));
+            _ = DjvuAnnotationReader.Merge(
+                Enumerable.Repeat(
+                    extensions,
+                    11));
+        }
+        catch (InvalidDataException)
+        {
+            mergedLimitRejected = true;
+        }
+        Assert(mergedLimitRejected,
+            "DjVu unknown extension diagnostics must have an explicit limit across merged chunks.");
+
+        var invalidKnownOptionRejected = false;
+        try
+        {
+            _ = DjvuAnnotationReader.Read(
+                """
+                (vendor_extension (nested 1))
+                (maparea "" "Invalid known option" (oval 0 0 5 5) (hilite #123456))
+                """);
+        }
+        catch (InvalidDataException)
+        {
+            invalidKnownOptionRejected = true;
+        }
+        Assert(invalidKnownOptionRejected,
+            "Unknown DjVu extensions must not hide malformed known visual options.");
+
+        static byte[] Chunk(
+            string id,
+            byte[] payload)
+        {
+            var bytes = new byte[
+                8 +
+                payload.Length +
+                (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(id).CopyTo(
+                bytes,
+                0);
+            BinaryPrimitives.WriteUInt32BigEndian(
+                bytes.AsSpan(4, 4),
+                checked((uint)payload.Length));
+            payload.CopyTo(
+                bytes,
+                8);
+            return bytes;
+        }
+
+        static byte[] Form(
+            string type,
+            params byte[][] chunks) =>
+            Chunk(
+                "FORM",
+                Encoding.ASCII.GetBytes(type)
+                    .Concat(
+                        chunks.SelectMany(
+                            chunk => chunk))
+                    .ToArray());
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(0, 2),
+            32);
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(2, 2),
+            24);
+
+        var overrideBytes =
+            Encoding.UTF8.GetBytes(
+                second);
+        using var compressedOutput =
+            new MemoryStream();
+        using (var compressor =
+                   new DjvuNet.Compression.BSOutputStream(
+                       compressedOutput,
+                       1024))
+        {
+            compressor.Write(
+                overrideBytes,
+                0,
+                overrideBytes.Length);
+        }
+
+        var form = Form(
+            "DJVU",
+            Chunk(
+                "INFO",
+                info),
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    first)),
+            Chunk(
+                "ANTz",
+                compressedOutput.ToArray()));
+
+        var path = Path.Combine(
+            directory,
+            "djvu-unknown-annotations.djvu");
+        File.WriteAllBytes(
+            path,
+            Encoding.ASCII.GetBytes("AT&T")
+                .Concat(form)
+                .ToArray());
+
+        var model =
+            DjvuDocumentReader.Read(
+                path);
+        var page = model.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+        var unknown =
+            page.Presentation?.UnrecognizedAnnotations;
+        Assert(unknown != null &&
+            unknown.Count == 4 &&
+            unknown.SequenceEqual(
+                new[]
+                {
+                    new DocumentFixedPageUnrecognizedAnnotation(
+                        DocumentFixedPageUnrecognizedAnnotationScope.TopLevel,
+                        "vendor_document"),
+                    new DocumentFixedPageUnrecognizedAnnotation(
+                        DocumentFixedPageUnrecognizedAnnotationScope.MapAreaOption,
+                        "vendor_border"),
+                    new DocumentFixedPageUnrecognizedAnnotation(
+                        DocumentFixedPageUnrecognizedAnnotationScope.MapAreaShape,
+                        "pentagon"),
+                    new DocumentFixedPageUnrecognizedAnnotation(
+                        DocumentFixedPageUnrecognizedAnnotationScope.TopLevel,
+                        "<script>")
+                }) &&
+            page.Links.Count == 1 &&
+            page.ImageRuns.Count == 1 &&
+            page.Presentation?.InitialZoom?.Percent == 125,
+            "DjVu reader must preserve unknown ANTa/ANTz expressions in DocumentModel while keeping supported raster, links and zoom.");
+
+        var html = DocumentHtmlRenderer.Render(
+            model,
+            CreateRenderTheme());
+        AssertContains(
+            html,
+            "data-unrecognized-annotation-count=\"4\"",
+            "DjVu HTML must expose the exact count of unsupported annotation expressions.");
+        AssertContains(
+            html,
+            "data-initial-zoom=\"d125\"",
+            "DjVu source initial zoom must remain active when unknown annotations are present.");
+        AssertContains(
+            html,
+            "https://example.org",
+            "DjVu known maparea URL must remain available with an unknown visual option.");
+        Assert(!html.Contains(
+                "<script>",
+                StringComparison.Ordinal) &&
+            !html.Contains(
+                "vendor_document",
+                StringComparison.Ordinal) &&
+            !html.Contains(
+                "vendor_border",
+                StringComparison.Ordinal) &&
+            !html.Contains(
+                "pentagon",
+                StringComparison.Ordinal),
+            "DjVu HTML must not leak or execute names and raw payload of unsupported extension expressions.");
+
+        var noEffect =
+            DjvuAnnotationReader.Read(
+                "(vendor_only (nested \"payload\"))");
+        Assert(noEffect.MapAreas.Count == 0 &&
+            noEffect.UnrecognizedExpressions.Count == 1 &&
+            !noEffect.ZoomSpecified &&
+            !noEffect.ModeSpecified &&
+            !noEffect.BackgroundSpecified,
+            "Unknown-only DjVu chunks must not synthesize presentation or visual effects.");
+
+        var unknownOnlyForm = Form(
+            "DJVU",
+            Chunk(
+                "INFO",
+                info),
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    "(vendor_only (nested \"payload\"))")));
+        var unknownOnlyPath = Path.Combine(
+            directory,
+            "djvu-unknown-only.djvu");
+        File.WriteAllBytes(
+            unknownOnlyPath,
+            Encoding.ASCII.GetBytes("AT&T")
+                .Concat(
+                    unknownOnlyForm)
+                .ToArray());
+
+        var unknownOnlyModel =
+            DjvuDocumentReader.Read(
+                unknownOnlyPath);
+        var unknownOnlyPage =
+            unknownOnlyModel.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single();
+        Assert(unknownOnlyPage.Presentation is { } unknownPresentation &&
+            unknownPresentation.UnrecognizedAnnotations.SequenceEqual(
+                new[]
+                {
+                    new DocumentFixedPageUnrecognizedAnnotation(
+                        DocumentFixedPageUnrecognizedAnnotationScope.TopLevel,
+                        "vendor_only")
+                }) &&
+            unknownPresentation.InitialZoom == null &&
+            unknownPresentation.InitialDisplayMode == null &&
+            unknownOnlyPage.Links.Count == 0 &&
+            unknownOnlyPage.ImageRuns.Count == 1,
+            "DjVu reader must preserve diagnostics even when a page contains only an unknown annotation command.");
+
+        var unknownOnlyHtml = DocumentHtmlRenderer.Render(
+            unknownOnlyModel,
+            CreateRenderTheme());
+        AssertContains(
+            unknownOnlyHtml,
+            "data-unrecognized-annotation-count=\"1\"",
+            "DjVu unknown-only page must expose a diagnostic count in HTML.");
+        Assert(!unknownOnlyHtml.Contains(
+                "vendor_only",
+                StringComparison.Ordinal),
+            "DjVu unknown-only extension names must not be inserted into rendered HTML.");
     }
 
     private static void TestDjvuMapAreas()
