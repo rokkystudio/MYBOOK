@@ -79,6 +79,7 @@ internal static class Program
             ("DjVu ANTa mapareas", TestDjvuMapAreas),
             ("DjVu printed annotations", () => TestDjvuPrintedAnnotations(temporaryDirectory)),
             ("DjVu extension diagnostics", () => TestDjvuUnrecognizedAnnotations(temporaryDirectory)),
+            ("DjVu METa/METz source metadata", () => TestDjvuSourceMetadata(temporaryDirectory)),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
             ("PDF SASLprep", TestPdfSaslPrep),
             ("PDF Indexed matte", TestPdfIndexedMatte),
@@ -13235,6 +13236,313 @@ internal static class Program
             "DjVu unknown-only extension names must not be inserted into rendered HTML.");
     }
 
+    /// <summary>
+    /// Проверяет IFF page-local METa/METz metadata без текстовой эвристики:
+    /// оригинальный kind, BZZ decompression, chunk order, binary payload,
+    /// независимость от ANTa metadata, page isolation, bounded input и
+    /// безопасный HTML count вместо raw data injection.
+    /// </summary>
+    private static void TestDjvuSourceMetadata(
+        string directory)
+    {
+        static byte[] Chunk(
+            string id,
+            byte[] payload)
+        {
+            var result = new byte[
+                8 +
+                payload.Length +
+                (payload.Length & 1)];
+
+            Encoding.ASCII.GetBytes(
+                id)
+                .CopyTo(result, 0);
+            BinaryPrimitives.WriteUInt32BigEndian(
+                result.AsSpan(4, 4),
+                checked((uint)payload.Length));
+            payload.CopyTo(
+                result,
+                8);
+            return result;
+        }
+
+        static byte[] Form(
+            string formType,
+            params byte[][] chunks) =>
+            Chunk(
+                "FORM",
+                Encoding.ASCII.GetBytes(formType)
+                    .Concat(
+                        chunks.SelectMany(
+                            chunk => chunk))
+                    .ToArray());
+
+        static void WriteDjvuFile(
+            string path,
+            byte[] form)
+        {
+            File.WriteAllBytes(
+                path,
+                Encoding.ASCII.GetBytes("AT&T")
+                    .Concat(form)
+                    .ToArray());
+        }
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(0, 2),
+            20);
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(2, 2),
+            12);
+        info[4] = 25;
+        info[5] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            info.AsSpan(6, 2),
+            300);
+        info[8] = 22;
+        info[9] = 1;
+
+        var plain = new byte[]
+        {
+            0xFF,
+            0x00,
+            (byte)'<',
+            (byte)'s',
+            (byte)'c',
+            (byte)'r',
+            (byte)'i',
+            (byte)'p',
+            (byte)'t',
+            (byte)'>'
+        };
+        var originalCompressedText =
+            Encoding.UTF8.GetBytes(
+                "<source-meta>Compressed & untrusted</source-meta>");
+        using var compressedStream =
+            new MemoryStream();
+        using (var compressor =
+                   new DjvuNet.Compression.BSOutputStream(
+                       compressedStream,
+                       1024))
+        {
+            compressor.Write(
+                originalCompressedText,
+                0,
+                originalCompressedText.Length);
+        }
+
+        var metadataForm = Form(
+            "DJVU",
+            Chunk(
+                "INFO",
+                info),
+            Chunk(
+                "METa",
+                plain),
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    """
+                    (metadata (title "Annotation title"))
+                    """)),
+            Chunk(
+                "METz",
+                compressedStream.ToArray()),
+            Chunk(
+                "METa",
+                Array.Empty<byte>()));
+        var path = Path.Combine(
+            directory,
+            "djvu-source-metadata.djvu");
+        WriteDjvuFile(
+            path,
+            metadataForm);
+
+        var sourcePage =
+            DjvuContainerReader.Inspect(
+                path).Pages.Single();
+        Assert(sourcePage.MetadataChunks.Count == 3 &&
+            sourcePage.MetadataChunks[0].Kind == "METa" &&
+            sourcePage.MetadataChunks[0].Data.SequenceEqual(
+                plain) &&
+            sourcePage.MetadataChunks[1].Kind == "METz" &&
+            sourcePage.MetadataChunks[1].Data.SequenceEqual(
+                originalCompressedText) &&
+            sourcePage.MetadataChunks[2].Kind == "METa" &&
+            sourcePage.MetadataChunks[2].Data.Length == 0 &&
+            sourcePage.UnrecognizedChunkIds.Count == 0 &&
+            sourcePage.Annotations.Count == 1,
+            "DjVu METa/METz metadata chunks must preserve IFF order, source kinds, decompressed bytes and independent ANTa annotations.");
+
+        var document =
+            DjvuDocumentReader.Read(
+                path);
+        var page =
+            document.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single();
+        Assert(page.Presentation is { } presentation &&
+            presentation.Metadata.Count == 1 &&
+            presentation.Metadata["title"] ==
+                "Annotation title" &&
+            presentation.SourceMetadataChunks.Count == 3 &&
+            presentation.SourceMetadataChunks[0].Kind == "METa" &&
+            presentation.SourceMetadataChunks[0].Data.SequenceEqual(
+                plain) &&
+            presentation.SourceMetadataChunks[1].Kind == "METz" &&
+            presentation.SourceMetadataChunks[1].Data.SequenceEqual(
+                originalCompressedText) &&
+            presentation.SourceMetadataChunks[2].Data.Length == 0 &&
+            page.ImageRuns.Count == 1 &&
+            page.WidthPoints > 0 &&
+            page.HeightPoints > 0,
+            "DjVu full reader must keep raw METa/METz data distinct from parsed ANTa metadata and render a known-nonvisual page.");
+
+        var html =
+            DocumentHtmlRenderer.Render(
+                document,
+                CreateRenderTheme());
+        AssertContains(
+            html,
+            "data-source-meta-chunk-count=\"3\"",
+            "DjVu HTML must expose a bounded source metadata chunk count.");
+        AssertContains(
+            html,
+            "data-source-metadata-count=\"1\"",
+            "DjVu ANTa metadata count must remain separate from METa/METz count.");
+        Assert(!html.Contains(
+                "<source-meta>",
+                StringComparison.Ordinal) &&
+            !html.Contains(
+                "Compressed & untrusted",
+                StringComparison.Ordinal) &&
+            !html.Contains(
+                "<script>",
+                StringComparison.Ordinal),
+            "DjVu raw source metadata must never be embedded in executable HTML.");
+
+        var secondPage = Form(
+            "DJVU",
+            Chunk(
+                "INFO",
+                info));
+        var twoPagePath = Path.Combine(
+            directory,
+            "djvu-metadata-per-page.djvu");
+        WriteDjvuFile(
+            twoPagePath,
+            Form(
+                "DJVM",
+                metadataForm,
+                secondPage));
+
+        var pages =
+            DjvuContainerReader.Inspect(
+                twoPagePath).Pages;
+        Assert(pages.Count == 2 &&
+            pages[0].MetadataChunks.Count == 3 &&
+            pages[1].MetadataChunks.Count == 0,
+            "DjVu METa/METz metadata must stay attached to the containing page FORM.");
+
+        var overChunkPath = Path.Combine(
+            directory,
+            "djvu-metadata-limit.djvu");
+        WriteDjvuFile(
+            overChunkPath,
+            Form(
+                "DJVU",
+                Chunk("INFO", info),
+                Chunk(
+                    "METa",
+                    new byte[1024 * 1024 + 1])));
+        var oversizedChunkRejected = false;
+        try
+        {
+            _ = DjvuContainerReader.Inspect(
+                overChunkPath);
+        }
+        catch (InvalidDataException)
+        {
+            oversizedChunkRejected = true;
+        }
+        Assert(oversizedChunkRejected,
+            "DjVu METa metadata chunk larger than 1 MiB must be rejected.");
+
+        WriteDjvuFile(
+            overChunkPath,
+            Form(
+                "DJVU",
+                Chunk("INFO", info),
+                Chunk("METz", Array.Empty<byte>())));
+        var invalidCompressedRejected = false;
+        try
+        {
+            _ = DjvuContainerReader.Inspect(
+                overChunkPath);
+        }
+        catch (InvalidDataException)
+        {
+            invalidCompressedRejected = true;
+        }
+        Assert(invalidCompressedRejected,
+            "DjVu empty METz must be rejected rather than decoded as guessed empty metadata.");
+
+        WriteDjvuFile(
+            overChunkPath,
+            Form(
+                "DJVU",
+                new[]
+                {
+                    Chunk("INFO", info)
+                }
+                    .Concat(
+                        Enumerable.Repeat(
+                            Chunk("METa", Array.Empty<byte>()),
+                            129))
+                    .ToArray()));
+        var tooManyChunksRejected = false;
+        try
+        {
+            _ = DjvuContainerReader.Inspect(
+                overChunkPath);
+        }
+        catch (InvalidDataException)
+        {
+            tooManyChunksRejected = true;
+        }
+        Assert(tooManyChunksRejected,
+            "DjVu source metadata chunk count must be limited per page.");
+
+        WriteDjvuFile(
+            overChunkPath,
+            Form(
+                "DJVU",
+                new[]
+                {
+                    Chunk("INFO", info)
+                }
+                    .Concat(
+                        Enumerable.Repeat(
+                            Chunk(
+                                "METa",
+                                new byte[1024 * 1024]),
+                            5))
+                    .ToArray()));
+        var oversizedPageRejected = false;
+        try
+        {
+            _ = DjvuContainerReader.Inspect(
+                overChunkPath);
+        }
+        catch (InvalidDataException)
+        {
+            oversizedPageRejected = true;
+        }
+        Assert(oversizedPageRejected,
+            "DjVu decoded metadata on one page must be limited to 4 MiB.");
+    }
+
     private static void TestDjvuMapAreas()
     {
         var annotation = """
@@ -16039,6 +16347,16 @@ internal static class Program
             "(maparea \"https://shared.example/\" \"Shared\" (rect 1 0 1 1))";
         var afterAnnotation =
             "(maparea \"https://after.example/\" \"After\" (rect 2 0 1 1))";
+        var indirectSourceMetadata =
+            new byte[]
+            {
+                0xFF,
+                0x00,
+                0x4D,
+                0x45,
+                0x54,
+                0x61
+            };
 
         var sharedForm =
             Form(
@@ -16073,6 +16391,9 @@ internal static class Program
                 Chunk(
                     "INFO",
                     info),
+                Chunk(
+                    "METa",
+                    indirectSourceMetadata),
                 Chunk(
                     "ANTa",
                     Encoding.UTF8.GetBytes(
@@ -16160,6 +16481,13 @@ internal static class Program
                 pageDiskName &&
             resolvedPage.ComponentTitle ==
                 "Indirect Page" &&
+            resolvedPage.MetadataChunks.Single()
+                is
+                {
+                    Kind: "METa"
+                } indirectMetadata &&
+            indirectMetadata.Data.SequenceEqual(
+                indirectSourceMetadata) &&
             resolvedPage.ImageLayers.Single()
                 .SourcePath ==
                 Path.GetFullPath(
@@ -16266,6 +16594,13 @@ internal static class Program
                 .Single();
 
         Assert(
+            fixedPage.Presentation?.SourceMetadataChunks.Single()
+                is
+                {
+                    Kind: "METa"
+                } indirectModelMetadata &&
+            indirectModelMetadata.Data.SequenceEqual(
+                indirectSourceMetadata) &&
             fixedPage.ImageRuns.Count == 1 &&
             fixedPage.ImageRuns[0]
                 .ContentType ==
@@ -16282,6 +16617,111 @@ internal static class Program
             model.Outlines.Single()
                 .TargetPageNumber == 1,
             "DjVu indirect document must render through SupportedFormatRegistry with shared links and resolved NAVM outline.");
+
+        var decodedMetadataBlock =
+            new byte[1024 * 1024];
+        var metadataPageForm =
+            Form(
+                "DJVU",
+                Chunk(
+                    "INFO",
+                    info),
+                Chunk(
+                    "METa",
+                    decodedMetadataBlock),
+                Chunk(
+                    "METa",
+                    decodedMetadataBlock),
+                Chunk(
+                    "METa",
+                    decodedMetadataBlock),
+                Chunk(
+                    "METa",
+                    decodedMetadataBlock));
+
+        var metadataComponents =
+            Enumerable.Range(
+                0,
+                5)
+                .Select(index =>
+                    (
+                        Form: metadataPageForm,
+                        Flags: (byte)0x81,
+                        Id: $"metadata-{index}.djvu",
+                        Name: (string?)Path.Combine(
+                            "djvu-indirect-parts",
+                            $"metadata-{index}.djvu"),
+                        Title: (string?)null
+                    ))
+                .ToArray();
+
+        foreach (var metadataComponent in
+                 metadataComponents)
+        {
+            File.WriteAllBytes(
+                Path.Combine(
+                    directory,
+                    metadataComponent.Name!),
+                DjvuFile(
+                    metadataComponent.Form));
+        }
+
+        var metadataIndexPath =
+            Path.Combine(
+                directory,
+                "djvu-indirect-metadata-index.djvu");
+
+        File.WriteAllBytes(
+            metadataIndexPath,
+            DjvuFile(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        BuildDirm(
+                            metadataComponents[..4])))));
+
+        var allowedMetadataIndex =
+            DjvuContainerReader.Inspect(
+                metadataIndexPath);
+        var allowedMetadataDocument =
+            DjvuIndirectDocumentResolver.Resolve(
+                metadataIndexPath,
+                allowedMetadataIndex);
+        Assert(allowedMetadataDocument.Pages.Count == 4 &&
+            allowedMetadataDocument.Pages.All(
+                page =>
+                    page.MetadataChunks.Count == 4),
+            "DjVu indirect document must allow exactly 16 MiB of decoded page metadata.");
+
+        File.WriteAllBytes(
+            metadataIndexPath,
+            DjvuFile(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        BuildDirm(
+                            metadataComponents)))));
+
+        var oversizedMetadataRejected = false;
+        try
+        {
+            _ = DjvuIndirectDocumentResolver.Resolve(
+                metadataIndexPath,
+                DjvuContainerReader.Inspect(
+                    metadataIndexPath));
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "16 MiB decoded METa/METz",
+                StringComparison.Ordinal))
+        {
+            oversizedMetadataRejected = true;
+        }
+
+        Assert(oversizedMetadataRejected,
+            "DjVu indirect document must reject decoded METa/METz metadata exceeding 16 MiB across page components.");
 
         const string dictionaryId =
             "dictionary-id.iff";
