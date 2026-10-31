@@ -12646,12 +12646,12 @@ internal static class Program
     {
         var annotation = """
             (background #FFFFFF)
-            (maparea "https://example.org/a" "Description" (rect 10 20 100 50) (border #000000))
+            (maparea "https://example.org/a" "Description" (rect 10 20 100 50) (border #000000) (border_avis) (hilite #FFFF00) (opacity 25))
             (maparea (url "#+1" "_self") "Next page" (rect 150 75 80 30) (xor))
             (maparea "" "Other geometry" (oval 0 0 10 10))
-            (maparea "#page" "Triangle" (poly 10 20 30 20 20 40))
-            (maparea "#2" "Text box" (text 5 6 7 8) (backclr #FFFF80))
-            (maparea (url "https://example.org/line" "_blank") "Line" (line 2 3 12 9) (width 3) (arrow))
+            (maparea "#page" "Triangle" (poly 10 20 30 20 20 40) (border #112233))
+            (maparea "#2" "Text box" (text 5 6 7 8) (backclr #FFFF80) (textclr #102030) (pushpin) (border #010203))
+            (maparea (url "https://example.org/line" "_blank") "Line" (line 2 3 12 9) (none) (width 2) (width 3) (lineclr #00FF00) (lineclr #FF0000) (arrow))
             """;
         var areas = DjvuAnnotationReader.ReadMapAreas(annotation);
         Assert(areas.Count == 6 &&
@@ -12659,14 +12659,23 @@ internal static class Program
             areas[0].Comment == "Description" &&
             areas[0].X == 10 && areas[0].Y == 20 &&
             areas[0].Width == 100 && areas[0].Height == 50 &&
+            areas[0].BorderStyle == DjvuMapAreaBorderStyle.Solid &&
+            areas[0].BorderColor == "#000000" &&
+            areas[0].BorderAlwaysVisible &&
+            areas[0].HighlightColor == "#FFFF00" &&
+            areas[0].HighlightOpacityPercent == 25 &&
             areas[1].Url == "#+1" &&
             areas[1].Target == "_self" &&
+            areas[1].BorderStyle == DjvuMapAreaBorderStyle.Xor &&
             areas[1].X == 150 && areas[1].Height == 30 &&
             areas[2].Shape == "oval" && areas[2].X == 0 &&
             areas[2].Width == 10 && areas[2].Height == 10 &&
+            areas[2].BorderStyle == DjvuMapAreaBorderStyle.Xor &&
             areas[3].Shape == "poly" && areas[3].Url == "#page" &&
             areas[3].X == 10 && areas[3].Y == 20 &&
             areas[3].Width == 20 && areas[3].Height == 20 &&
+            areas[3].BorderStyle == DjvuMapAreaBorderStyle.Solid &&
+            areas[3].BorderColor == "#112233" &&
             areas[3].Vertices.SequenceEqual(new[] {
                 new DjvuPoint(10, 20), new DjvuPoint(30, 20), new DjvuPoint(20, 40) }) &&
             areas[4] is
@@ -12676,17 +12685,25 @@ internal static class Program
                 X: 5,
                 Y: 6,
                 Width: 7,
-                Height: 8
+                Height: 8,
+                TextBackgroundColor: "#FFFF80",
+                TextColor: "#102030",
+                TextPushpin: true,
+                BorderStyle: DjvuMapAreaBorderStyle.Solid,
+                BorderColor: "#010203"
             } &&
             areas[5].Shape == "line" &&
             areas[5].Target == "_blank" &&
+            areas[5].BorderStyle == DjvuMapAreaBorderStyle.None &&
             areas[5].LineWidthPixels == 3 &&
+            areas[5].LineColor == "#FF0000" &&
+            areas[5].LineArrow &&
             areas[5].Vertices.SequenceEqual(new[]
             {
                 new DjvuPoint(2, 3),
                 new DjvuPoint(12, 9)
             }),
-            "DjVu ANTa maparea parser must preserve all five standard shapes, URL targets and line width.");
+            "DjVu ANTa maparea parser must preserve standard shapes and visual annotation state with last-option-wins semantics.");
 
         var escaped = DjvuAnnotationReader.ReadMapAreas(
             "(maparea \"#2\" \"it\\'s here\" (rect 1 2 3 4))");
@@ -12695,8 +12712,24 @@ internal static class Program
 
         var defaultLine = DjvuAnnotationReader.ReadMapAreas(
             "(maparea \"#1\" \"Default line\" (line 1 2 3 4))");
-        Assert(defaultLine.Single().LineWidthPixels == 1,
-            "DjVu ANTa line width must default to one pixel.");
+        Assert(defaultLine.Single() is
+            {
+                BorderStyle: DjvuMapAreaBorderStyle.None,
+                LineWidthPixels: 1,
+                LineColor: "#000000",
+                LineArrow: false
+            },
+            "DjVu ANTa line visual state must use the specified one-pixel black no-arrow defaults.");
+
+        var shadow = DjvuAnnotationReader.ReadMapAreas(
+            "(maparea \"\" \"Shadow\" (rect 1 2 3 4) (shadow_ein 4) (border_avis))");
+        Assert(shadow.Single() is
+            {
+                BorderStyle: DjvuMapAreaBorderStyle.ShadowEtchedIn,
+                BorderWidthPixels: 4,
+                BorderAlwaysVisible: true
+            },
+            "DjVu ANTa shadow border must preserve type, thickness and visibility.");
 
         foreach (var (name, text) in new[]
         {
@@ -12712,7 +12745,13 @@ internal static class Program
             ("bad-text", "(maparea \"x\" \"comment\" (text 1 2 0 4))"),
             ("bad-line-point", "(maparea \"x\" \"comment\" (line 1 2 1 2))"),
             ("bad-line-width", "(maparea \"x\" \"comment\" (line 1 2 3 4) (width 0))"),
-            ("duplicate-line-width", "(maparea \"x\" \"comment\" (line 1 2 3 4) (width 2) (width 3))"),
+            ("bad-color", "(maparea \"x\" \"comment\" (rect 1 2 3 4) (border red))"),
+            ("bad-opacity", "(maparea \"x\" \"comment\" (rect 1 2 3 4) (opacity 101))"),
+            ("hilite-on-oval", "(maparea \"x\" \"comment\" (oval 1 2 3 4) (hilite #FF0000))"),
+            ("shadow-on-poly", "(maparea \"x\" \"comment\" (poly 1 1 4 1 2 4) (shadow_in 3))"),
+            ("line-color-on-rect", "(maparea \"x\" \"comment\" (rect 1 2 3 4) (lineclr #FF0000))"),
+            ("text-color-on-line", "(maparea \"x\" \"comment\" (line 1 2 3 4) (textclr #FF0000))"),
+            ("xor-on-line", "(maparea \"x\" \"comment\" (line 1 2 3 4) (xor))"),
             ("unclosed-string", "(maparea \"x")
         })
         {
@@ -13575,11 +13614,13 @@ internal static class Program
             info.AsSpan(2, 2), height);
 
         var annotation = Encoding.UTF8.GetBytes(
-            "(maparea \"#+0\" \"Self rectangle\" (rect 1 2 5 4)) " +
-            "(maparea \"https://example.org/a\" \"External oval\" (oval 7 1 4 3)) " +
-            "(maparea \"#+0\" \"Self polygon\" (poly 1 1 4 1 2 4)) " +
-            "(maparea \"#+0\" \"Self text\" (text 10 5 4 3) (backclr #FFFF80)) " +
-            "(maparea \"https://example.org/line\" \"External line\" (line 0 12 16 0) (width 2) (arrow))");
+            "(maparea \"#+0\" \"Self rectangle\" (rect 1 2 5 4) (border #123456) (border_avis) (hilite #ABCDEF) (opacity 25)) " +
+            "(maparea \"https://example.org/a\" \"External oval\" (oval 7 1 4 3) (xor)) " +
+            "(maparea \"#+0\" \"Self polygon\" (poly 1 1 4 1 2 4) (border #112233)) " +
+            "(maparea \"#+0\" \"Self text\" (text 10 5 4 3) (backclr #FFFF80) (textclr #102030) (pushpin) (border #000000)) " +
+            "(maparea \"https://example.org/line\" \"External line\" (line 0 12 16 0) (none) (width 2) (lineclr #FF0000) (arrow)) " +
+            "(maparea \"\" \"Decorative highlight\" (rect 14 10 2 2) (none) (hilite #00FF00) (opacity 40)) " +
+            "(maparea \"\" \"Decorative shadow\" (rect 5 8 3 3) (shadow_out 2) (border_avis))");
 
         var pageText = Encoding.UTF8.GetBytes(
             "Привет DjVu");
@@ -13833,7 +13874,7 @@ internal static class Program
                 "DjVu page PNG must preserve the compositor BGRA32 pixels exactly.");
         }
 
-        Assert(fixedPage.Links.Count == 5 &&
+        Assert(fixedPage.Links.Count == 7 &&
             fixedPage.Links[0] is
             {
                 Shape: DocumentFixedLinkShape.Rectangle,
@@ -13842,37 +13883,71 @@ internal static class Program
                 YPoints: 7,
                 WidthPoints: 5,
                 HeightPoints: 4,
-                Title: "Self rectangle"
+                Title: "Self rectangle",
+                BorderStyle: DocumentFixedLinkBorderStyle.Solid,
+                BorderColor: "#123456",
+                BorderAlwaysVisible: true,
+                HighlightColor: "#ABCDEF",
+                HighlightOpacity: 0.25
             } &&
             fixedPage.Links[1] is
             {
                 Shape: DocumentFixedLinkShape.Ellipse,
-                Uri: "https://example.org/a"
+                Uri: "https://example.org/a",
+                BorderStyle: DocumentFixedLinkBorderStyle.Xor
             } &&
             fixedPage.Links[2].Shape == DocumentFixedLinkShape.Polygon &&
             fixedPage.Links[2].TargetPageNumber == 1 &&
+            fixedPage.Links[2].BorderStyle ==
+                DocumentFixedLinkBorderStyle.Solid &&
+            fixedPage.Links[2].BorderColor == "#112233" &&
             fixedPage.Links[2].PolygonPoints.Count == 3 &&
             fixedPage.Links[2].PolygonPoints[0].XPoints == 1 &&
             fixedPage.Links[2].PolygonPoints[0].YPoints == 12 &&
             fixedPage.Links[3] is
             {
-                Shape: DocumentFixedLinkShape.Rectangle,
+                Shape: DocumentFixedLinkShape.Text,
                 TargetPageNumber: 1,
                 XPoints: 10,
                 YPoints: 5,
                 WidthPoints: 4,
                 HeightPoints: 3,
-                Title: "Self text"
+                Title: "Self text",
+                TextBackgroundColor: "#FFFF80",
+                TextColor: "#102030",
+                TextPushpin: true,
+                BorderStyle: DocumentFixedLinkBorderStyle.Solid,
+                BorderColor: "#000000"
             } &&
             fixedPage.Links[4].Shape == DocumentFixedLinkShape.Line &&
             fixedPage.Links[4].Uri == "https://example.org/line" &&
             fixedPage.Links[4].LineWidthPoints == 2 &&
+            fixedPage.Links[4].LineColor == "#FF0000" &&
+            fixedPage.Links[4].LineArrow &&
             fixedPage.Links[4].LinePoints.Count == 2 &&
             fixedPage.Links[4].LinePoints[0].XPoints == 0 &&
             fixedPage.Links[4].LinePoints[0].YPoints == 1 &&
             fixedPage.Links[4].LinePoints[1].XPoints == 16 &&
-            fixedPage.Links[4].LinePoints[1].YPoints == 13,
-            "DjVu mapareas must map all five standard shapes to exact fixed-page hyperlink geometry.");
+            fixedPage.Links[4].LinePoints[1].YPoints == 13 &&
+            fixedPage.Links[5] is
+            {
+                Shape: DocumentFixedLinkShape.Rectangle,
+                Uri: null,
+                TargetPageNumber: null,
+                HighlightColor: "#00FF00",
+                HighlightOpacity: 0.4,
+                BorderStyle: DocumentFixedLinkBorderStyle.None
+            } &&
+            fixedPage.Links[6] is
+            {
+                Shape: DocumentFixedLinkShape.Rectangle,
+                Uri: null,
+                TargetPageNumber: null,
+                BorderStyle: DocumentFixedLinkBorderStyle.ShadowOut,
+                BorderWidthPoints: 2,
+                BorderAlwaysVisible: true
+            },
+            "DjVu mapareas must preserve fixed-page hyperlink and visual-only annotation state.");
 
         var html = DocumentHtmlRenderer.Render(
             model,
@@ -13901,6 +13976,46 @@ internal static class Program
             html,
             "https://example.org/line",
             "DjVu external line maparea HTML target");
+        AssertContains(
+            html,
+            "<rect class=\"fixed-page-maparea-highlight\" x=\"1\" y=\"7\" width=\"5\" height=\"4\" fill=\"#ABCDEF\" fill-opacity=\"0.25\"",
+            "DjVu rect hilite color and opacity");
+        AssertContains(
+            html,
+            "class=\"fixed-page-maparea-border fixed-page-maparea-border-always\" fill=\"none\" stroke=\"#123456\" stroke-width=\"1\" x=\"1\" y=\"7\"",
+            "DjVu always-visible solid border");
+        AssertContains(
+            html,
+            "<rect class=\"fixed-page-maparea-highlight\" x=\"14\" y=\"1\" width=\"2\" height=\"2\" fill=\"#00FF00\" fill-opacity=\"0.4\"",
+            "DjVu decorative maparea without URL");
+        AssertContains(
+            html,
+            "border-style:outset;border-width:2px;border-color:#808080",
+            "DjVu shadow_out visual border");
+        AssertContains(
+            html,
+            "<marker id=\"fixed-page-maparea-arrow-1-4\"",
+            "DjVu line arrow marker");
+        AssertContains(
+            html,
+            "class=\"fixed-page-maparea-line-visual\" fill=\"none\" stroke=\"#FF0000\" stroke-width=\"2\"",
+            "DjVu visible line color and width");
+        AssertContains(
+            html,
+            "marker-end=\"url(#fixed-page-maparea-arrow-1-4)\"",
+            "DjVu line arrow binding");
+        AssertContains(
+            html,
+            "class=\"fixed-page-maparea-pushpin\" style=\"color:#102030\"",
+            "DjVu text pushpin text color");
+        AssertContains(
+            html,
+            "background-color:#FFFF80",
+            "DjVu text pushpin background");
+        AssertContains(
+            html,
+            "Self text",
+            "DjVu text maparea comment");
         AssertContains(
             html,
             "class=\"fixed-page-text-overlay\"",
