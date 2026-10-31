@@ -12283,8 +12283,10 @@ internal static class Program
             inspected.Pages[0].MinorVersion == 26 && inspected.Pages[0].MajorVersion == 0 &&
             Math.Abs(inspected.Pages[0].Gamma - 2.2) < 0.001 &&
             inspected.Pages[0].Rotation == DjvuPageRotation.RightSideUp &&
-            inspected.Pages[0].InfoFlags == 0,
-            "DjVu INFO geometry/version/DPI/gamma/rotation.");
+            inspected.Pages[0].InfoFlags == 0 &&
+            inspected.Pages[0].UnrecognizedChunkIds.SequenceEqual(
+                new[] { "ODD!" }),
+            "DjVu INFO geometry/version/DPI/gamma/rotation and opaque page chunk tracking.");
 
         var rotatedInfo = (byte[])info.Clone();
         rotatedInfo[9] = 5;
@@ -12293,6 +12295,32 @@ internal static class Program
         Assert(rotatedPageInfo.Rotation == DjvuPageRotation.Clockwise &&
             rotatedPageInfo.DisplayWidth == 480 && rotatedPageInfo.DisplayHeight == 640,
             "DjVu INFO clockwise rotation swaps display geometry.");
+
+        var blankPixels =
+            DjvuPageRenderer.Render(
+                rotatedPageInfo);
+        Assert(blankPixels.Width == 480 &&
+            blankPixels.Height == 640 &&
+            blankPixels.Stride == 480 * 4 &&
+            blankPixels.Bgra32.All(value => value == 255),
+            "DjVu INFO-only page must render as an opaque white surface with initial rotation.");
+
+        var opaquePageRejected = false;
+        try
+        {
+            _ = DjvuPageRenderer.Render(
+                inspected.Pages[0]);
+        }
+        catch (NotSupportedException error)
+            when (error.Message.Contains(
+                "ODD!",
+                StringComparison.Ordinal))
+        {
+            opaquePageRejected = true;
+        }
+
+        Assert(opaquePageRejected,
+            "DjVu page with an unrecognized payload chunk must not be guessed as a blank page.");
 
         System.IO.File.WriteAllBytes(path, File(Form("DJVU",
             Chunk("ODD!", new byte[] { 1, 2, 3 }), Chunk("INFO", info))));
