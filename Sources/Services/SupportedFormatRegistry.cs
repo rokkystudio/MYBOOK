@@ -31,7 +31,8 @@ internal static class SupportedFormatRegistry
         new(".doc", "Microsoft Word document", "MYBOOK.DocFile", ReadDocCompatibleDocument),
         new(".docx", "Word OpenXML document", "MYBOOK.DocxFile", DocxDocumentReader.Read),
         new(".pdf", "PDF document", "MYBOOK.PdfFile", PdfDocumentReader.Read),
-        new(".djvu", "DjVu document", "MYBOOK.DjvuFile", DjvuDocumentReader.Read)
+        new(".djvu", "DjVu document", "MYBOOK.DjvuFile", DjvuDocumentReader.Read),
+        new(".iw4", "DjVu IW44 image", "MYBOOK.Iw4File", DjvuDocumentReader.Read)
     ];
 
     private static readonly IReadOnlyDictionary<string, SupportedDocumentFormat> FormatsByExtension =

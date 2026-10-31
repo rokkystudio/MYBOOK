@@ -69,7 +69,7 @@ internal static class Program
             ("DjVu JPEG layers", () => TestDjvuJpegLayers(temporaryDirectory)),
             ("DjVu FGbz palette", () => TestDjvuForegroundPalette(temporaryDirectory)),
             ("DjVu IW44 headers", TestDjvuIw44Headers),
-            ("DjVu IW44 pixels", TestDjvuIw44Pixels),
+            ("DjVu IW44 pixels", () => TestDjvuIw44Pixels(temporaryDirectory)),
             ("DjVu JB2 pixels", TestDjvuJb2Pixels),
             ("DjVu compound palette", TestDjvuCompoundPalette),
             ("DjVu Smmr mask", () => TestDjvuSmmrMask(temporaryDirectory)),
@@ -148,7 +148,7 @@ internal static class Program
         var formats = SupportedFormatRegistry.All;
 
         AssertEqual(
-            11,
+            12,
             formats.Count,
             "Количество зарегистрированных форматов");
 
@@ -171,6 +171,10 @@ internal static class Program
         Assert(
             SupportedFormatRegistry.GetByExtension(".djvu").Reader != null,
             "DjVu должен иметь DocumentModel reader.");
+
+        Assert(
+            SupportedFormatRegistry.GetByExtension(".iw4").Reader != null,
+            "Standalone DjVu IW44 должен иметь DocumentModel reader.");
 
         var filter = SupportedFormatRegistry.BuildOpenFileDialogFilter(
             "Supported documents");
@@ -13030,6 +13034,95 @@ internal static class Program
             grayscale.Height == 32,
             "DjVu IW44 grayscale flag and full-resolution geometry.");
 
+        var legacyPm44 =
+            DjvuIw44SequenceReader.ReadLegacy(
+                new[]
+                {
+                    new byte[]
+                    {
+                        0, 1, 0x01, 2,
+                        0, 64, 0, 32,
+                        0x80, 0xEF
+                    }
+                },
+                new[] { "PM44" });
+        var legacyBm44 =
+            DjvuIw44SequenceReader.ReadLegacy(
+                new[]
+                {
+                    new byte[]
+                    {
+                        0, 1, 0x81, 2,
+                        0, 32, 0, 16,
+                        0x00, 0xEF
+                    }
+                },
+                new[] { "BM44" });
+        Assert(legacyPm44 is
+            {
+                Kind: "PM44",
+                IsGrayscale: false,
+                Width: 64,
+                Height: 32,
+                SubsampleFactor: 1
+            } &&
+            legacyBm44 is
+            {
+                Kind: "BM44",
+                IsGrayscale: true,
+                Width: 32,
+                Height: 16,
+                SubsampleFactor: 1
+            },
+            "DjVu legacy PM44/BM44 headers must define native full-page IW44 geometry.");
+
+        var mixedLegacy =
+            DjvuIw44SequenceReader.ReadLegacy(
+                new[]
+                {
+                    new byte[]
+                    {
+                        0, 1, 0x01, 2,
+                        0, 64, 0, 32,
+                        0x80, 0xEF
+                    },
+                    new byte[]
+                    {
+                        1, 1, 0xAA
+                    }
+                },
+                new[]
+                {
+                    "PM44",
+                    "BM44"
+                });
+        Assert(mixedLegacy.Kind == "PM44" &&
+            mixedLegacy.Chunks.Count == 2 &&
+            mixedLegacy.TotalSlices == 2,
+            "DjVu legacy IW44 sequence must accept mixed PM44/BM44 chunk IDs like DjVuLibre.");
+
+        var badLegacyKindRejected = false;
+        try
+        {
+            _ = DjvuIw44SequenceReader.ReadLegacy(
+                new[]
+                {
+                    new byte[]
+                    {
+                        0, 1, 0x01, 2,
+                        0, 64, 0, 32,
+                        0x80, 0xEF
+                    }
+                },
+                new[] { "BG44" });
+        }
+        catch (NotSupportedException)
+        {
+            badLegacyKindRejected = true;
+        }
+        Assert(badLegacyKindRejected,
+            "DjVu legacy IW44 reader must reject embedded BG44/FG44 chunk kinds.");
+
         var badSerialRejected = false;
         try
         {
@@ -13101,7 +13194,8 @@ internal static class Program
             "DjVu IW44 chunk without coefficient payload must be rejected.");
     }
 
-    private static void TestDjvuIw44Pixels()
+    private static void TestDjvuIw44Pixels(
+        string directory)
     {
         var sample = Path.Combine(Path.GetTempPath(),
             "MYBOOK-djvunet-bzz-reference", "Specs", "2000_compression_system.djvu");
@@ -13139,6 +13233,127 @@ internal static class Program
         Assert(digest ==
             "74E4B2E3F3BF64CDB99BB61CDEAEC786EC372C6CF2B236C12B40D67AEE22564A",
             "DjVu IW44 real BG44 pixel output must remain byte-stable.");
+
+        var legacyRoot =
+            Path.Combine(
+                Path.GetTempPath(),
+                "MYBOOK-djvu-rs-indirect",
+                "tests",
+                "fixtures");
+        foreach (var (
+                     fileName,
+                     formType,
+                     width,
+                     height,
+                     grayscaleLegacy,
+                     expectedHash) in
+                 new[]
+                 {
+                     (
+                         "legacy_pm44.djvu",
+                         "PM44",
+                         181,
+                         240,
+                         false,
+                         "9FD332809B93490B06C428E42F676F982ABFD9FA1C5D0C605D11BC4774BF6725"),
+                     (
+                         "legacy_bm44.djvu",
+                         "BM44",
+                         32,
+                         32,
+                         true,
+                         "CF63A8C66E35928A59D643315A219B0D78BD6D835057FA70EBA8F4207C38CC8A")
+                 })
+        {
+            var legacyPath =
+                Path.Combine(
+                    legacyRoot,
+                    fileName);
+            if (!File.Exists(legacyPath))
+                continue;
+
+            var legacy =
+                DjvuContainerReader.Inspect(
+                    legacyPath);
+            var legacyPage =
+                legacy.Pages.Single();
+            Assert(legacy.FormType == formType &&
+                legacyPage.Width == width &&
+                legacyPage.Height == height &&
+                legacyPage.Dpi == 100 &&
+                legacyPage.InfoLength == 0 &&
+                legacyPage.MajorVersion == 0 &&
+                legacyPage.MinorVersion == 0 &&
+                legacyPage.Gamma == 0 &&
+                legacyPage.BackgroundIw44 is
+                {
+                    MajorVersion: 1,
+                    MinorVersion: 2,
+                    SubsampleFactor: 1
+                } sequence &&
+                sequence.Kind == formType &&
+                sequence.IsGrayscale ==
+                    grayscaleLegacy &&
+                legacyPage.ImageLayers.All(
+                    layer =>
+                        layer.Kind == formType),
+                $"DjVu legacy FORM:{formType} page metadata.");
+
+            var legacyPixels =
+                DjvuPageRenderer.Render(
+                    legacyPage);
+            Assert(legacyPixels.Width == width &&
+                legacyPixels.Height == height &&
+                Convert.ToHexString(
+                    SHA256.HashData(
+                        legacyPixels.Bgra32)) ==
+                    expectedHash,
+                $"DjVu legacy FORM:{formType} pixel output must remain byte-stable.");
+
+            var legacyDocument =
+                DjvuDocumentReader.Read(
+                    legacyPath);
+            Assert(legacyDocument.Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Count() == 1,
+                $"DjVu legacy FORM:{formType} must pass the full document reader.");
+        }
+
+        var iw4Source =
+            Path.Combine(
+                legacyRoot,
+                "legacy_pm44.djvu");
+        if (File.Exists(iw4Source))
+        {
+            var iw4Path =
+                Path.Combine(
+                    directory,
+                    "legacy-pm44.iw4");
+            File.Copy(
+                iw4Source,
+                iw4Path,
+                overwrite: true);
+
+            var iw4Document =
+                SupportedFormatRegistry.ReadDocument(
+                    iw4Path);
+            var iw4Page =
+                iw4Document.Blocks
+                    .OfType<DocumentFixedPage>()
+                    .Single();
+            Assert(Math.Abs(
+                    iw4Page.WidthPoints -
+                    181 * 72.0 / 100) <
+                    0.0001 &&
+                Math.Abs(
+                    iw4Page.HeightPoints -
+                    240 * 72.0 / 100) <
+                    0.0001 &&
+                iw4Page.ImageRuns.Single()
+                    .ContentType ==
+                    "image/png",
+                "Standalone .iw4 files must route through the DjVu IW44 reader with 100-DPI page geometry.");
+        }
     }
 
     private static void TestDjvuJb2Pixels()
@@ -14983,6 +15198,77 @@ internal static class Program
                 .TargetPageIndex == 0,
             "DjVu indirect resolver must use DIRM Name for disk access, Id for INCL/NAVM and expand shared annotations at the INCL position.");
 
+        var legacyPageForm =
+            Form(
+                "PM44",
+                Chunk(
+                    "PM44",
+                    new byte[]
+                    {
+                        0, 1, 0x01, 2,
+                        0, 4, 0, 3,
+                        0x80, 0xAA
+                    }));
+        var legacyDiskName =
+            Path.Combine(
+                "djvu-indirect-parts",
+                "legacy-page.iw4");
+        var legacyPath =
+            Path.Combine(
+                directory,
+                legacyDiskName);
+        File.WriteAllBytes(
+            legacyPath,
+            DjvuFile(
+                legacyPageForm));
+
+        var legacyIndexPath =
+            Path.Combine(
+                directory,
+                "djvu-indirect-legacy.djvu");
+        var legacyDirm =
+            BuildDirm(
+                (
+                    legacyPageForm,
+                    (byte)0x81,
+                    "legacy-id.iw4",
+                    legacyDiskName,
+                    null));
+        File.WriteAllBytes(
+            legacyIndexPath,
+            DjvuFile(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        legacyDirm))));
+
+        var legacyIndex =
+            DjvuContainerReader.Inspect(
+                legacyIndexPath);
+        var legacyResolved =
+            DjvuIndirectDocumentResolver.Resolve(
+                legacyIndexPath,
+                legacyIndex);
+        Assert(legacyResolved.Pages.Single()
+            is
+            {
+                Width: 4,
+                Height: 3,
+                Dpi: 100,
+                InfoLength: 0,
+                ComponentId: "legacy-id.iw4"
+            } legacyIndirectPage &&
+            legacyIndirectPage.ImageLayers.Single()
+                is
+                {
+                    Kind: "PM44"
+                } legacyIndirectLayer &&
+            legacyIndirectLayer.SourcePath ==
+                Path.GetFullPath(
+                    legacyPath),
+            "DjVu indirect DIRM role-1 FORM:PM44 page must resolve through Name and preserve the external IW44 source path.");
+
         var model =
             SupportedFormatRegistry
                 .ReadDocument(
@@ -15563,6 +15849,94 @@ internal static class Program
             inspected.Directory.Components[1] is { Id: "page2.djvu", IsPage: true } &&
             inspected.Pages.Count == 2,
             "DjVu bundled DIRM offsets and decoded BZZ metadata.");
+
+        var legacyPayload = new byte[]
+        {
+            0, 1, 0x01, 2,
+            0, 4, 0, 3,
+            0x80, 0xAA
+        };
+        var legacyPage = Form(
+            "PM44",
+            Chunk(
+                "PM44",
+                legacyPayload));
+        var legacyRaw = new byte[]
+        {
+            checked((byte)
+                (legacyPage.Length >> 16)),
+            checked((byte)
+                (legacyPage.Length >> 8)),
+            checked((byte)
+                legacyPage.Length),
+            0x01
+        }
+            .Concat(
+                Encoding.UTF8.GetBytes(
+                    "legacy.iw4\0"))
+            .ToArray();
+        var legacyCompressed =
+            Compress(legacyRaw);
+        var legacyMetadata =
+            new byte[
+                7 +
+                legacyCompressed.Length];
+        legacyMetadata[0] = 0x81;
+        legacyMetadata[2] = 1;
+        legacyCompressed.CopyTo(
+            legacyMetadata,
+            7);
+        var legacyOffset =
+            16 +
+            Chunk(
+                "DIRM",
+                legacyMetadata)
+            .Length;
+        BinaryPrimitives.WriteUInt32BigEndian(
+            legacyMetadata.AsSpan(3, 4),
+            checked((uint)
+                legacyOffset));
+
+        System.IO.File.WriteAllBytes(
+            path,
+            File(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        legacyMetadata),
+                    legacyPage)));
+
+        var legacyBundled =
+            DjvuContainerReader.Inspect(
+                path);
+        Assert(legacyBundled.Directory is
+            {
+                Bundled: true,
+                ComponentCount: 1
+            } &&
+            legacyBundled.Directory.Components.Single()
+                is
+                {
+                    Id: "legacy.iw4",
+                    IsPage: true
+                } &&
+            legacyBundled.Pages.Single()
+                is
+                {
+                    Width: 4,
+                    Height: 3,
+                    Dpi: 100,
+                    InfoLength: 0
+                } legacyBundledPage &&
+            legacyBundledPage.ImageLayers.Single().Kind ==
+                "PM44" &&
+            legacyBundledPage.BackgroundIw44 is
+                {
+                    Kind: "PM44",
+                    SubsampleFactor: 1
+                },
+            "DjVu bundled DIRM role-1 FORM:PM44 component must be treated as a legacy page.");
 
         var malformed = (byte[])metadata.Clone();
         BinaryPrimitives.WriteUInt32BigEndian(malformed.AsSpan(3, 4), 999999);
