@@ -79,6 +79,7 @@ internal static class Program
             ("DjVu ANTa mapareas", TestDjvuMapAreas),
             ("DjVu printed annotations", () => TestDjvuPrintedAnnotations(temporaryDirectory)),
             ("DjVu extension diagnostics", () => TestDjvuUnrecognizedAnnotations(temporaryDirectory)),
+            ("DjVu legacy FORM ANNO", () => TestDjvuLegacyAnnotationForm(temporaryDirectory)),
             ("DjVu METa/METz source metadata", () => TestDjvuSourceMetadata(temporaryDirectory)),
             ("DjVu TXTa zone tree", TestDjvuTextZones),
             ("PDF SASLprep", TestPdfSaslPrep),
@@ -13541,6 +13542,723 @@ internal static class Program
         }
         Assert(oversizedPageRejected,
             "DjVu decoded metadata on one page must be limited to 4 MiB.");
+    }
+
+    /// <summary>
+    /// Проверяет legacy FORM:ANNO как упорядоченную IFF sequence ANTa/ANTz
+    /// на отдельных страницах и в bundled/indirect FORM:DJVI dependencies.
+    /// Nested chunk geometry/UTF-8/BZZ и resource limits проверяются строго,
+    /// shared INCL сохраняет позицию, а неизвестные или malformed children
+    /// никогда не формируют отображаемые аннотации.
+    /// </summary>
+    private static void TestDjvuLegacyAnnotationForm(
+        string directory)
+    {
+        static byte[] Chunk(
+            string id,
+            byte[] payload)
+        {
+            var bytes = new byte[
+                8 +
+                payload.Length +
+                (payload.Length & 1)];
+            Encoding.ASCII.GetBytes(
+                id).CopyTo(
+                bytes,
+                0);
+            BinaryPrimitives.WriteUInt32BigEndian(
+                bytes.AsSpan(4, 4),
+                checked((uint)payload.Length));
+            payload.CopyTo(
+                bytes,
+                8);
+            return bytes;
+        }
+
+        static byte[] Form(
+            string type,
+            params byte[][] chunks) =>
+            Chunk(
+                "FORM",
+                Encoding.ASCII.GetBytes(
+                        type)
+                    .Concat(
+                        chunks.SelectMany(
+                            child => child))
+                    .ToArray());
+
+        static byte[] FileBytes(
+            byte[] form) =>
+            Encoding.ASCII.GetBytes("AT&T")
+                .Concat(
+                    form)
+                .ToArray();
+
+        static byte[] Compress(
+            byte[] payload)
+        {
+            using var output =
+                new MemoryStream();
+            using (var encoder =
+                   new DjvuNet.Compression.BSOutputStream(
+                       output,
+                       1024))
+            {
+                encoder.Write(
+                    payload,
+                    0,
+                    payload.Length);
+            }
+
+            return output.ToArray();
+        }
+
+        static byte[] BuildDirectory(
+            bool bundled,
+            params (
+                byte[] Form,
+                byte Role,
+                string Id)[] components)
+        {
+            using var raw =
+                new MemoryStream();
+
+            foreach (var component in
+                     components)
+            {
+                var size =
+                    component.Form.Length;
+                if (size > 0xFFFFFF)
+                {
+                    throw new InvalidOperationException(
+                        "Synthetic DIRM component exceeds 24-bit size.");
+                }
+
+                raw.WriteByte(
+                    checked((byte)(
+                        (size >> 16) & 0xFF)));
+                raw.WriteByte(
+                    checked((byte)(
+                        (size >> 8) & 0xFF)));
+                raw.WriteByte(
+                    checked((byte)(
+                        size & 0xFF)));
+            }
+
+            foreach (var component in
+                     components)
+            {
+                raw.WriteByte(
+                    component.Role);
+            }
+
+            foreach (var component in
+                     components)
+            {
+                raw.Write(
+                    Encoding.UTF8.GetBytes(
+                        component.Id));
+                raw.WriteByte(0);
+            }
+
+            var compressed =
+                Compress(
+                    raw.ToArray());
+            var offsetBytes =
+                bundled
+                    ? components.Length * 4
+                    : 0;
+            var dirm = new byte[
+                3 +
+                offsetBytes +
+                compressed.Length];
+            dirm[0] =
+                bundled
+                    ? (byte)0x81
+                    : (byte)0x01;
+            BinaryPrimitives.WriteUInt16BigEndian(
+                dirm.AsSpan(1, 2),
+                checked((ushort)components.Length));
+            compressed.CopyTo(
+                dirm,
+                3 + offsetBytes);
+
+            if (bundled)
+            {
+                var offset =
+                    16 +
+                    Chunk(
+                        "DIRM",
+                        dirm).Length;
+                for (var index = 0;
+                     index < components.Length;
+                     index++)
+                {
+                    BinaryPrimitives.WriteUInt32BigEndian(
+                        dirm.AsSpan(
+                            3 + index * 4,
+                            4),
+                        checked((uint)offset));
+                    offset +=
+                        components[index].Form.Length;
+                }
+            }
+
+            return dirm;
+        }
+
+        var info = new byte[10];
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(0, 2),
+            24);
+        BinaryPrimitives.WriteUInt16BigEndian(
+            info.AsSpan(2, 2),
+            18);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            info.AsSpan(6, 2),
+            300);
+
+        var firstLegacy =
+            "(zoom width)";
+        var compressedLegacy =
+            "(maparea \"https://legacy.example/\" \"Legacy compressed\" (rect 2 3 4 5))";
+        var secondLegacy =
+            "(metadata (title \"Legacy title\"))";
+        var afterLegacy =
+            "(zoom d125) (maparea \"https://later.example/\" \"Later\" (rect 8 3 4 5))";
+
+        var legacyForm =
+            Form(
+                "ANNO",
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        firstLegacy)),
+                Chunk(
+                    "ANTz",
+                    Compress(
+                        Encoding.UTF8.GetBytes(
+                            compressedLegacy))));
+        var secondLegacyForm =
+            Form(
+                "ANNO",
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        secondLegacy)));
+        var pageForm =
+            Form(
+                "DJVU",
+                Chunk(
+                    "INFO",
+                    info),
+                legacyForm,
+                secondLegacyForm,
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        afterLegacy)));
+        var pagePath =
+            Path.Combine(
+                directory,
+                "djvu-legacy-anno-page.djvu");
+        File.WriteAllBytes(
+            pagePath,
+            FileBytes(
+                pageForm));
+
+        var page =
+            DjvuContainerReader.Inspect(
+                pagePath)
+                .Pages.Single();
+        Assert(page.UnrecognizedChunkIds.Count == 0 &&
+            page.Annotations.SequenceEqual(
+                new[]
+                {
+                    firstLegacy,
+                    compressedLegacy,
+                    secondLegacy,
+                    afterLegacy
+                }) &&
+            page.AnnotationReferences.Count == 4 &&
+            page.MapAreas.Select(area =>
+                    area.Comment)
+                .SequenceEqual(
+                    new[]
+                    {
+                        "Legacy compressed",
+                        "Later"
+                    }),
+            "DjVu FORM:ANNO must decode nested plain/compressed annotations in exact source order before standalone annotations.");
+
+        var model =
+            DjvuDocumentReader.Read(
+                pagePath);
+        var fixedPage =
+            model.Blocks
+                .OfType<DocumentFixedPage>()
+                .Single();
+        Assert(fixedPage.Presentation?.InitialZoom?.Percent == 125 &&
+            fixedPage.Presentation.Metadata["title"] ==
+                "Legacy title" &&
+            fixedPage.Links.Select(link => link.Title)
+                .SequenceEqual(
+                    new[]
+                    {
+                        "Legacy compressed",
+                        "Later"
+                    }) &&
+            fixedPage.ImageRuns.Count == 1,
+            "DjVu legacy annotations must participate in last-value-wins presentation, links and the nonvisual blank-page renderer.");
+
+        var html =
+            DocumentHtmlRenderer.Render(
+                model,
+                CreateRenderTheme());
+        AssertContains(
+            html,
+            "data-initial-zoom=\"d125\"",
+            "DjVu legacy and standalone annotation zoom merge.");
+        AssertContains(
+            html,
+            "data-source-metadata-count=\"1\"",
+            "DjVu legacy metadata expression must reach HTML as a safe count.");
+
+        var emptyLegacyPath =
+            Path.Combine(
+                directory,
+                "djvu-empty-legacy-anno.djvu");
+        File.WriteAllBytes(
+            emptyLegacyPath,
+            FileBytes(
+                Form(
+                    "DJVU",
+                    Chunk(
+                        "INFO",
+                        info),
+                    Form(
+                        "ANNO"))));
+        var emptyPage =
+            DjvuContainerReader.Inspect(
+                emptyLegacyPath)
+                .Pages.Single();
+        Assert(emptyPage.Annotations.Count == 0 &&
+            emptyPage.UnrecognizedChunkIds.Count == 0 &&
+            DjvuDocumentReader.Read(
+                emptyLegacyPath).Blocks
+                .OfType<DocumentFixedPage>()
+                .Single().ImageRuns.Count == 1,
+            "DjVu empty legacy annotation FORM is a known nonvisual page chunk without synthesized annotation state.");
+
+        var oddPlain =
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    "(zoom page)"));
+        Assert((oddPlain.Length & 1) == 0,
+            "DjVu synthetic odd ANTa chunk must include a final IFF padding byte.");
+        var oddForm =
+            Form(
+                "ANNO",
+                oddPlain[..^1]);
+        var oddPath =
+            Path.Combine(
+                directory,
+                "djvu-legacy-anno-unpadded.djvu");
+        File.WriteAllBytes(
+            oddPath,
+            FileBytes(
+                Form(
+                    "DJVU",
+                    Chunk(
+                        "INFO",
+                        info),
+                    oddForm)));
+        var oddPage =
+            DjvuContainerReader.Inspect(
+                oddPath).Pages.Single();
+        Assert(oddPage.Annotations.Single() ==
+                "(zoom page)" &&
+            DjvuAnnotationReader.Merge(
+                oddPage.Annotations).Zoom?.Kind ==
+                DjvuZoomKind.Page,
+            "DjVu FORM:ANNO must accept an odd-sized final child that ends at the exact FORM boundary without an internal pad byte.");
+
+        var beforeShared =
+            "(maparea \"https://before.example/\" \"Before\" (rect 0 1 2 2))";
+        var sharedLegacy =
+            "(maparea \"https://shared-legacy.example/\" \"Shared legacy\" (rect 4 1 2 2))";
+        var sharedCompressed =
+            "(maparea \"https://shared-compressed.example/\" \"Shared compressed\" (rect 8 1 2 2))";
+        var sharedStandalone =
+            "(maparea \"https://shared-after.example/\" \"Shared standalone\" (rect 12 1 2 2))";
+        var afterShared =
+            "(maparea \"https://after.example/\" \"After\" (rect 16 1 2 2))";
+
+        const string sharedId =
+            "djvu-legacy-shared.djvi";
+        const string pageId =
+            "djvu-legacy-shared-page.djvu";
+        var sharedForm =
+            Form(
+                "DJVI",
+                Form(
+                    "ANNO",
+                    Chunk(
+                        "ANTa",
+                        Encoding.UTF8.GetBytes(
+                            sharedLegacy)),
+                    Chunk(
+                        "ANTz",
+                        Compress(
+                            Encoding.UTF8.GetBytes(
+                                sharedCompressed)))),
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        sharedStandalone)));
+        var includePageForm =
+            Form(
+                "DJVU",
+                Chunk(
+                    "INFO",
+                    info),
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        beforeShared)),
+                Chunk(
+                    "INCL",
+                    Encoding.UTF8.GetBytes(
+                        sharedId)),
+                Chunk(
+                    "ANTa",
+                    Encoding.UTF8.GetBytes(
+                        afterShared)));
+
+        var components =
+            new (
+                byte[] Form,
+                byte Role,
+                string Id)[]
+            {
+                (
+                    sharedForm,
+                    3,
+                    sharedId),
+                (
+                    includePageForm,
+                    1,
+                    pageId)
+            };
+        var expectedAnnotations =
+            new[]
+            {
+                beforeShared,
+                sharedLegacy,
+                sharedCompressed,
+                sharedStandalone,
+                afterShared
+            };
+        var expectedComments =
+            new[]
+            {
+                "Before",
+                "Shared legacy",
+                "Shared compressed",
+                "Shared standalone",
+                "After"
+            };
+
+        var bundledPath =
+            Path.Combine(
+                directory,
+                "djvu-legacy-anno-bundled.djvu");
+        File.WriteAllBytes(
+            bundledPath,
+            FileBytes(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        BuildDirectory(
+                            true,
+                            components)),
+                    sharedForm,
+                    includePageForm)));
+
+        var bundledPage =
+            DjvuContainerReader.Inspect(
+                bundledPath)
+                .Pages.Single();
+        Assert(bundledPage.Annotations.SequenceEqual(
+                expectedAnnotations) &&
+            bundledPage.MapAreas
+                .Select(area =>
+                    area.Comment)
+                .SequenceEqual(
+                    expectedComments) &&
+            bundledPage.UnrecognizedChunkIds.Count == 0,
+            "DjVu bundled FORM:DJVI legacy annotations must expand into page order at the INCL position.");
+
+        var bundledReaderPage =
+            DjvuDocumentReader.Read(
+                bundledPath)
+                .Blocks
+                .OfType<DocumentFixedPage>()
+                .Single();
+        Assert(bundledReaderPage.Links
+                .Select(link => link.Title)
+                .SequenceEqual(
+                    expectedComments) &&
+            bundledReaderPage.ImageRuns.Count == 1,
+            "DjVu bundled legacy annotations must produce the exact five interactive links through the full reader.");
+
+        var sharedPath =
+            Path.Combine(
+                directory,
+                sharedId);
+        var includePagePath =
+            Path.Combine(
+                directory,
+                pageId);
+        File.WriteAllBytes(
+            sharedPath,
+            FileBytes(
+                sharedForm));
+        File.WriteAllBytes(
+            includePagePath,
+            FileBytes(
+                includePageForm));
+
+        var standaloneShared =
+            DjvuSharedComponentReader.Read(
+                sharedPath);
+        Assert(standaloneShared.Annotations.SequenceEqual(
+                new[]
+                {
+                    sharedLegacy,
+                    sharedCompressed,
+                    sharedStandalone
+                }) &&
+            standaloneShared.AnnotationReferences.Count == 3,
+            "DjVu standalone FORM:DJVI legacy annotations must retain exact source order and reference count.");
+
+        var indirectPath =
+            Path.Combine(
+                directory,
+                "djvu-legacy-anno-indirect.djvu");
+        File.WriteAllBytes(
+            indirectPath,
+            FileBytes(
+                Form(
+                    "DJVM",
+                    Chunk(
+                        "DIRM",
+                        BuildDirectory(
+                            false,
+                            components)))));
+
+        var indirectDocument =
+            DjvuIndirectDocumentResolver.Resolve(
+                indirectPath,
+                DjvuContainerReader.Inspect(
+                    indirectPath));
+        var indirectPage =
+            indirectDocument.Pages.Single();
+        Assert(indirectPage.Annotations.SequenceEqual(
+                expectedAnnotations) &&
+            indirectPage.MapAreas
+                .Select(area =>
+                    area.Comment)
+                .SequenceEqual(
+                    expectedComments),
+            "DjVu indirect FORM:DJVI legacy annotations must preserve nested ANTa/ANTz order through DIRM and INCL.");
+
+        var indirectReaderPage =
+            DjvuDocumentReader.Read(
+                indirectPath)
+                .Blocks
+                .OfType<DocumentFixedPage>()
+                .Single();
+        Assert(indirectReaderPage.Links
+                .Select(link => link.Title)
+                .SequenceEqual(
+                    expectedComments),
+            "DjVu indirect full reader must render all legacy/shared maparea targets.");
+
+        var malformedPath =
+            Path.Combine(
+                directory,
+                "djvu-legacy-anno-malformed.djvu");
+
+        void AssertMalformed(
+            string label,
+            params byte[][] chunks)
+        {
+            File.WriteAllBytes(
+                malformedPath,
+                FileBytes(
+                    Form(
+                        "DJVU",
+                        new[]
+                        {
+                            Chunk(
+                                "INFO",
+                                info)
+                        }
+                            .Concat(chunks)
+                            .ToArray())));
+
+            var rejected = false;
+            try
+            {
+                _ = DjvuContainerReader.Inspect(
+                    malformedPath);
+            }
+            catch (InvalidDataException)
+            {
+                rejected = true;
+            }
+            catch (NotSupportedException)
+            {
+                rejected = true;
+            }
+
+            Assert(rejected,
+                $"DjVu malformed legacy FORM:ANNO must be rejected: {label}");
+        }
+
+        var corruptLength =
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    firstLegacy));
+        BinaryPrimitives.WriteUInt32BigEndian(
+            corruptLength.AsSpan(4, 4),
+            1000);
+
+        AssertMalformed(
+            "unknown nested chunk",
+            Form(
+                "ANNO",
+                Chunk(
+                    "VEND",
+                    Encoding.UTF8.GetBytes(
+                        "(zoom d900)"))));
+        AssertMalformed(
+            "nested FORM not an annotation",
+            Form(
+                "ANNO",
+                Form(
+                    "ANNO",
+                    Chunk(
+                        "ANTa",
+                        Encoding.UTF8.GetBytes(
+                            firstLegacy)))));
+        AssertMalformed(
+            "truncated nested child",
+            Form(
+                "ANNO",
+                corruptLength));
+        AssertMalformed(
+            "invalid nested UTF-8",
+            Form(
+                "ANNO",
+                Chunk(
+                    "ANTa",
+                    new byte[]
+                    {
+                        0xC3,
+                        0x28
+                    })));
+        AssertMalformed(
+            "empty compressed ANTz",
+            Form(
+                "ANNO",
+                Chunk(
+                    "ANTz",
+                    Array.Empty<byte>())));
+        AssertMalformed(
+            "oversized nested child",
+            Form(
+                "ANNO",
+                Chunk(
+                    "ANTa",
+                    new byte[1024 * 1024 + 1])));
+        AssertMalformed(
+            "oversized legacy form",
+            Form(
+                "ANNO",
+                Chunk(
+                    "ANTa",
+                    new byte[4 * 1024 * 1024])));
+        AssertMalformed(
+            "too many nested children",
+            Form(
+                "ANNO",
+                Enumerable.Repeat(
+                    Chunk(
+                        "ANTa",
+                        Array.Empty<byte>()),
+                    129).ToArray()));
+        AssertMalformed(
+            "combined nested and standalone count",
+            Form(
+                "ANNO",
+                Enumerable.Repeat(
+                    Chunk(
+                        "ANTa",
+                        Array.Empty<byte>()),
+                    128).ToArray()),
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    afterLegacy)));
+        AssertMalformed(
+            "too many legacy forms",
+            Enumerable.Repeat(
+                Form("ANNO"),
+                33).ToArray());
+        AssertMalformed(
+            "legacy form after standalone",
+            Chunk(
+                "ANTa",
+                Encoding.UTF8.GetBytes(
+                    afterLegacy)),
+            legacyForm);
+
+        var invalidSharedPath =
+            Path.Combine(
+                directory,
+                "djvu-legacy-anno-invalid-shared.djvi");
+        File.WriteAllBytes(
+            invalidSharedPath,
+            FileBytes(
+                Form(
+                    "DJVI",
+                    Chunk(
+                        "ANTa",
+                        Encoding.UTF8.GetBytes(
+                            sharedStandalone)),
+                    Form(
+                        "ANNO",
+                        Chunk(
+                            "ANTa",
+                            Encoding.UTF8.GetBytes(
+                                sharedLegacy))))));
+        var sharedOrderRejected = false;
+        try
+        {
+            _ = DjvuSharedComponentReader.Read(
+                invalidSharedPath);
+        }
+        catch (InvalidDataException)
+        {
+            sharedOrderRejected = true;
+        }
+        Assert(sharedOrderRejected,
+            "DjVu legacy FORM:ANNO must precede standalone ANTa/ANTz inside FORM:DJVI.");
     }
 
     private static void TestDjvuMapAreas()
