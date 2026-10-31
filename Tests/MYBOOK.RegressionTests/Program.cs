@@ -12731,6 +12731,82 @@ internal static class Program
             },
             "DjVu ANTa shadow border must preserve type, thickness and visibility.");
 
+        var topLevel = DjvuAnnotationReader.Read(
+            """
+            (background #102030)
+            (background #A0B0C0)
+            (zoom width)
+            (zoom d125)
+            (mode fore)
+            (mode color)
+            (align left top)
+            (align right bottom)
+            (metadata (Author "First") (Producer "Tool A"))
+            (metadata (Author "Second") (Subject "Spec"))
+            (xmp "<rdf:first/>")
+            (xmp "<rdf:ignored/>")
+            """);
+        Assert(topLevel.BackgroundSpecified &&
+            topLevel.BackgroundColor == "#A0B0C0" &&
+            topLevel.ZoomSpecified &&
+            topLevel.Zoom is
+            {
+                Kind: DjvuZoomKind.Percent,
+                Percent: 125
+            } &&
+            topLevel.ModeSpecified &&
+            topLevel.Mode == DjvuDisplayMode.Color &&
+            topLevel.AlignmentSpecified &&
+            topLevel.HorizontalAlignment ==
+                DjvuHorizontalAlignment.Right &&
+            topLevel.VerticalAlignment ==
+                DjvuVerticalAlignment.Bottom &&
+            topLevel.Metadata.Count == 3 &&
+            topLevel.Metadata["Author"] == "Second" &&
+            topLevel.Metadata["Producer"] == "Tool A" &&
+            topLevel.Metadata["Subject"] == "Spec" &&
+            topLevel.XmpSpecified &&
+            topLevel.XmpMetadata == "<rdf:first/>",
+            "DjVu top-level annotation parser must use last presentation values, last metadata value per key and first XMP expression.");
+
+        var merged = DjvuAnnotationReader.Merge(
+            new[]
+            {
+                """
+                (background #112233)
+                (zoom d150)
+                (mode fore)
+                (align left top)
+                (metadata (Author "A") (Keep "1"))
+                (xmp "")
+                (maparea "#1" "first" (rect 1 1 2 2))
+                """,
+                """
+                (zoom default)
+                (mode default)
+                (align default center)
+                (metadata (Author "B"))
+                (xmp "<rdf:effective/>")
+                (maparea "#1" "second" (rect 4 4 2 2))
+                """,
+                """
+                (xmp "<rdf:later/>")
+                """
+            });
+        Assert(merged.BackgroundColor == "#112233" &&
+            merged.ZoomSpecified && merged.Zoom == null &&
+            merged.ModeSpecified && merged.Mode == null &&
+            merged.AlignmentSpecified &&
+            merged.HorizontalAlignment == null &&
+            merged.VerticalAlignment ==
+                DjvuVerticalAlignment.Center &&
+            merged.Metadata["Author"] == "B" &&
+            merged.Metadata["Keep"] == "1" &&
+            merged.XmpMetadata == "<rdf:effective/>" &&
+            merged.MapAreas.Select(area => area.Comment)
+                .SequenceEqual(new[] { "first", "second" }),
+            "DjVu annotation merge must preserve decoder order, explicit defaults, metadata overrides and first non-empty XMP.");
+
         foreach (var (name, text) in new[]
         {
             ("unterminated", "(maparea \"x\" \"comment\" (rect 1 2 3 4)"),
@@ -12752,6 +12828,14 @@ internal static class Program
             ("line-color-on-rect", "(maparea \"x\" \"comment\" (rect 1 2 3 4) (lineclr #FF0000))"),
             ("text-color-on-line", "(maparea \"x\" \"comment\" (line 1 2 3 4) (textclr #FF0000))"),
             ("xor-on-line", "(maparea \"x\" \"comment\" (line 1 2 3 4) (xor))"),
+            ("bad-background", "(background red)"),
+            ("bad-background-arity", "(background #FFFFFF #000000)"),
+            ("bad-zoom", "(zoom d1000)"),
+            ("bad-mode", "(mode sepia)"),
+            ("bad-align-h", "(align justify top)"),
+            ("bad-align-v", "(align left baseline)"),
+            ("bad-metadata", "(metadata (Author plain-symbol))"),
+            ("bad-xmp", "(xmp plain-symbol)"),
             ("unclosed-string", "(maparea \"x")
         })
         {
@@ -13614,6 +13698,12 @@ internal static class Program
             info.AsSpan(2, 2), height);
 
         var annotation = Encoding.UTF8.GetBytes(
+            "(background #445566) " +
+            "(zoom d125) " +
+            "(mode color) " +
+            "(align right bottom) " +
+            "(metadata (Producer \"Synthetic DjVu\") (Subject \"Annotation profile\")) " +
+            "(xmp \"<rdf:RDF>safe</rdf:RDF>\") " +
             "(maparea \"#+0\" \"Self rectangle\" (rect 1 2 5 4) (border #123456) (border_avis) (hilite #ABCDEF) (opacity 25)) " +
             "(maparea \"https://example.org/a\" \"External oval\" (oval 7 1 4 3) (xor)) " +
             "(maparea \"#+0\" \"Self polygon\" (poly 1 1 4 1 2 4) (border #112233)) " +
@@ -13825,6 +13915,24 @@ internal static class Program
                 new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }),
             "DjVu DocumentModel reader must produce one full-page PNG fixed page.");
 
+        Assert(fixedPage.Presentation is
+            {
+                SurroundingBackgroundColor: "#445566",
+                InitialZoom:
+                {
+                    Kind: DocumentFixedPageZoomKind.Percent,
+                    Percent: 125
+                },
+                InitialDisplayMode: DocumentFixedPageDisplayMode.Color,
+                HorizontalAlignment: DocumentFixedPageHorizontalAlignment.Right,
+                VerticalAlignment: DocumentFixedPageVerticalAlignment.Bottom,
+                XmpMetadata: "<rdf:RDF>safe</rdf:RDF>"
+            } &&
+            fixedPage.Presentation.Metadata.Count == 2 &&
+            fixedPage.Presentation.Metadata["Producer"] == "Synthetic DjVu" &&
+            fixedPage.Presentation.Metadata["Subject"] == "Annotation profile",
+            "DjVu reader must preserve top-level page presentation, metadata and XMP in the neutral fixed-page model.");
+
         Assert(fixedPage.Text == "Привет DjVu" &&
             fixedPage.TextRuns.Count == 2 &&
             fixedPage.TextRuns.All(run =>
@@ -13952,6 +14060,38 @@ internal static class Program
         var html = DocumentHtmlRenderer.Render(
             model,
             CreateRenderTheme());
+        AssertContains(
+            html,
+            "data-surrounding-background=\"#445566\" style=\"--fixed-page-background:#445566;\"",
+            "DjVu page surrounding background");
+        AssertContains(
+            html,
+            "data-initial-zoom=\"d125\"",
+            "DjVu initial numeric zoom metadata");
+        AssertContains(
+            html,
+            "data-initial-display-mode=\"color\"",
+            "DjVu initial display mode metadata");
+        AssertContains(
+            html,
+            "data-horizontal-align=\"right\"",
+            "DjVu initial horizontal alignment metadata");
+        AssertContains(
+            html,
+            "data-vertical-align=\"bottom\"",
+            "DjVu initial vertical alignment metadata");
+        AssertContains(
+            html,
+            "data-source-metadata-count=\"2\"",
+            "DjVu source metadata count");
+        AssertContains(
+            html,
+            "data-source-xmp=\"true\"",
+            "DjVu XMP presence marker");
+        Assert(!html.Contains(
+                "<rdf:RDF>safe</rdf:RDF>",
+                StringComparison.Ordinal),
+            "DjVu raw XMP payload must not be injected into rendered HTML.");
         AssertContains(
             html,
             "href=\"#page-1\"",
