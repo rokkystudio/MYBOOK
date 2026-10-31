@@ -24,8 +24,9 @@ namespace MYBOOK;
 
 /// <summary>
 /// Отображает главное окно MYBOOK, открывает поддерживаемые документы,
-/// преобразует их в нейтральную модель, рендерит через единый HTML/WebView2 слой
-/// и предоставляет боковую навигацию по оглавлению и фиксированным страницам.
+/// преобразует их в нейтральную модель, рендерит через единый HTML/WebView2
+/// слой, сохраняет per-document reading positions и предоставляет
+/// боковую навигацию по оглавлению и фиксированным страницам.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -103,8 +104,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Отписывает окно от глобального события локализации
-    /// и освобождает инициализированный WebView2.
+    /// Отписывает окно от событий локализации, навигации и scroll-сообщений,
+    /// освобождая WebView2 после завершённого OnClosing position flush.
     /// </summary>
     protected override void OnClosed(EventArgs e)
     {
@@ -112,6 +113,12 @@ public partial class MainWindow : Window
 
         if (readerInitialized_)
         {
+            if (Reader.CoreWebView2 is { } core)
+            {
+                UnregisterReadingPositionEvents(
+                    core);
+            }
+
             Reader.ZoomFactorChanged -= Reader_OnZoomFactorChanged;
             Reader.Dispose();
         }
@@ -171,9 +178,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Инициализирует WebView2, отключает browser UI, не относящийся к чтению,
-    /// и оставляет browser accelerator keys включёнными для Ctrl+F поиска
-    /// по flow text и fixed-page selectable text overlays.
+    /// Инициализирует WebView2, browser settings и обработчики безопасных
+    /// сообщений позиции чтения. Browser accelerators остаются доступны
+    /// для Ctrl+F поиска в flow и selectable fixed-page overlays.
     /// </summary>
     private async Task EnsureReaderAsync()
     {
@@ -193,6 +200,8 @@ public partial class MainWindow : Window
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsZoomControlEnabled = true;
 
+        RegisterReadingPositionEvents(
+            core);
         Reader.ZoomFactorChanged += Reader_OnZoomFactorChanged;
         Reader.ZoomFactor = zoomFactor_;
         readerInitialized_ = true;
@@ -246,8 +255,12 @@ public partial class MainWindow : Window
 
         localHtmlVirtualHost_ =
             mapping.HostName;
-        Reader.Source =
-            mapping.DocumentUri;
+
+        ActivateReadingDocument(
+            fullPath,
+            mapping.DocumentUri);
+        core.Navigate(
+            mapping.DocumentUri.AbsoluteUri);
     }
 
     private void ClearLocalHtmlMapping()
@@ -264,9 +277,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Открывает поддерживаемый документ.
-    /// FB2, EPUB, TXT, Markdown, RTF, DOC, DOCX, PDF и DjVu преобразуются в нейтральную модель MYBOOK,
-    /// а исходные HTML/HTM открываются WebView2 напрямую.
+    /// Открывает документ, предварительно сохраняя позицию прежней книги.
+    /// FB2, EPUB, TXT, Markdown, RTF, DOC, DOCX, PDF и DjVu преобразуются
+    /// в нейтральную модель, а HTML/HTM открываются напрямую. Каждый новый
+    /// WebView2 navigation получает собственный GUID для scroll restore.
     /// </summary>
     private async Task OpenDocumentAsync(string path)
     {
@@ -283,6 +297,8 @@ public partial class MainWindow : Window
 
             if (format.OpenDirectlyInWebView)
             {
+                await PersistCurrentReadingPositionAsync();
+
                 OpenLocalHtmlDocument(
                     fullPath);
                 generatedDocumentOpen_ = false;
@@ -291,8 +307,6 @@ public partial class MainWindow : Window
             }
             else
             {
-                ClearLocalHtmlMapping();
-
                 var document =
                     ReadDocumentWithPasswordPrompt(
                         fullPath);
@@ -308,15 +322,31 @@ public partial class MainWindow : Window
                     document,
                     ThemeService.CreateDocumentRenderTheme(settings_.Theme),
                     settings_.ReadingTypography);
-                var htmlPath = GetReaderHtmlPath();
 
+                await PersistCurrentReadingPositionAsync();
+                ClearLocalHtmlMapping();
+
+                var htmlPath = GetReaderHtmlPath();
                 File.WriteAllText(
                     htmlPath,
                     html,
                     new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
-                Reader.Source = new Uri(htmlPath, UriKind.Absolute);
+                var documentUri =
+                    new Uri(
+                        htmlPath,
+                        UriKind.Absolute);
+                var core =
+                    Reader.CoreWebView2
+                    ?? throw new InvalidOperationException(
+                        "WebView2 не удалось инициализировать.");
+
+                ActivateReadingDocument(
+                    fullPath,
+                    documentUri);
                 generatedDocumentOpen_ = true;
+                core.Navigate(
+                    documentUri.AbsoluteUri);
                 Title = document.Title + " — MYBOOK";
             }
 

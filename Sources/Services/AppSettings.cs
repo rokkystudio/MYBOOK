@@ -5,7 +5,8 @@ namespace MYBOOK.Services;
 
 /// <summary>
 /// Хранит пользовательские настройки интерфейса и потоковой типографики,
-/// каталог последней книги и список недавно открытых документов MYBOOK.
+/// каталог последней книги, историю открытия и ограниченные координаты
+/// чтения документов в CSS-пикселях.
 /// </summary>
 internal sealed class AppSettings
 {
@@ -15,4 +16,6 @@ internal sealed class AppSettings
         new();
     public string LastBookDirectory { get; set; } = string.Empty;
     public List<string> RecentDocuments { get; set; } = new();
+    public List<DocumentReadingPosition> ReadingPositions { get; set; } =
+        new();
 }

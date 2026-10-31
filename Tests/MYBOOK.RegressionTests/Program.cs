@@ -37,6 +37,7 @@ internal static partial class Program
         {
             ("Supported format registry", TestSupportedFormatRegistry),
             ("Reading typography settings", TestReadingTypographySettings),
+            ("Per-document reading positions", () => TestReadingPositions(temporaryDirectory)),
             ("Document input guard", () => TestDocumentInputGuard(temporaryDirectory)),
             ("Binary malformed inputs", () => TestBinaryMalformedInputs(temporaryDirectory)),
             ("TXT reader", () => TestTextReader(temporaryDirectory)),
