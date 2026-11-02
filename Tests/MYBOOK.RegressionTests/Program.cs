@@ -12078,6 +12078,34 @@ internal static partial class Program
                 }),
             "PDF DCT Image XObject должен декодировать нестандартный /Decode и DCT /SMask /Matte в PNG resources.");
 
+        var unsupportedImageMaskPath = Path.Combine(
+            directory,
+            "regression-image-explicit-mask.pdf");
+        CreateRawImagePdf(
+            unsupportedImageMaskPath,
+            "/DeviceGray",
+            [255],
+            profileData: null,
+            maskSyntax: "[0 0]");
+
+        var imageMaskRejected = false;
+        try
+        {
+            _ = SupportedFormatRegistry.ReadDocument(
+                unsupportedImageMaskPath);
+        }
+        catch (NotSupportedException error)
+            when (error.Message.Contains(
+                "Image XObject /Im1 /Mask",
+                StringComparison.Ordinal))
+        {
+            imageMaskRejected = true;
+        }
+
+        Assert(
+            imageMaskRejected,
+            "PDF Image XObject /Mask должен явно отклоняться, пока explicit/color-key mask не входит в image transparency profile.");
+
         var extGStatePath = Path.Combine(
             directory,
             "regression-extgstate.pdf");
@@ -19788,7 +19816,8 @@ internal static partial class Program
         byte[]? calculatorProgramData = null,
         byte[]? sampledOrder3Data = null,
         byte? softMaskSample = null,
-        double[]? softMaskMatte = null)
+        double[]? softMaskMatte = null,
+        string? maskSyntax = null)
     {
         var encoding = Encoding.ASCII;
         var content = encoding.GetBytes(
@@ -19866,6 +19895,9 @@ internal static partial class Program
             "/BitsPerComponent 8 " +
             (softMaskObjectNumber != null
                 ? $"/SMask {softMaskObjectNumber.Value} 0 R "
+                : string.Empty) +
+            (maskSyntax != null
+                ? $"/Mask {maskSyntax} "
                 : string.Empty) +
             $"/Length {imageSamples.Length} >>\nstream\n");
         memory.Write(
