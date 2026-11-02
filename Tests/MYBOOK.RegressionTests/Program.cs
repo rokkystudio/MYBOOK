@@ -5249,6 +5249,62 @@ internal static partial class Program
                 .SequenceEqual(["๑๒", "๑๓"]),
             "DOC thaiNumbers должен использовать Thai decimal digits.");
         Assert(
+            BuildSimpleListMarkers(0x34, "\0", 2)
+                .SequenceEqual(["एक", "दो"]),
+            "DOC hindiCounting должен начинаться с Word-compatible Hindi number names.");
+        Assert(
+            BuildSimpleListMarkers(0x34, "\0", 2, 21)
+                .SequenceEqual(["इकीस", "बाईस"]),
+            "DOC hindiCounting должен сохранять Word-compatible irregular Hindi spellings.");
+        Assert(
+            BuildSimpleListMarkers(0x34, "\0", 2, 123)
+                .SequenceEqual(["एक सौ तेइस", "एक सौ चौबीस"]),
+            "DOC hindiCounting должен воспроизводить нормативный 123 HINDICARDTEXT пример.");
+        Assert(
+            BuildSimpleListMarkers(0x34, "\0", 2, 9999)
+                .SequenceEqual(["नौ हज़ार नौ सौ निन्यानवे", null]),
+            "DOC hindiCounting не должен применять неподтверждённый modulo после 9999.");
+        Assert(
+            BuildSimpleListMarkers(0x37, "\0", 2, 11)
+                .SequenceEqual(["สิบเอ็ด", "สิบสอง"]),
+            "DOC thaiCounting должен использовать เอ็ด только для конечной единицы после старшего разряда.");
+        Assert(
+            BuildSimpleListMarkers(0x37, "\0", 2, 20)
+                .SequenceEqual(["ยี่สิบ", "ยี่สิบเอ็ด"]),
+            "DOC thaiCounting должен использовать специальную форму ยี่ для двадцати.");
+        Assert(
+            BuildSimpleListMarkers(0x37, "\0", 2, 123)
+                .SequenceEqual(["หนึ่งร้อยยี่สิบสาม", "หนึ่งร้อยยี่สิบสี่"]),
+            "DOC thaiCounting должен воспроизводить нормативный 123 THAICARDTEXT пример.");
+        Assert(
+            BuildSimpleListMarkers(0x37, "\0", 2, 1000000)
+                .SequenceEqual(["หนึ่งล้าน", "หนึ่งล้านเอ็ด"]),
+            "DOC thaiCounting должен переносить เอ็ด через ненулевую ล้าน group.");
+        Assert(
+            BuildSimpleListMarkers(0x37, "\0", 2, 999999999)
+                .SequenceEqual(["เก้าร้อยเก้าสิบเก้าล้านเก้าแสนเก้าหมื่นเก้าพันเก้าร้อยเก้าสิบเก้า", null]),
+            "DOC thaiCounting должен завершать подтверждённый профиль перед 1000000000 без ложного ศูนย์.");
+        Assert(
+            BuildSimpleListMarkers(0x38, "\0", 2, 12)
+                .SequenceEqual(["mười hai", "mười ba"]),
+            "DOC vietnameseCounting должен воспроизводить нормативный 12 VIETCARDTEXT пример.");
+        Assert(
+            BuildSimpleListMarkers(0x38, "\0", 2, 15)
+                .SequenceEqual(["mười lăm", "mười sáu"]),
+            "DOC vietnameseCounting должен использовать lăm после mười.");
+        Assert(
+            BuildSimpleListMarkers(0x38, "\0", 2, 20)
+                .SequenceEqual(["hai mươi", "hai mươi mốt"]),
+            "DOC vietnameseCounting должен использовать mươi и конечную форму mốt.");
+        Assert(
+            BuildSimpleListMarkers(0x38, "\0", 2, 100)
+                .SequenceEqual(["một trăm", "một trăm lẻ một"]),
+            "DOC vietnameseCounting должен использовать lẻ между сотнями и единицами.");
+        Assert(
+            BuildSimpleListMarkers(0x38, "\0", 2, 1000)
+                .SequenceEqual(["một ngàn", null]),
+            "DOC vietnameseCounting не должен применять неподтверждённый modulo после 1000.");
+        Assert(
             BuildSimpleListMarkers(0x0C, "\0", 2)
                 .SequenceEqual(["ｱ", "ｲ"]),
             "DOC aiueo должен использовать half-width Katakana sequence.");
