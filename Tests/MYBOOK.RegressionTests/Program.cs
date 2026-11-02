@@ -4898,23 +4898,39 @@ internal static partial class Program
             },
             "DOC PlfLst/LVL/PlfLfo должны сохранять simple bullet list definition.");
 
-        var textLvlTail = new List<byte>();
-        textLvlTail.AddRange(BitConverter.GetBytes(1));
-        textLvlTail.Add(0x06);
-        textLvlTail.Add(0x00);
-        textLvlTail.Add(0x01);
-        textLvlTail.AddRange(new byte[8]);
-        textLvlTail.Add(0x02);
-        textLvlTail.AddRange(new byte[4]);
-        textLvlTail.AddRange(new byte[4]);
-        textLvlTail.Add(0x08);
-        textLvlTail.Add(0x00);
-        textLvlTail.Add(0x00);
-        textLvlTail.Add(0x00);
-        textLvlTail.AddRange(new byte[] { 0x6D, 0x48, 0x09, 0x08 });
-        textLvlTail.AddRange(new byte[] { 0x73, 0x48, 0x09, 0x04 });
-        textLvlTail.AddRange(BitConverter.GetBytes((ushort)1));
-        textLvlTail.AddRange(BitConverter.GetBytes((ushort)0));
+        static byte[] BuildTextLvlTail(
+            byte numberFormatCode,
+            params byte[] chpx)
+        {
+            if (chpx.Length > byte.MaxValue)
+            {
+                throw new InvalidOperationException(
+                    "Regression LVL CHPX fixture превышает byte length field.");
+            }
+
+            var result = new List<byte>();
+            result.AddRange(BitConverter.GetBytes(1));
+            result.Add(numberFormatCode);
+            result.Add(0x00);
+            result.Add(0x01);
+            result.AddRange(new byte[8]);
+            result.Add(0x02);
+            result.AddRange(new byte[4]);
+            result.AddRange(new byte[4]);
+            result.Add(checked((byte)chpx.Length));
+            result.Add(0x00);
+            result.Add(0x00);
+            result.Add(0x00);
+            result.AddRange(chpx);
+            result.AddRange(BitConverter.GetBytes((ushort)1));
+            result.AddRange(BitConverter.GetBytes((ushort)0));
+            return result.ToArray();
+        }
+
+        var textLvlTail = BuildTextLvlTail(
+            0x06,
+            0x6D, 0x48, 0x09, 0x08,
+            0x73, 0x48, 0x09, 0x04);
 
         var textListTables = DocDocumentReader.ReadListTables(
             plfLst.ToArray(),
@@ -4940,6 +4956,72 @@ internal static partial class Program
                 .Select(paragraph => paragraph.ListMarkerText)
                 .SequenceEqual(["One", "Two"]),
             "DOC parsed LVL en-US language должен управлять cardinalText marker formatting.");
+
+        var scriptLanguageLvlTail = BuildTextLvlTail(
+            0x06,
+            0x6D, 0x48, 0x09, 0x08,
+            0x73, 0x48, 0x09, 0x04,
+            0x6E, 0x48, 0x12, 0x04,
+            0x74, 0x48, 0x11, 0x04,
+            0x5F, 0x48, 0x01, 0x04,
+            0x6F, 0x28, 0x01);
+        var scriptLanguageTables = DocDocumentReader.ReadListTables(
+            plfLst.ToArray(),
+            scriptLanguageLvlTail,
+            plfLfo.ToArray());
+        Assert(
+            scriptLanguageTables.ListsById[1234].Levels[0] is
+            {
+                NumberTextLanguageId: 0x0409,
+                NumberTextEastAsiaLanguageId: 0x0411,
+                NumberTextBiLanguageId: 0x0401,
+                NumberTextLanguageHint: 0x01
+            },
+            "DOC LVL.grpprlChpx должен сохранять final default/EastAsia/Bi LID и sprmCIdctHint по порядку SPRM.");
+        var scriptLanguageBlocks = DocDocumentReader.BuildParagraphs(
+            "A\rB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            scriptLanguageTables);
+        Assert(
+            scriptLanguageBlocks.Cast<DocumentParagraph>()
+                .All(paragraph => paragraph.ListMarkerText == null),
+            "DOC idctHint eastAsia должен выбирать EastAsia LID и не fallback к поддерживаемому default en-US LID.");
+
+        var scriptPlainLvlTail = BuildTextLvlTail(
+            0x06,
+            0x74, 0x48, 0x11, 0x04,
+            0x5F, 0x48, 0x01, 0x04,
+            0x6F, 0x28, 0x01,
+            0x33, 0x2A, 0x00,
+            0x73, 0x48, 0x09, 0x04);
+        var scriptPlainTables = DocDocumentReader.ReadListTables(
+            plfLst.ToArray(),
+            scriptPlainLvlTail,
+            plfLfo.ToArray());
+        Assert(
+            scriptPlainTables.ListsById[1234].Levels[0] is
+            {
+                NumberTextLanguageId: 0x0409,
+                NumberTextEastAsiaLanguageId: null,
+                NumberTextBiLanguageId: null,
+                NumberTextLanguageHint: null
+            },
+            "DOC LVL sprmCPlain должен сбрасывать все direct language slots и idctHint перед последующими SPRM.");
+        var scriptPlainBlocks = DocDocumentReader.BuildParagraphs(
+            "A\rB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            scriptPlainTables);
+        Assert(
+            scriptPlainBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["One", "Two"]),
+            "DOC sprmCPlain после script-specific language properties должен вернуть selector к default slot.");
 
         var linkedTextPlfLst = plfLst.ToArray();
         BinaryPrimitives.WriteUInt16LittleEndian(
@@ -5009,6 +5091,51 @@ internal static partial class Program
                 .Select(paragraph => paragraph.ListMarkerText)
                 .SequenceEqual(["One", "Two"]),
             "DOC textual numbering должен наследовать en-US LID из linked LSTF paragraph style.");
+
+        var eastAsiaHintListStyle =
+            enUsListStyle with
+            {
+                CharacterEastAsiaLanguageId = 0x0411,
+                CharacterBiLanguageId = 0x0401,
+                CharacterLanguageHint = 0x01
+            };
+        var eastAsiaHintStyles =
+            new Dictionary<ushort, DocDocumentReader.DocStyle>
+            {
+                [15] = eastAsiaHintListStyle
+            };
+        var styleHintBlocks = DocDocumentReader.BuildParagraphs(
+            "A\rB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            linkedTextListTables,
+            eastAsiaHintStyles);
+        Assert(
+            styleHintBlocks.Cast<DocumentParagraph>()
+                .All(paragraph => paragraph.ListMarkerText == null),
+            "DOC linked style idctHint eastAsia должен выбирать style EastAsia LID без fallback к default en-US.");
+
+        var directDefaultHintTables = DocDocumentReader.ReadListTables(
+            linkedTextPlfLst,
+            BuildTextLvlTail(
+                0x06,
+                0x6F, 0x28, 0x00),
+            plfLfo.ToArray());
+        var directDefaultHintBlocks = DocDocumentReader.BuildParagraphs(
+            "A\rB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            directDefaultHintTables,
+            eastAsiaHintStyles);
+        Assert(
+            directDefaultHintBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["One", "Two"]),
+            "DOC direct LVL idctHint default должен переопределять linked style eastAsia hint и выбирать style default LID.");
 
         var unsupportedListStyle =
             enUsListStyle with
@@ -5404,7 +5531,10 @@ internal static partial class Program
             string numberText,
             byte followCharacter,
             int startAt = 1,
-            ushort? numberTextLanguageId = null)
+            ushort? numberTextLanguageId = null,
+            ushort? numberTextEastAsiaLanguageId = null,
+            ushort? numberTextBiLanguageId = null,
+            byte? numberTextLanguageHint = null)
         {
             const int listId = 5000;
             var definition = new DocDocumentReader.DocListDefinition(
@@ -5420,7 +5550,10 @@ internal static partial class Program
                         false,
                         false,
                         0,
-                        numberTextLanguageId)
+                        numberTextLanguageId,
+                        numberTextEastAsiaLanguageId,
+                        numberTextBiLanguageId,
+                        numberTextLanguageHint)
                 ]);
             var tables = new DocDocumentReader.DocListTables(
                 new Dictionary<int, DocDocumentReader.DocListDefinition>
@@ -5467,6 +5600,65 @@ internal static partial class Program
             BuildSimpleListMarkers(0x06, "\0", 2, 1, 0x0809)
                 .All(marker => marker == null),
             "DOC textual numbering с неподдерживаемым LID не должен использовать en-US spell-out.");
+        Assert(
+            BuildSimpleListMarkers(
+                    0x06,
+                    "\0",
+                    2,
+                    1,
+                    0x0409,
+                    0x0411,
+                    0x0401)
+                .SequenceEqual(["One", "Two"]),
+            "DOC textual numbering без idctHint должен использовать default language slot.");
+        Assert(
+            BuildSimpleListMarkers(
+                    0x06,
+                    "\0",
+                    2,
+                    1,
+                    0x0409,
+                    0x0411,
+                    0x0401,
+                    0x00)
+                .SequenceEqual(["One", "Two"]),
+            "DOC idctHint default должен выбирать sprmCRgLid0 language slot.");
+        Assert(
+            BuildSimpleListMarkers(
+                    0x06,
+                    "\0",
+                    2,
+                    1,
+                    0x0409,
+                    0x0411,
+                    0x0401,
+                    0x01)
+                .All(marker => marker == null),
+            "DOC idctHint eastAsia должен выбирать sprmCRgLid1 без fallback к default slot.");
+        Assert(
+            BuildSimpleListMarkers(
+                    0x06,
+                    "\0",
+                    2,
+                    1,
+                    0x0409,
+                    0x0411,
+                    0x0401,
+                    0x02)
+                .All(marker => marker == null),
+            "DOC idctHint cs должен выбирать sprmCLidBi без fallback к default slot.");
+        Assert(
+            BuildSimpleListMarkers(
+                    0x06,
+                    "\0",
+                    2,
+                    1,
+                    0x0409,
+                    0x0411,
+                    0x0401,
+                    0xFF)
+                .All(marker => marker == null),
+            "DOC idctHint 0xFF не должен выбирать language slot эвристически.");
         Assert(
             BuildSimpleListMarkers(0x06, "\0", 2, 1, 0x0409)
                 .SequenceEqual(["One", "Two"]),
