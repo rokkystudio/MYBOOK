@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.12
+Версия профиля: 1.9.13
 
 ## Ready for use
 
@@ -15,7 +15,7 @@ MYBOOK считает готовыми к обычному пользовате�
 | `.txt` | Обычный текст как preformatted document. |
 | `.md` | Markdown через фиксированный Markdig pipeline с advanced extensions. |
 | `.rtf` | Основной RTF reading profile: Unicode/codepages, font-level `cpg`/`fcharset` mappings, formatting, links/fields, tables/nesting, raster/vector pictures, Symbol/Mac/DBCS/PC/OEM charsets. |
-| `.doc` | Word 97–2003 Binary/CFB reading profile и RTF-файлы с расширением .doc; текст, стили, списки, таблицы, sections, notes, headers/footers, fields, images и поддерживаемый OfficeArt. |
+| `.doc` | Word 97–2003 Binary/CFB reading profile и RTF-файлы с расширением .doc; текст, стили, списки, таблицы, sections, notes, headers/footers, fields, images и поддерживаемый OfficeArt. Stateful MSONFC list numbering включает `koreanCounting` (`0x2A`) с sino-Korean `십/백/천/만` semantics и Word-limit 999999, а также `koreanLegal` (`0x2B`) с native Korean 1..99, переходом на Korean Counting от 100 и Word-limit 9999999. |
 | `.docx` | Word OpenXML flow document: styles, lists, tables, images, relationships, hyperlinks, bookmarks и section metadata. |
 | `.pdf` | PDF fixed-page reading profile: classic/xref streams, incremental updates, object streams, text/fonts, paths, images, links/outlines, encryption profiles и поддерживаемые stream filters. |
 | `.djvu` | DjVu fixed-page reading profile: single-page `FORM:DJVU`, legacy `FORM:PM44/BM44`, bundled и indirect DJVM containers; JB2/Smmr masks, IW44/JPEG backgrounds/foregrounds, FGbz palettes, compound composition, INFO rotation, NAVM outlines, shared/page ANTa/ANTz mapareas, print-only phead/pfoot, page-local METa/METz source metadata и presentation, selectable TXTa/TXTz text-zone overlay. |

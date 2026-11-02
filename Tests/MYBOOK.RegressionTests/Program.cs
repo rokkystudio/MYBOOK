@@ -5449,6 +5449,46 @@ internal static partial class Program
                 .SequenceEqual(["일영일", "일영이"]),
             "DOC koreanDigital должен сохранять positional zeros без counting semantics.");
         Assert(
+            BuildSimpleListMarkers(0x2A, "\0", 2)
+                .SequenceEqual(["일", "이"]),
+            "DOC koreanCounting должен начинаться с sino-Korean digits.");
+        Assert(
+            BuildSimpleListMarkers(0x2A, "\0", 2, 10)
+                .SequenceEqual(["십", "십일"]),
+            "DOC koreanCounting должен опускать 일 перед 십.");
+        Assert(
+            BuildSimpleListMarkers(0x2A, "\0", 2, 100)
+                .SequenceEqual(["백", "백일"]),
+            "DOC koreanCounting должен опускать 일 перед 백.");
+        Assert(
+            BuildSimpleListMarkers(0x2A, "\0", 2, 10000)
+                .SequenceEqual(["만", "만일"]),
+            "DOC koreanCounting должен опускать 일 перед 만.");
+        Assert(
+            BuildSimpleListMarkers(0x2A, "\0", 2, 999999)
+                .SequenceEqual(["구십구만구천구백구십구", null]),
+            "DOC koreanCounting должен прекращать вывод после Word-limit 999999.");
+        Assert(
+            BuildSimpleListMarkers(0x2B, "\0", 2)
+                .SequenceEqual(["하나", "둘"]),
+            "DOC koreanLegal должен начинаться с native Korean unit words.");
+        Assert(
+            BuildSimpleListMarkers(0x2B, "\0", 2, 10)
+                .SequenceEqual(["열", "열하나"]),
+            "DOC koreanLegal должен использовать native Korean tens words.");
+        Assert(
+            BuildSimpleListMarkers(0x2B, "\0", 2, 20)
+                .SequenceEqual(["스물", "스물하나"]),
+            "DOC koreanLegal должен сохранять отдельные native Korean tens forms.");
+        Assert(
+            BuildSimpleListMarkers(0x2B, "\0", 2, 99)
+                .SequenceEqual(["아흔아홉", "백"]),
+            "DOC koreanLegal должен с 100 переходить на koreanCounting procedure.");
+        Assert(
+            BuildSimpleListMarkers(0x2B, "\0", 2, 9999999)
+                .SequenceEqual(["구백구십구만구천구백구십구", null]),
+            "DOC koreanLegal должен прекращать вывод после Word-limit 9999999.");
+        Assert(
             BuildSimpleListMarkers(0x2C, "\0", 2, 101)
                 .SequenceEqual(["一零一", "一零二"]),
             "DOC koreanDigital2 должен использовать ideograph digits с U+96F6 как zero.");
