@@ -9654,6 +9654,37 @@ internal static partial class Program
             rawLabPixel.G != rawCalRgbPixel.G ||
             rawLabPixel.B != rawCalRgbPixel.B,
             "PDF Lab+DCTDecode ColorTransform=0 должен применять Lab conversion к raw JPEG components.");
+
+        var blackPointPath = Path.Combine(
+            directory,
+            "regression-calgray-blackpoint.pdf");
+        CreateCieDctImagePdf(
+            blackPointPath,
+            colorSpaceSyntax:
+                "[/CalGray << /WhitePoint [0.95047 1 1.08883] /BlackPoint [0.01 0.01 0.01] >>]",
+            jpegPixels: [128],
+            PixelFormats.Gray8,
+            stride: 1,
+            colorTransform: null);
+
+        var blackPointRejected = false;
+
+        try
+        {
+            _ = SupportedFormatRegistry.ReadDocument(
+                blackPointPath);
+        }
+        catch (NotSupportedException error)
+            when (error.Message.Contains(
+                "output device/CMS",
+                StringComparison.Ordinal))
+        {
+            blackPointRejected = true;
+        }
+
+        Assert(
+            blackPointRejected,
+            "PDF CIE nonzero /BlackPoint должен оставаться явным device/CMS-dependent unsupported вместо эвристической компенсации.");
     }
 
     private static void TestPdfIccColorSpace(
@@ -20748,86 +20779,107 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// Проверяет ImageMask с независимыми nonstroking colors,
-    /// построчным bit packing и обратным PDF /Decode.
+    /// Создаёт single-page PDF ImageMask fixture с двумя вызовами Do,
+    /// использующими разные nonstroking colors. Filter отсутствует для raw
+    /// packed samples либо задаёт JPEG2000/JPEG stream для stencil validation.
+    /// </summary>
+    private static void CreateImageMaskPdf(
+        string path,
+        byte[] samples,
+        int width,
+        int height,
+        string? filterName,
+        bool inverted,
+        bool includeBitsPerComponent = true)
+    {
+        var encoding = Encoding.ASCII;
+        var content = encoding.GetBytes(
+            "q 2 0 0 2 10 10 cm 1 0 0 rg /Im1 Do Q\n" +
+            "q 2 0 0 2 20 10 cm 0 0 1 rg /Im1 Do Q\n");
+        using var output = new MemoryStream();
+        var offsets = new List<long>();
+
+        void Write(string value)
+        {
+            var bytes = encoding.GetBytes(value);
+            output.Write(bytes, 0, bytes.Length);
+        }
+
+        void BeginObject(int number)
+        {
+            Assert(
+                number == offsets.Count + 1,
+                "PDF ImageMask fixture object order.");
+            offsets.Add(output.Position);
+            Write($"{number} 0 obj\n");
+        }
+
+        void EndObject() => Write("\nendobj\n");
+
+        Write("%PDF-1.5\n");
+        BeginObject(1);
+        Write("<< /Type /Catalog /Pages 2 0 R >>");
+        EndObject();
+        BeginObject(2);
+        Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>");
+        EndObject();
+        BeginObject(3);
+        Write("<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>");
+        EndObject();
+        BeginObject(4);
+        Write($"<< /Length {content.Length} >>\nstream\n");
+        output.Write(content, 0, content.Length);
+        Write("\nendstream");
+        EndObject();
+        BeginObject(5);
+        Write(
+            "<< /Type /XObject /Subtype /Image " +
+            $"/Width {width} /Height {height} " +
+            "/ImageMask true " +
+            (includeBitsPerComponent
+                ? "/BitsPerComponent 1 "
+                : string.Empty) +
+            (inverted
+                ? "/Decode [1 0] "
+                : string.Empty) +
+            (filterName != null
+                ? $"/Filter /{filterName} "
+                : string.Empty) +
+            $"/Length {samples.Length} >>\nstream\n");
+        output.Write(samples, 0, samples.Length);
+        Write("\nendstream");
+        EndObject();
+
+        var xref = output.Position;
+        Write($"xref\n0 {offsets.Count + 1}\n0000000000 65535 f \n");
+
+        foreach (var offset in offsets)
+        {
+            Write(
+                offset.ToString("0000000000", CultureInfo.InvariantCulture) +
+                " 00000 n \n");
+        }
+
+        Write(
+            $"trailer\n<< /Size {offsets.Count + 1} /Root 1 0 R >>\n" +
+            "startxref\n" +
+            xref.ToString(CultureInfo.InvariantCulture) +
+            "\n%%EOF\n");
+        File.WriteAllBytes(path, output.ToArray());
+    }
+
+    /// <summary>
+    /// Проверяет ImageMask с независимыми nonstroking colors, построчным
+    /// bit packing, обратным PDF /Decode, single-component 1-bit JPXDecode
+    /// и строгим отказом для несовместимых JPX/DCT sample profiles.
     /// </summary>
     private static void TestPdfImageMaskStencil(string directory)
     {
-        foreach (var inverted in new[] { false, true })
+        static void AssertStencil(
+            string path,
+            bool inverted,
+            string profile)
         {
-            var path = Path.Combine(
-                directory,
-                inverted
-                    ? "regression-stencil-inverse.pdf"
-                    : "regression-stencil.pdf");
-
-            var encoding = Encoding.ASCII;
-            var content = encoding.GetBytes(
-                "q 2 0 0 2 10 10 cm 1 0 0 rg /Im1 Do Q\n" +
-                "q 2 0 0 2 20 10 cm 0 0 1 rg /Im1 Do Q\n");
-            var samples = new byte[] { 0x40, 0x80 };
-            using var output = new MemoryStream();
-            var offsets = new List<long>();
-
-            void Write(string value)
-            {
-                var bytes = encoding.GetBytes(value);
-                output.Write(bytes, 0, bytes.Length);
-            }
-
-            void BeginObject(int number)
-            {
-                Assert(
-                    number == offsets.Count + 1,
-                    "PDF ImageMask fixture object order.");
-                offsets.Add(output.Position);
-                Write($"{number} 0 obj\n");
-            }
-
-            void EndObject() => Write("\nendobj\n");
-
-            Write("%PDF-1.4\n");
-            BeginObject(1);
-            Write("<< /Type /Catalog /Pages 2 0 R >>");
-            EndObject();
-            BeginObject(2);
-            Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>");
-            EndObject();
-            BeginObject(3);
-            Write("<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>");
-            EndObject();
-            BeginObject(4);
-            Write($"<< /Length {content.Length} >>\nstream\n");
-            output.Write(content, 0, content.Length);
-            Write("\nendstream");
-            EndObject();
-            BeginObject(5);
-            Write(
-                "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 " +
-                "/ImageMask true /BitsPerComponent 1 " +
-                (inverted ? "/Decode [1 0] " : string.Empty) +
-                $"/Length {samples.Length} >>\nstream\n");
-            output.Write(samples, 0, samples.Length);
-            Write("\nendstream");
-            EndObject();
-
-            var xref = output.Position;
-            Write($"xref\n0 {offsets.Count + 1}\n0000000000 65535 f \n");
-
-            foreach (var offset in offsets)
-            {
-                Write(
-                    offset.ToString("0000000000", CultureInfo.InvariantCulture) +
-                    " 00000 n \n");
-            }
-
-            Write(
-                $"trailer\n<< /Size {offsets.Count + 1} /Root 1 0 R >>\n" +
-                "startxref\n" +
-                xref.ToString(CultureInfo.InvariantCulture) +
-                "\n%%EOF\n");
-            File.WriteAllBytes(path, output.ToArray());
-
             var images = SupportedFormatRegistry
                 .ReadDocument(path)
                 .Blocks
@@ -20838,9 +20890,11 @@ internal static partial class Program
 
             Assert(
                 images.Length == 2,
-                "PDF ImageMask должен допускать повторное использование с разными цветами.");
+                $"PDF ImageMask {profile} должен допускать повторное использование с разными цветами.");
 
-            for (var index = 0; index < images.Length; index++)
+            for (var index = 0;
+                 index < images.Length;
+                 index++)
             {
                 using var input = new MemoryStream(
                     images[index].Data,
@@ -20861,9 +20915,16 @@ internal static partial class Program
                 }
 
                 var pixels = new byte[16];
-                bitmap.CopyPixels(pixels, 8, 0);
+                bitmap.CopyPixels(
+                    pixels,
+                    8,
+                    0);
 
-                var expectedAlpha = inverted ? (byte)0 : (byte)255;
+                var expectedAlpha =
+                    inverted
+                        ? (byte)0
+                        : (byte)255;
+
                 Assert(
                     bitmap.PixelWidth == 2 &&
                     bitmap.PixelHeight == 2 &&
@@ -20871,16 +20932,154 @@ internal static partial class Program
                     pixels[7] == (byte)(255 - expectedAlpha) &&
                     pixels[11] == (byte)(255 - expectedAlpha) &&
                     pixels[15] == expectedAlpha,
-                    "PDF ImageMask должен сохранять orientation и polarity.");
+                    $"PDF ImageMask {profile} должен сохранять orientation и polarity.");
 
                 var red = index == 0;
                 Assert(
                     pixels[0] == (red ? (byte)0 : (byte)255) &&
                     pixels[1] == 0 &&
                     pixels[2] == (red ? (byte)255 : (byte)0),
-                    "PDF ImageMask должен использовать текущий nonstroking RGB color.");
+                    $"PDF ImageMask {profile} должен использовать текущий nonstroking RGB color.");
             }
         }
+
+        var packedSamples =
+            new byte[] { 0x40, 0x80 };
+
+        foreach (var inverted in new[] { false, true })
+        {
+            var path = Path.Combine(
+                directory,
+                inverted
+                    ? "regression-stencil-inverse.pdf"
+                    : "regression-stencil.pdf");
+
+            CreateImageMaskPdf(
+                path,
+                packedSamples,
+                width: 2,
+                height: 2,
+                filterName: null,
+                inverted);
+            AssertStencil(
+                path,
+                inverted,
+                "packed 1-bit");
+        }
+
+        var jpx =
+            Convert.FromBase64String(
+                "/0//UQApAAAAAAACAAAAAgAAAAAAAAAAAAAAAgAAAAIAAAAAAAAAAAABAAEB/1IADAAAAAEAAQQEAAH/XAAHIAgQEBj/kAAKAAAAAAASAAH/k4CXQQX/2Q==");
+        var decodedJpx =
+            PdfJpxSampleDecoder.Decode(
+                jpx,
+                expectedWidth: 2,
+                expectedHeight: 2,
+                useEmbeddedColorSpace: false,
+                preserveIntegerSamples: true);
+
+        Assert(
+            decodedJpx.Components == 1 &&
+            decodedJpx.BitDepths.SequenceEqual(
+                new[] { 1 }) &&
+            decodedJpx.IntegerSamples != null &&
+            decodedJpx.IntegerSamples.SequenceEqual(
+                new[] { 0, 1, 1, 0 }) &&
+            decodedJpx.Samples.SequenceEqual(
+                new byte[] { 0, 255, 255, 0 }),
+            "PDF JPX stencil fixture должен содержать один исходный 1-bit component.");
+
+        foreach (var inverted in new[] { false, true })
+        {
+            var path = Path.Combine(
+                directory,
+                inverted
+                    ? "regression-stencil-jpx-inverse.pdf"
+                    : "regression-stencil-jpx.pdf");
+
+            CreateImageMaskPdf(
+                path,
+                jpx,
+                width: 2,
+                height: 2,
+                filterName: "JPXDecode",
+                inverted,
+                includeBitsPerComponent: inverted);
+            AssertStencil(
+                path,
+                inverted,
+                "JPXDecode 1-bit");
+        }
+
+        var sixteenBitJpx =
+            Convert.FromBase64String(
+                "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAAAtanAyaAAAABZpaGRyAAAAAQAAAAIAAQ8HAAAAAAAPY29scgEAAAAAABEAAACGanAyY/9P/1EAKQAAAAAAAgAAAAEAAAAAAAAAAAAAAAIAAAABAAAAAAAAAAAAAQ8BAf9SAAwAAAABAAAEBAAB/1wABECA/2QAJQABQ3JlYXRlZCBieSBPcGVuSlBFRyB2ZXJzaW9uIDIuNS40/5AACgAAAAAAFAAB/5PP/DAIBCv/2Q==");
+        var invalidJpxPath = Path.Combine(
+            directory,
+            "regression-stencil-jpx-16bit-invalid.pdf");
+        CreateImageMaskPdf(
+            invalidJpxPath,
+            sixteenBitJpx,
+            width: 2,
+            height: 1,
+            filterName: "JPXDecode",
+            inverted: false,
+            includeBitsPerComponent: false);
+
+        var invalidJpxRejected = false;
+
+        try
+        {
+            _ = SupportedFormatRegistry.ReadDocument(
+                invalidJpxPath);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "JPXDecode требует один 1-bit component",
+                StringComparison.Ordinal))
+        {
+            invalidJpxRejected = true;
+        }
+
+        Assert(
+            invalidJpxRejected,
+            "PDF ImageMask JPXDecode должен отклонять component depth, отличную от 1 bit.");
+
+        var dct = EncodeJpegFixture(
+            [0, 255],
+            width: 2,
+            height: 1,
+            PixelFormats.Gray8,
+            stride: 2);
+        var invalidDctPath = Path.Combine(
+            directory,
+            "regression-stencil-dct-invalid.pdf");
+        CreateImageMaskPdf(
+            invalidDctPath,
+            dct,
+            width: 2,
+            height: 1,
+            filterName: "DCTDecode",
+            inverted: false);
+
+        var invalidDctRejected = false;
+
+        try
+        {
+            _ = SupportedFormatRegistry.ReadDocument(
+                invalidDctPath);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "DCTDecode выдаёт 8-bit samples",
+                StringComparison.Ordinal))
+        {
+            invalidDctRejected = true;
+        }
+
+        Assert(
+            invalidDctRejected,
+            "PDF ImageMask DCTDecode должен отклоняться как несовместимый 8-bit filter output.");
     }
 
     /// <summary>
