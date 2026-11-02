@@ -10670,6 +10670,11 @@ internal static partial class Program
             "PDF ICCBased /N=4 DCT должен проходить через CMYK JPEG samples и embedded CMYK ICC profile с ожидаемой нейтральной Lab→sRGB яркостью.");
     }
 
+    /// <summary>
+    /// Проверяет JPX geometry/color-space validation, integer samples,
+    /// JP2 cdef/cmap channel order, embedded opacity modes, Matte compensation
+    /// и взаимодействие ignored opacity с обычной PDF /Mask.
+    /// </summary>
     private static void TestPdfJpxReader(
         string directory)
     {
@@ -10989,6 +10994,123 @@ internal static partial class Program
             implicitAlphaImage.Data.SequenceEqual(alphaImage.Data),
             "PDF JPX embedded sRGB с /SMaskInData=1 должен давать те же RGBA samples.");
 
+        foreach (var (suffix, includeColorSpace, opacityMode) in new[]
+        {
+            ("explicit", true, (int?)0),
+            ("implicit", false, (int?)null)
+        })
+        {
+            var ignoredOpacityPath = Path.Combine(
+                directory,
+                $"regression-jpx-ignored-alpha-{suffix}.pdf");
+            CreateJpxImagePdf(
+                ignoredOpacityPath,
+                rgbaJpx,
+                includeColorSpace,
+                includeReverseDecode: false,
+                softMaskInData: opacityMode);
+
+            var ignoredOpacityImage = SupportedFormatRegistry
+                .ReadDocument(ignoredOpacityPath)
+                .Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+
+            using var ignoredOpacityInput =
+                new MemoryStream(
+                    ignoredOpacityImage.Data);
+            var ignoredOpacityBitmap = new PngBitmapDecoder(
+                ignoredOpacityInput,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource ignoredOpacityBgra =
+                ignoredOpacityBitmap.Format == PixelFormats.Bgra32
+                    ? ignoredOpacityBitmap
+                    : new FormatConvertedBitmap(
+                        ignoredOpacityBitmap,
+                        PixelFormats.Bgra32,
+                        null,
+                        0);
+            var ignoredOpacityPixels =
+                new byte[8];
+            ignoredOpacityBgra.CopyPixels(
+                ignoredOpacityPixels,
+                8,
+                0);
+
+            Assert(
+                ignoredOpacityPixels[0] == 0 &&
+                ignoredOpacityPixels[1] == 0 &&
+                ignoredOpacityPixels[2] == 255 &&
+                ignoredOpacityPixels[3] == 255 &&
+                ignoredOpacityPixels[4] == 0 &&
+                ignoredOpacityPixels[5] == 255 &&
+                ignoredOpacityPixels[6] == 0 &&
+                ignoredOpacityPixels[7] == 255,
+                $"PDF JPX /SMaskInData=0 ({suffix}) должен игнорировать embedded opacity и сохранять color channels.");
+        }
+
+        var ignoredOpacityMaskPath = Path.Combine(
+            directory,
+            "regression-jpx-ignored-alpha-color-key.pdf");
+        CreateJpxImagePdf(
+            ignoredOpacityMaskPath,
+            rgbaJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            softMaskInData: 0,
+            maskSyntax: "[255 255 0 0 0 0]");
+
+        var ignoredOpacityMaskImage = SupportedFormatRegistry
+            .ReadDocument(ignoredOpacityMaskPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        Assert(
+            ignoredOpacityMaskImage.ExplicitMaskData is { Length: > 0 } &&
+            string.Equals(
+                ignoredOpacityMaskImage.ExplicitMaskContentType,
+                "image/png",
+                StringComparison.Ordinal),
+            "PDF JPX /SMaskInData=0 должен оставлять color-key /Mask отдельной intrinsic mask.");
+
+        using (var ignoredOpacityMaskInput =
+            new MemoryStream(
+                ignoredOpacityMaskImage.ExplicitMaskData!,
+                writable: false))
+        {
+            var ignoredOpacityMaskBitmap = new PngBitmapDecoder(
+                ignoredOpacityMaskInput,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames.Single();
+            BitmapSource ignoredOpacityMaskGray =
+                ignoredOpacityMaskBitmap.Format == PixelFormats.Gray8
+                    ? ignoredOpacityMaskBitmap
+                    : new FormatConvertedBitmap(
+                        ignoredOpacityMaskBitmap,
+                        PixelFormats.Gray8,
+                        null,
+                        0);
+            var ignoredOpacityMaskPixels =
+                new byte[2];
+            ignoredOpacityMaskGray.CopyPixels(
+                ignoredOpacityMaskPixels,
+                2,
+                0);
+
+            Assert(
+                ignoredOpacityMaskGray.PixelWidth == 2 &&
+                ignoredOpacityMaskGray.PixelHeight == 1 &&
+                ignoredOpacityMaskPixels.SequenceEqual(
+                    new byte[] { 0, 255 }),
+                "PDF JPX /SMaskInData=0 color-key /Mask должна сравнивать только color components после исключения ignored opacity.");
+        }
+
         var preblendedPath = Path.Combine(
             directory,
             "regression-jpx-preblended-alpha.pdf");
@@ -11001,30 +11123,155 @@ internal static partial class Program
 
         var preblendedJpx = Convert.FromBase64String(
             "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAABPanAyaAAAABZpaGRyAAAAAQAAAAIABAcHAAAAAAAPY29scgEAAAAAABAAAAAiY2RlZgAEAAAAAAABAAEAAAACAAIAAAADAAMAAQAAAAAAn2pwMmP/T/9RADIAAAAAAAIAAAABAAAAAAAAAAAAAAACAAAAAQAAAAAAAAAAAAQHAQEHAQEHAQEHAQH/UgAMAAAAAQAABAQAAf9cAARAQP9kACUAAUNyZWF0ZWQgYnkgT3BlbkpQRUcgdmVyc2lvbiAyLjUuNP+QAAoAAAAAACQAAf+T34AgC7KKf9+AEAef34AQCT/PtAgEH//Z");
-        var rgbAlphaFirst = (byte[])preblendedJpx.Clone();
         var rgbCdefMarker = Encoding.ASCII.GetBytes("cdef");
-        var rgbCdef = rgbAlphaFirst.AsSpan().IndexOf(rgbCdefMarker);
-        Assert(rgbCdef >= 0, "JP2 RGB+alpha fixture требует cdef.");
-        var rgbCount = (rgbAlphaFirst[rgbCdef + 4] << 8) | rgbAlphaFirst[rgbCdef + 5];
-        Assert(rgbCount == 4, "JP2 RGB+alpha fixture требует четыре записи cdef.");
-        for (var index = 0; index < rgbCount; index++)
+        var rgbCdef = preblendedJpx.AsSpan().IndexOf(rgbCdefMarker);
+        Assert(
+            rgbCdef >= 0,
+            "JP2 RGB+alpha fixture требует cdef.");
+        var rgbCount =
+            (preblendedJpx[rgbCdef + 4] << 8) |
+            preblendedJpx[rgbCdef + 5];
+        Assert(
+            rgbCount == 4,
+            "JP2 RGB+alpha fixture требует четыре записи cdef.");
+
+        byte[] CreateRgbAlphaCdefPermutation(
+            int[] canonicalToRaw)
         {
-            var offset = rgbCdef + 6 + index * 6;
-            var previous = (rgbAlphaFirst[offset] << 8) | rgbAlphaFirst[offset + 1];
-            var shifted = (previous + 1) % 4;
-            rgbAlphaFirst[offset] = 0;
-            rgbAlphaFirst[offset + 1] = (byte)shifted;
+            Assert(
+                canonicalToRaw.Length == 4 &&
+                canonicalToRaw.OrderBy(value => value).SequenceEqual(
+                    new[] { 0, 1, 2, 3 }),
+                "JP2 cdef regression требует one-to-one RGBA permutation.");
+
+            var result =
+                (byte[])preblendedJpx.Clone();
+
+            for (var entry = 0;
+                 entry < rgbCount;
+                 entry++)
+            {
+                var offset =
+                    rgbCdef + 6 + entry * 6;
+                var channelType =
+                    (result[offset + 2] << 8) |
+                    result[offset + 3];
+                var association =
+                    (result[offset + 4] << 8) |
+                    result[offset + 5];
+                var canonical =
+                    channelType switch
+                    {
+                        0 when association is >= 1 and <= 3 =>
+                            association - 1,
+                        1 or 2 when association == 0 =>
+                            3,
+                        _ => throw new InvalidOperationException(
+                            "JP2 RGB+alpha fixture использует неожиданный cdef Typ/Asoc.")
+                    };
+
+                result[offset] = 0;
+                result[offset + 1] =
+                    (byte)canonicalToRaw[canonical];
+            }
+
+            return result;
         }
 
-        var originalRgbAlpha = PdfJpxSampleDecoder.Decode(preblendedJpx, 2, 1, true);
-        var shiftedRgbAlpha = PdfJpxSampleDecoder.Decode(rgbAlphaFirst, 2, 1, true);
+        var originalRgbAlpha =
+            PdfJpxSampleDecoder.Decode(
+                preblendedJpx,
+                expectedWidth: 2,
+                expectedHeight: 1,
+                useEmbeddedColorSpace: false,
+                preserveIntegerSamples: true);
+        var rgbAlphaPermutations =
+            new[]
+            {
+                new[] { 0, 1, 2, 3 }, new[] { 0, 1, 3, 2 },
+                new[] { 0, 2, 1, 3 }, new[] { 0, 2, 3, 1 },
+                new[] { 0, 3, 1, 2 }, new[] { 0, 3, 2, 1 },
+                new[] { 1, 0, 2, 3 }, new[] { 1, 0, 3, 2 },
+                new[] { 1, 2, 0, 3 }, new[] { 1, 2, 3, 0 },
+                new[] { 1, 3, 0, 2 }, new[] { 1, 3, 2, 0 },
+                new[] { 2, 0, 1, 3 }, new[] { 2, 0, 3, 1 },
+                new[] { 2, 1, 0, 3 }, new[] { 2, 1, 3, 0 },
+                new[] { 2, 3, 0, 1 }, new[] { 2, 3, 1, 0 },
+                new[] { 3, 0, 1, 2 }, new[] { 3, 0, 2, 1 },
+                new[] { 3, 1, 0, 2 }, new[] { 3, 1, 2, 0 },
+                new[] { 3, 2, 0, 1 }, new[] { 3, 2, 1, 0 }
+            };
+
+        foreach (var permutation in rgbAlphaPermutations)
+        {
+            var permutedJpx =
+                CreateRgbAlphaCdefPermutation(
+                    permutation);
+            var explicitColor =
+                PdfJpxSampleDecoder.Decode(
+                    permutedJpx,
+                    expectedWidth: 2,
+                    expectedHeight: 1,
+                    useEmbeddedColorSpace: false,
+                    preserveIntegerSamples: true);
+            var embeddedColor =
+                PdfJpxSampleDecoder.Decode(
+                    permutedJpx,
+                    expectedWidth: 2,
+                    expectedHeight: 1,
+                    useEmbeddedColorSpace: true,
+                    preserveIntegerSamples: true);
+
+            Assert(
+                explicitColor.Components == 4 &&
+                explicitColor.HasEmbeddedAlpha &&
+                explicitColor.IntegerSamples != null &&
+                originalRgbAlpha.IntegerSamples != null &&
+                Enumerable.Range(0, 2).All(pixel =>
+                    Enumerable.Range(0, 4).All(channel =>
+                    {
+                        var source =
+                            pixel * 4 + permutation[channel];
+                        var target =
+                            pixel * 4 + channel;
+
+                        return explicitColor.Samples[target] ==
+                                originalRgbAlpha.Samples[source] &&
+                            explicitColor.IntegerSamples[target] ==
+                                originalRgbAlpha.IntegerSamples[source];
+                    })) &&
+                explicitColor.BitDepths.SequenceEqual(
+                    permutation.Select(
+                        component =>
+                            originalRgbAlpha.BitDepths[component])),
+                $"PDF JP2 cdef permutation [{string.Join(",", permutation)}] должна следовать Cn/Asoc при explicit PDF ColorSpace.");
+
+            Assert(
+                embeddedColor.Samples.SequenceEqual(
+                    explicitColor.Samples) &&
+                embeddedColor.BitDepths.SequenceEqual(
+                    explicitColor.BitDepths) &&
+                embeddedColor.HasEmbeddedAlpha,
+                $"PDF JP2 cdef permutation [{string.Join(",", permutation)}] должна давать одинаковый canonical order через CoreJ2K и manual mapping.");
+        }
+
+        var rgbAlphaFirst =
+            CreateRgbAlphaCdefPermutation(
+                new[] { 1, 2, 3, 0 });
+        var shiftedRgbAlpha =
+            PdfJpxSampleDecoder.Decode(
+                rgbAlphaFirst,
+                expectedWidth: 2,
+                expectedHeight: 1,
+                useEmbeddedColorSpace: false,
+                preserveIntegerSamples: true);
         Assert(
             shiftedRgbAlpha.Components == 4 &&
             Enumerable.Range(0, 2).All(pixel =>
                 Enumerable.Range(0, 4).All(channel =>
                     shiftedRgbAlpha.Samples[pixel * 4 + channel] ==
                     originalRgbAlpha.Samples[pixel * 4 + (channel + 1) % 4])),
-            "PDF JP2 RGB+alpha alpha-first cdef должен сохранять правильную перестановку RGBA samples.");
+            "PDF JP2 RGB+alpha alpha-first cdef должен следовать Cn/Asoc и нормализоваться в RGBA.");
 
         var rgbAlphaFirstPdfPath = Path.Combine(
             directory, "regression-jpx-rgb-alpha-first.pdf");
@@ -11059,30 +11306,31 @@ internal static partial class Program
                 "PDF JPX RGB alpha-first cdef должен сохранять RGBA в конечном PNG.");
         }
 
-        foreach (var (shift, alphaIndex) in new[] { (2, 1), (3, 2) })
+        foreach (var (permutation, alphaIndex) in new[]
         {
-            var middleAlphaJpx = (byte[])preblendedJpx.Clone();
-            for (var entry = 0; entry < rgbCount; entry++)
-            {
-                var offset = rgbCdef + 6 + entry * 6;
-                var previous = (middleAlphaJpx[offset] << 8) |
-                    middleAlphaJpx[offset + 1];
-                middleAlphaJpx[offset] = 0;
-                middleAlphaJpx[offset + 1] = (byte)((previous + shift) % 4);
-            }
+            (new[] { 2, 3, 0, 1 }, 1),
+            (new[] { 3, 0, 1, 2 }, 2)
+        })
+        {
+            var middleAlphaJpx =
+                CreateRgbAlphaCdefPermutation(
+                    permutation);
+            var decodedMiddleAlpha =
+                PdfJpxSampleDecoder.Decode(
+                    middleAlphaJpx,
+                    expectedWidth: 2,
+                    expectedHeight: 1,
+                    useEmbeddedColorSpace: false,
+                    preserveIntegerSamples: true);
 
-            var decodedMiddleAlpha = PdfJpxSampleDecoder.Decode(middleAlphaJpx, 2, 1, true);
             Assert(
                 decodedMiddleAlpha.Components == 4 &&
                 Enumerable.Range(0, 2).All(pixel =>
                     Enumerable.Range(0, 4).All(channel =>
-                    {
-                        var raw = channel == 3 ? alphaIndex :
-                            channel < alphaIndex ? channel : channel + 1;
-                        return decodedMiddleAlpha.Samples[pixel * 4 + channel] ==
-                            originalRgbAlpha.Samples[pixel * 4 + raw];
-                    })),
-                $"PDF JP2 cdef alpha index {alphaIndex} должен правильно переставлять samples.");
+                        decodedMiddleAlpha.Samples[pixel * 4 + channel] ==
+                        originalRgbAlpha.Samples[
+                            pixel * 4 + permutation[channel]])),
+                $"PDF JP2 cdef alpha component {alphaIndex} должен следовать полному Cn/Asoc mapping.");
 
             var middleAlphaPdf = Path.Combine(
                 directory, $"regression-jpx-middle-alpha-{alphaIndex}.pdf");
