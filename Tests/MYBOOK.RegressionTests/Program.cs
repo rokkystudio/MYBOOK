@@ -12167,28 +12167,196 @@ internal static partial class Program
                 $"PDF ExtGState /SMask {suffix} должен явно отклоняться до compositing.");
         }
 
+        foreach (var (suffix, form) in new[]
+        {
+            ("non-isolated", "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I false /K false >> /Length 0 >>\nstream\n\nendstream"),
+            ("knockout", "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K true >> /Length 0 >>\nstream\n\nendstream")
+        })
+        {
+            var unsupportedPath = Path.Combine(
+                directory,
+                $"regression-smask-group-{suffix}.pdf");
+            CreateExtGStatePdf(
+                unsupportedPath,
+                "<< /S /Alpha /G 7 0 R >>",
+                form);
+
+            var rejected = false;
+            try
+            {
+                _ = SupportedFormatRegistry.ReadDocument(unsupportedPath);
+            }
+            catch (NotSupportedException error)
+                when (error.Message.Contains(
+                    "/SMask /G",
+                    StringComparison.Ordinal))
+            {
+                rejected = true;
+            }
+
+            Assert(
+                rejected,
+                $"PDF ExtGState /SMask /G должен явно отклонять {suffix} transparency group.");
+        }
+
+        foreach (var (suffix, content, diagnostic) in new[]
+        {
+            ("unsupported-operator", "/Sh1 sh\n", "content operator sh"),
+            ("text-painting", "BT 1 0 0 1 0 0 Tm (A) Tj ET\n", "glyph-shape alpha compositing")
+        })
+        {
+            var unsupportedPath = Path.Combine(
+                directory,
+                $"regression-smask-content-{suffix}.pdf");
+            var form =
+                $"<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K false >> /Length {Encoding.ASCII.GetByteCount(content)} >>\n" +
+                $"stream\n{content}endstream";
+
+            CreateExtGStatePdf(
+                unsupportedPath,
+                "<< /S /Alpha /G 7 0 R >>",
+                form);
+
+            var rejected = false;
+            try
+            {
+                _ = SupportedFormatRegistry.ReadDocument(unsupportedPath);
+            }
+            catch (NotSupportedException error)
+                when (error.Message.Contains(
+                    diagnostic,
+                    StringComparison.Ordinal))
+            {
+                rejected = true;
+            }
+
+            Assert(
+                rejected,
+                $"PDF ExtGState Alpha soft mask должен явно отклонять {suffix} без приблизительного рендеринга.");
+        }
         var validMaskGroupPath = Path.Combine(
             directory,
-            "regression-smask-form-valid-unsupported.pdf");
+            "regression-smask-form-alpha.pdf");
+        var maskContent =
+            "0 0 10 10 re f\n";
+        var validMaskGroup =
+            $"<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Matrix [1 0 0 1 5 0] /Group << /S /Transparency /I true /K false >> /Length {Encoding.ASCII.GetByteCount(maskContent)} >>\n" +
+            $"stream\n{maskContent}endstream";
+        var maskedPageContent =
+            "q\n" +
+            "2 0 0 2 0 0 cm\n" +
+            "/GS1 gs\n" +
+            "1 0 0 1 20 0 cm\n" +
+            "10 10 40 40 re f\n" +
+            "q\n" +
+            "/GS2 gs\n" +
+            "60 10 40 40 re f\n" +
+            "Q\n" +
+            "110 10 40 40 re f\n" +
+            "Q\n" +
+            "160 10 40 40 re f\n";
+
         CreateExtGStatePdf(
             validMaskGroupPath,
-            "<< /S /Alpha /G 7 0 R >>",
-            "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K false >> /Length 0 >>\nstream\n\nendstream");
+            "<< /Type /Mask /S /Alpha /BC [1 1 1] /TR /Identity /G 7 0 R >>",
+            validMaskGroup,
+            maskedPageContent);
 
-        var realMaskRejected = false;
-        try
-        {
-            _ = SupportedFormatRegistry.ReadDocument(validMaskGroupPath);
-        }
-        catch (NotSupportedException error)
-            when (error.Message.Contains("compositing", StringComparison.Ordinal))
-        {
-            realMaskRejected = true;
-        }
+        var validMaskModel =
+            SupportedFormatRegistry.ReadDocument(
+                validMaskGroupPath);
+        var validMaskPage = validMaskModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single();
+
+        AssertEqual(
+            4,
+            validMaskPage.PathRuns.Count,
+            "PDF ExtGState Alpha soft-mask fixture path count");
+
+        var maskedFirstPath = validMaskPage.PathRuns[0];
+        var maskedNestedPath = validMaskPage.PathRuns[1];
+        var maskedRestoredPath = validMaskPage.PathRuns[2];
+        var maskedDefaultPath = validMaskPage.PathRuns[3];
+        var fixedSoftMask = maskedFirstPath.SoftMask;
 
         Assert(
-            realMaskRejected,
-            "PDF ExtGState /SMask /G must explicitly reject real transparency groups until compositing is implemented.");
+            maskedFirstPath.SoftMaskActive &&
+            fixedSoftMask != null &&
+            fixedSoftMask.PathRuns.Count == 1 &&
+            fixedSoftMask.ImageRuns.Count == 0 &&
+            fixedSoftMask.TextRuns.Count == 0 &&
+            Math.Abs(fixedSoftMask.TransformA - 2) < 0.0001 &&
+            Math.Abs(fixedSoftMask.TransformB) < 0.0001 &&
+            Math.Abs(fixedSoftMask.TransformC) < 0.0001 &&
+            Math.Abs(fixedSoftMask.TransformD - 2) < 0.0001 &&
+            Math.Abs(fixedSoftMask.TransformE) < 0.0001 &&
+            Math.Abs(fixedSoftMask.TransformF + 120) < 0.0001,
+            "PDF ExtGState /SMask должен сохранять Alpha group и CTM, действовавший в момент gs.");
+
+        Assert(
+            !maskedNestedPath.SoftMaskActive &&
+            maskedNestedPath.SoftMask == null &&
+            maskedRestoredPath.SoftMaskActive &&
+            maskedRestoredPath.SoftMask != null &&
+            !maskedDefaultPath.SoftMaskActive &&
+            maskedDefaultPath.SoftMask == null,
+            "PDF q/Q и /SMask /None должны заменять и восстанавливать soft-mask graphics state.");
+
+        AssertEqual(
+            "M 5 120 L 15 120 L 15 110 L 5 110 Z",
+            fixedSoftMask!.BoundingPathData,
+            "PDF ExtGState /SMask /G Form Matrix и BBox");
+
+        var validMaskHtml = DocumentHtmlRenderer.Render(
+            validMaskModel,
+            CreateRenderTheme());
+
+        AssertContains(
+            validMaskHtml,
+            "style=\"mask-type:alpha\"",
+            "PDF ExtGState Alpha mask renderer");
+        AssertContains(
+            validMaskHtml,
+            "transform=\"matrix(2 0 0 2 0 -120)\"",
+            "PDF ExtGState soft-mask gs CTM renderer");
+        AssertContains(
+            validMaskHtml,
+            "mask=\"url(#pdf-soft-mask-1-",
+            "PDF ExtGState soft mask attachment");
+
+        var rotatedMaskGroupPath = Path.Combine(
+            directory,
+            "regression-smask-form-alpha-rotate-90.pdf");
+        CreateExtGStatePdf(
+            rotatedMaskGroupPath,
+            "<< /Type /Mask /S /Alpha /TR /Identity /G 7 0 R >>",
+            validMaskGroup,
+            maskedPageContent,
+            rotationDegrees: 90);
+
+        var rotatedMaskModel =
+            SupportedFormatRegistry.ReadDocument(
+                rotatedMaskGroupPath);
+        var rotatedSoftMask = rotatedMaskModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .PathRuns[0]
+            .SoftMask;
+
+        Assert(
+            rotatedSoftMask != null &&
+            Math.Abs(rotatedSoftMask.TransformA - 2) < 0.0001 &&
+            Math.Abs(rotatedSoftMask.TransformB) < 0.0001 &&
+            Math.Abs(rotatedSoftMask.TransformC) < 0.0001 &&
+            Math.Abs(rotatedSoftMask.TransformD - 2) < 0.0001 &&
+            Math.Abs(rotatedSoftMask.TransformE) < 0.0001 &&
+            Math.Abs(rotatedSoftMask.TransformF) < 0.0001 &&
+            string.Equals(
+                rotatedSoftMask.BoundingPathData,
+                "M 0 5 L 0 15 L 10 15 L 10 5 Z",
+                StringComparison.Ordinal),
+            "PDF ExtGState soft-mask CTM должен корректно переводиться в rotated fixed-page coordinates.");
 
         var extGStateModel = SupportedFormatRegistry.ReadDocument(extGStatePath);
         var extGStatePage = extGStateModel.Blocks
@@ -18665,10 +18833,16 @@ internal static partial class Program
         writer.Write(content);
     }
 
-    private static void CreateExtGStatePdf(string path, string? softMaskSyntax = null, string? groupForm = null)
+    private static void CreateExtGStatePdf(
+        string path,
+        string? softMaskSyntax = null,
+        string? groupForm = null,
+        string? pageContent = null,
+        int rotationDegrees = 0)
     {
         var encoding = Encoding.ASCII;
         var content =
+            pageContent ??
             "q\n" +
             "/GS1 gs\n" +
             "10 10 40 40 re B\n" +
@@ -18684,7 +18858,7 @@ internal static partial class Program
         {
             "<< /Type /Catalog /Pages 2 0 R >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 240 120] >>",
-            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /ExtGState << /GS1 5 0 R /GS2 6 0 R >> >> >>",
+            $"<< /Type /Page /Parent 2 0 R /Rotate {rotationDegrees} /Contents 4 0 R /Resources << /ExtGState << /GS1 5 0 R /GS2 6 0 R >> >> >>",
             $"<< /Length {encoding.GetByteCount(content)} >>\nstream\n{content}endstream",
             $"<< /Type /ExtGState /BM [/UnknownVendorMode /Multiply] /OP true /op true /OPM 1 /SMask {softMaskSyntax ?? "/None"} /CA 0.75 /ca 0.5 >>",
             "<< /Type /ExtGState /BM /Screen /OP false /op false /OPM 0 /SMask /None >>"
