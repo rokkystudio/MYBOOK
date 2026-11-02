@@ -5704,6 +5704,70 @@ internal static partial class Program
                 .SequenceEqual(["Nine Hundred Ninety-Nine Thousand Nine Hundred Ninety-Ninth", null]),
             "DOC ordinalText en-US должен прекращать вывод после Word-limit 999999.");
         Assert(
+            BuildSimpleListMarkers(0x05, "\0", 2, 1, 0x0407)
+                .SequenceEqual(["1.", "2."]),
+            "DOC ordinal de-DE должен использовать decimal number с точкой.");
+        Assert(
+            BuildSimpleListMarkers(0x05, "\0", 2, 217483647, 0x0407)
+                .SequenceEqual(["217483647.", null]),
+            "DOC ordinal de-DE должен прекращать вывод после общего Word display ceiling 217483647.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 1, 0x0407)
+                .SequenceEqual(["Ein", "Zwei"]),
+            "DOC cardinalText de-DE должен использовать Word-compatible Ein вместо Eins.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 20, 0x0407)
+                .SequenceEqual(["Zwanzig", "Einundzwanzig"]),
+            "DOC cardinalText de-DE должен ставить units перед tens через und.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 99, 0x0407)
+                .SequenceEqual(["Neunundneunzig", "Hundert"]),
+            "DOC cardinalText de-DE должен использовать Hundert без leading Ein.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 1000, 0x0407)
+                .SequenceEqual(["Tausend", "Tausendein"]),
+            "DOC cardinalText de-DE должен использовать Tausend без leading Ein и слитный remainder.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 19999, 0x0407)
+                .SequenceEqual(["Neunzehntausendneunhundertneunundneunzig", null]),
+            "DOC cardinalText de-DE должен завершать подтверждённый профиль на 19999.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 20000, 0x0407)
+                .All(marker => marker == null),
+            "DOC cardinalText de-DE не должен синтезировать spell-out после 19999.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 1, 0x0407)
+                .SequenceEqual(["Erste", "Zweite"]),
+            "DOC ordinalText de-DE должен начинаться с Erste/Zweite.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 20, 0x0407)
+                .SequenceEqual(["Zwanzigste", "Einundzwanzigste"]),
+            "DOC ordinalText de-DE должен воспроизводить нормативную Einundzwanzigste sequence.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 100, 0x0407)
+                .SequenceEqual(["Hundertste", "Hunderterste"]),
+            "DOC ordinalText de-DE должен использовать Word-compatible hundred ordinal forms.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 1000, 0x0407)
+                .SequenceEqual(["Tausendste", "Tausenderste"]),
+            "DOC ordinalText de-DE должен использовать Word-compatible thousand ordinal forms.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 19999, 0x0407)
+                .SequenceEqual(["Neunzehntausendneunhundertneunundneunzigste", null]),
+            "DOC ordinalText de-DE должен завершать подтверждённый профиль на 19999.");
+        Assert(
+            BuildSimpleListMarkers(
+                    0x07,
+                    "\0",
+                    2,
+                    21,
+                    0x0409,
+                    0x0407,
+                    0x0401,
+                    0x01)
+                .SequenceEqual(["Einundzwanzigste", "Zweiundzwanzigste"]),
+            "DOC textual numbering должен применять de-DE formatter к effective LID из East Asia slot.");
+        Assert(
             BuildSimpleListMarkers(0x0F, "\0.", 1)
                 .SequenceEqual(["1. ", "2. "]),
             "DOC decimalHalfWidth numbering должен использовать single-byte decimal digits.");
