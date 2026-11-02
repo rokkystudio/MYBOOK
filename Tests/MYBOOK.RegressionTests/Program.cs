@@ -12262,6 +12262,161 @@ internal static partial class Program
                 rejected,
                 $"PDF ExtGState Alpha soft mask должен явно отклонять {suffix} без приблизительного рендеринга.");
         }
+        var nestedMaskPath = Path.Combine(
+            directory,
+            "regression-smask-form-alpha-nested.pdf");
+        var nestedInnerContent =
+            "0 0 5 10 re f\n";
+        var nestedInnerGroup =
+            $"<< /Type /XObject /Subtype /Form /BBox [0 0 5 10] /Group << /S /Transparency /I true /K false >> /Length {Encoding.ASCII.GetByteCount(nestedInnerContent)} >>\n" +
+            $"stream\n{nestedInnerContent}endstream";
+        var nestedOuterContent =
+            "/GSNested gs\n" +
+            "0 0 10 10 re f\n";
+        var nestedOuterGroup =
+            $"<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K false >> /Resources << /ExtGState << /GSNested << /Type /ExtGState /SMask << /Type /Mask /S /Alpha /G 8 0 R >> >> >> >> /Length {Encoding.ASCII.GetByteCount(nestedOuterContent)} >>\n" +
+            $"stream\n{nestedOuterContent}endstream";
+
+        CreateExtGStatePdf(
+            nestedMaskPath,
+            "<< /Type /Mask /S /Alpha /G 7 0 R >>",
+            nestedOuterGroup,
+            additionalObjects: [nestedInnerGroup]);
+
+        var nestedMaskModel =
+            SupportedFormatRegistry.ReadDocument(
+                nestedMaskPath);
+        var nestedOuterMask = nestedMaskModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .PathRuns[0]
+            .SoftMask;
+        var nestedInnerMask = nestedOuterMask?
+            .PathRuns
+            .Single()
+            .SoftMask;
+
+        Assert(
+            nestedOuterMask != null &&
+            nestedInnerMask != null &&
+            nestedInnerMask.PathRuns.Count == 1 &&
+            nestedInnerMask.ImageRuns.Count == 0 &&
+            nestedInnerMask.TextRuns.Count == 0,
+            "PDF ExtGState должен materialize вложенную Alpha soft mask по фактически выполненному gs.");
+
+        var nestedMaskHtml = DocumentHtmlRenderer.Render(
+            nestedMaskModel,
+            CreateRenderTheme());
+        var firstMaskDefinition = nestedMaskHtml.IndexOf(
+            "style=\"mask-type:alpha\"",
+            StringComparison.Ordinal);
+        var secondMaskDefinition = firstMaskDefinition >= 0
+            ? nestedMaskHtml.IndexOf(
+                "style=\"mask-type:alpha\"",
+                firstMaskDefinition + 1,
+                StringComparison.Ordinal)
+            : -1;
+
+        Assert(
+            secondMaskDefinition >= 0,
+            "PDF renderer должен выводить независимые SVG alpha mask definitions для nested ExtGState masks.");
+
+        foreach (var (suffix, outerContent, resources, diagnostic) in new[]
+        {
+            (
+                "cycle",
+                "/GSNested gs\n0 0 10 10 re f\n",
+                "/Resources << /ExtGState << /GSNested << /Type /ExtGState /SMask << /S /Alpha /G 7 0 R >> >> >> >>",
+                "cycle"),
+            (
+                "missing-state",
+                "/Missing gs\n0 0 10 10 re f\n",
+                string.Empty,
+                "отсутствующий ExtGState")
+        })
+        {
+            var invalidNestedMaskPath = Path.Combine(
+                directory,
+                $"regression-smask-nested-{suffix}.pdf");
+            var invalidNestedGroup =
+                $"<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K false >> {resources} /Length {Encoding.ASCII.GetByteCount(outerContent)} >>\n" +
+                $"stream\n{outerContent}endstream";
+
+            CreateExtGStatePdf(
+                invalidNestedMaskPath,
+                "<< /S /Alpha /G 7 0 R >>",
+                invalidNestedGroup);
+
+            var rejected = false;
+            try
+            {
+                _ = SupportedFormatRegistry.ReadDocument(
+                    invalidNestedMaskPath);
+            }
+            catch (InvalidDataException error)
+                when (error.Message.Contains(
+                    diagnostic,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                rejected = true;
+            }
+
+            Assert(
+                rejected,
+                $"PDF nested ExtGState soft mask должен явно отклонять {suffix}.");
+        }
+
+        var nestedDepthPath = Path.Combine(
+            directory,
+            "regression-smask-nested-depth.pdf");
+        const string nestedDepthContent =
+            "/GSNested gs\n0 0 10 10 re f\n";
+
+        string CreateNestedMaskForm(int nextObjectNumber)
+        {
+            return
+                $"<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K false >> /Resources << /ExtGState << /GSNested << /Type /ExtGState /SMask << /S /Alpha /G {nextObjectNumber} 0 R >> >> >> >> /Length {Encoding.ASCII.GetByteCount(nestedDepthContent)} >>\n" +
+                $"stream\n{nestedDepthContent}endstream";
+        }
+
+        var nestedDepthObjects = new List<string>();
+        for (var objectNumber = 8; objectNumber <= 22; objectNumber++)
+        {
+            nestedDepthObjects.Add(
+                CreateNestedMaskForm(
+                    objectNumber + 1));
+        }
+
+        nestedDepthObjects.Add(
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K false >> /Length 0 >>\nstream\n\nendstream");
+
+        CreateExtGStatePdf(
+            nestedDepthPath,
+            "<< /S /Alpha /G 7 0 R >>",
+            CreateNestedMaskForm(8),
+            additionalObjects: nestedDepthObjects);
+
+        var depthRejected = false;
+        try
+        {
+            _ = SupportedFormatRegistry.ReadDocument(
+                nestedDepthPath);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "nesting",
+                StringComparison.Ordinal) &&
+                error.Message.Contains(
+                    "16",
+                    StringComparison.Ordinal))
+        {
+            depthRejected = true;
+        }
+
+        Assert(
+            depthRejected,
+            "PDF nested ExtGState soft mask должен ограничивать recursive materialization depth.");
+
         var validMaskGroupPath = Path.Combine(
             directory,
             "regression-smask-form-alpha.pdf");
@@ -18866,7 +19021,8 @@ internal static partial class Program
         string? softMaskSyntax = null,
         string? groupForm = null,
         string? pageContent = null,
-        int rotationDegrees = 0)
+        int rotationDegrees = 0,
+        IReadOnlyList<string>? additionalObjects = null)
     {
         var encoding = Encoding.ASCII;
         var content =
@@ -18895,6 +19051,11 @@ internal static partial class Program
         if (groupForm != null)
         {
             objects = [.. objects, groupForm];
+        }
+
+        if (additionalObjects != null)
+        {
+            objects = [.. objects, .. additionalObjects];
         }
 
         using var memory = new MemoryStream();
