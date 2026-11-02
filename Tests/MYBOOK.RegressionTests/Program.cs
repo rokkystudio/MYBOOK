@@ -102,6 +102,7 @@ internal static partial class Program
             ("PDF JPX reader", () => TestPdfJpxReader(temporaryDirectory)),
             ("PDF JBIG2 reader", () => TestPdfJbig2Reader(temporaryDirectory)),
             ("PDF ImageMask stencil", () => TestPdfImageMaskStencil(temporaryDirectory)),
+            ("PDF Image Mask transparency", () => TestPdfImageMaskTransparency(temporaryDirectory)),
             ("PDF LZW decoder", TestPdfLzwDecoder),
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
@@ -12078,25 +12079,25 @@ internal static partial class Program
                 }),
             "PDF DCT Image XObject должен декодировать нестандартный /Decode и DCT /SMask /Matte в PNG resources.");
 
-        var unsupportedImageMaskPath = Path.Combine(
+        var malformedImageMaskPath = Path.Combine(
             directory,
-            "regression-image-explicit-mask.pdf");
+            "regression-image-color-key-mask-malformed.pdf");
         CreateRawImagePdf(
-            unsupportedImageMaskPath,
+            malformedImageMaskPath,
             "/DeviceGray",
             [255],
             profileData: null,
-            maskSyntax: "[0 0]");
+            maskSyntax: "[0]");
 
         var imageMaskRejected = false;
         try
         {
             _ = SupportedFormatRegistry.ReadDocument(
-                unsupportedImageMaskPath);
+                malformedImageMaskPath);
         }
-        catch (NotSupportedException error)
+        catch (InvalidDataException error)
             when (error.Message.Contains(
-                "Image XObject /Im1 /Mask",
+                "color-key /Mask",
                 StringComparison.Ordinal))
         {
             imageMaskRejected = true;
@@ -12104,7 +12105,7 @@ internal static partial class Program
 
         Assert(
             imageMaskRejected,
-            "PDF Image XObject /Mask должен явно отклоняться, пока explicit/color-key mask не входит в image transparency profile.");
+            "PDF Image XObject color-key /Mask должен строго валидировать число range boundaries.");
 
         var extGStatePath = Path.Combine(
             directory,
@@ -20222,7 +20223,11 @@ internal static partial class Program
         byte[]? sampledOrder3Data = null,
         byte? softMaskSample = null,
         double[]? softMaskMatte = null,
-        string? maskSyntax = null)
+        string? maskSyntax = null,
+        int width = 1,
+        int height = 1,
+        int bitsPerComponent = 8,
+        string? decodeSyntax = null)
     {
         var encoding = Encoding.ASCII;
         var content = encoding.GetBytes(
@@ -20295,9 +20300,12 @@ internal static partial class Program
         StartObject(5);
         Write(
             "<< /Type /XObject /Subtype /Image " +
-            "/Width 1 /Height 1 " +
+            $"/Width {width} /Height {height} " +
             $"/ColorSpace {colorSpaceSyntax} " +
-            "/BitsPerComponent 8 " +
+            $"/BitsPerComponent {bitsPerComponent} " +
+            (decodeSyntax != null
+                ? $"/Decode {decodeSyntax} "
+                : string.Empty) +
             (softMaskObjectNumber != null
                 ? $"/SMask {softMaskObjectNumber.Value} 0 R "
                 : string.Empty) +
@@ -20770,6 +20778,283 @@ internal static partial class Program
                     "PDF ImageMask должен использовать текущий nonstroking RGB color.");
             }
         }
+    }
+
+    /// <summary>
+    /// Проверяет explicit ImageMask и color-key /Mask, их приоритет над
+    /// graphics-state soft mask, сравнение color-key до /Decode и packed Indexed samples.
+    /// </summary>
+    private static void TestPdfImageMaskTransparency(string directory)
+    {
+        static (int Width, int Height, byte[] Pixels) DecodeGrayMask(
+            byte[] data)
+        {
+            using var input = new MemoryStream(
+                data,
+                writable: false);
+            var decoder = new PngBitmapDecoder(
+                input,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad);
+            BitmapSource bitmap = decoder.Frames.Single();
+
+            if (bitmap.Format != PixelFormats.Gray8)
+            {
+                bitmap = new FormatConvertedBitmap(
+                    bitmap,
+                    PixelFormats.Gray8,
+                    null,
+                    0);
+            }
+
+            var stride = bitmap.PixelWidth;
+            var pixels = new byte[checked(stride * bitmap.PixelHeight)];
+            bitmap.CopyPixels(
+                pixels,
+                stride,
+                0);
+
+            return (
+                bitmap.PixelWidth,
+                bitmap.PixelHeight,
+                pixels);
+        }
+
+        var explicitPath = Path.Combine(
+            directory,
+            "regression-image-explicit-mask.pdf");
+        var encoding = Encoding.ASCII;
+        var content = encoding.GetBytes(
+            "q\n/GS1 gs\n20 0 0 20 20 20 cm\n/Im1 Do\nQ\n");
+        var groupContent = encoding.GetBytes(
+            "0 0 1 1 re f\n");
+        var baseSamples = new byte[]
+        {
+            0,
+            64,
+            128,
+            255
+        };
+        var maskSamples = new byte[]
+        {
+            0x80,
+            0x00
+        };
+
+        using (var output = new MemoryStream())
+        {
+            var offsets = new List<long>();
+
+            void Write(string value)
+            {
+                var bytes = encoding.GetBytes(value);
+                output.Write(
+                    bytes,
+                    0,
+                    bytes.Length);
+            }
+
+            void BeginObject(int number)
+            {
+                Assert(
+                    number == offsets.Count + 1,
+                    "PDF explicit mask fixture object order.");
+                offsets.Add(output.Position);
+                Write($"{number} 0 obj\n");
+            }
+
+            void EndObject() => Write("\nendobj\n");
+
+            Write("%PDF-1.4\n");
+            BeginObject(1);
+            Write("<< /Type /Catalog /Pages 2 0 R >>");
+            EndObject();
+            BeginObject(2);
+            Write("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 100 100] >>");
+            EndObject();
+            BeginObject(3);
+            Write(
+                "<< /Type /Page /Parent 2 0 R /Contents 4 0 R " +
+                "/Resources << /XObject << /Im1 5 0 R >> " +
+                "/ExtGState << /GS1 8 0 R >> >> >>");
+            EndObject();
+            BeginObject(4);
+            Write($"<< /Length {content.Length} >>\nstream\n");
+            output.Write(content, 0, content.Length);
+            Write("endstream");
+            EndObject();
+            BeginObject(5);
+            Write(
+                "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 " +
+                "/ColorSpace /DeviceGray /BitsPerComponent 8 /Mask 6 0 R " +
+                $"/Length {baseSamples.Length} >>\nstream\n");
+            output.Write(baseSamples, 0, baseSamples.Length);
+            Write("\nendstream");
+            EndObject();
+            BeginObject(6);
+            Write(
+                "<< /Type /XObject /Subtype /Image /Width 1 /Height 2 " +
+                "/ImageMask true /BitsPerComponent 1 /Decode [1 0] " +
+                $"/Length {maskSamples.Length} >>\nstream\n");
+            output.Write(maskSamples, 0, maskSamples.Length);
+            Write("\nendstream");
+            EndObject();
+            BeginObject(7);
+            Write(
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] " +
+                "/Group << /S /Transparency /I true /K false >> " +
+                $"/Length {groupContent.Length} >>\nstream\n");
+            output.Write(groupContent, 0, groupContent.Length);
+            Write("endstream");
+            EndObject();
+            BeginObject(8);
+            Write("<< /Type /ExtGState /SMask << /S /Alpha /G 7 0 R >> >>");
+            EndObject();
+
+            var xref = output.Position;
+            Write($"xref\n0 {offsets.Count + 1}\n0000000000 65535 f \n");
+
+            foreach (var offset in offsets)
+            {
+                Write(
+                    offset.ToString(
+                        "0000000000",
+                        CultureInfo.InvariantCulture) +
+                    " 00000 n \n");
+            }
+
+            Write(
+                $"trailer\n<< /Size {offsets.Count + 1} /Root 1 0 R >>\n" +
+                "startxref\n" +
+                xref.ToString(CultureInfo.InvariantCulture) +
+                "\n%%EOF\n");
+            File.WriteAllBytes(
+                explicitPath,
+                output.ToArray());
+        }
+
+        var explicitImage = SupportedFormatRegistry
+            .ReadDocument(explicitPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        Assert(
+            explicitImage.ExplicitMaskData is { Length: > 0 } &&
+            string.Equals(
+                explicitImage.ExplicitMaskContentType,
+                "image/png",
+                StringComparison.Ordinal) &&
+            explicitImage.SoftMaskData == null &&
+            !explicitImage.SoftMaskActive &&
+            explicitImage.SoftMask == null,
+            "PDF explicit /Mask должен заменять current graphics-state soft mask и сохраняться отдельным intrinsic mask raster.");
+
+        var explicitMask = DecodeGrayMask(
+            explicitImage.ExplicitMaskData!);
+        Assert(
+            explicitMask.Width == 1 &&
+            explicitMask.Height == 2 &&
+            explicitMask.Pixels.SequenceEqual(
+                new byte[] { 255, 0 }),
+            "PDF explicit /Mask должен сохранять независимое разрешение, orientation и обратный /Decode.");
+
+        var explicitHtml = DocumentHtmlRenderer.Render(
+            SupportedFormatRegistry.ReadDocument(explicitPath),
+            CreateRenderTheme());
+        AssertContains(
+            explicitHtml,
+            "style=\"mask-type:luminance\"",
+            "PDF explicit /Mask renderer");
+
+        var colorKeyPath = Path.Combine(
+            directory,
+            "regression-image-color-key-mask.pdf");
+        CreateRawImagePdf(
+            colorKeyPath,
+            "/DeviceRGB",
+            [10, 20, 30],
+            profileData: null,
+            maskSyntax: "[10 10 20 20 30 30]",
+            decodeSyntax: "[1 0 1 0 1 0]");
+
+        var colorKeyImage = SupportedFormatRegistry
+            .ReadDocument(colorKeyPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+        var colorKeyMask = DecodeGrayMask(
+            colorKeyImage.ExplicitMaskData
+            ?? throw new InvalidOperationException(
+                "PDF color-key fixture не создал mask data."));
+
+        Assert(
+            colorKeyMask.Width == 1 &&
+            colorKeyMask.Height == 1 &&
+            colorKeyMask.Pixels.SequenceEqual(
+                new byte[] { 0 }),
+            "PDF color-key /Mask должен сравнивать raw samples до применения /Decode.");
+
+        var indexedPath = Path.Combine(
+            directory,
+            "regression-image-color-key-indexed-2bit.pdf");
+        CreateRawImagePdf(
+            indexedPath,
+            "[/Indexed /DeviceRGB 3 <000000FF000000FF000000FF>]",
+            [0x1B],
+            profileData: null,
+            maskSyntax: "[2 2]",
+            width: 4,
+            height: 1,
+            bitsPerComponent: 2);
+
+        var indexedImage = SupportedFormatRegistry
+            .ReadDocument(indexedPath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+        var indexedMask = DecodeGrayMask(
+            indexedImage.ExplicitMaskData
+            ?? throw new InvalidOperationException(
+                "PDF Indexed color-key fixture не создал mask data."));
+
+        Assert(
+            indexedMask.Width == 4 &&
+            indexedMask.Height == 1 &&
+            indexedMask.Pixels.SequenceEqual(
+                new byte[] { 255, 255, 0, 255 }),
+            "PDF color-key /Mask должен читать packed Indexed samples до palette lookup.");
+
+        var softMaskPrecedencePath = Path.Combine(
+            directory,
+            "regression-image-smask-over-mask.pdf");
+        CreateRawImagePdf(
+            softMaskPrecedencePath,
+            "/DeviceGray",
+            [200],
+            profileData: null,
+            softMaskSample: 255,
+            softMaskMatte: [0.0],
+            maskSyntax: "[0]");
+
+        var softMaskPrecedenceImage = SupportedFormatRegistry
+            .ReadDocument(softMaskPrecedencePath)
+            .Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .ImageRuns
+            .Single();
+
+        Assert(
+            softMaskPrecedenceImage.SoftMaskData is { Length: > 0 } &&
+            softMaskPrecedenceImage.ExplicitMaskData == null,
+            "PDF Image XObject /SMask должен иметь приоритет над explicit/color-key /Mask без валидации проигнорированного Mask.");
     }
 
     private static void CreateJbig2ImagePdf(
