@@ -10654,6 +10654,7 @@ internal static partial class Program
                 useEmbeddedColorSpace: false);
 
         Assert(
+            direct.IntegerSamples == null &&
             direct.Components == 3 &&
             direct.BitDepths.SequenceEqual(
                 new[] { 8, 8, 8 }) &&
@@ -10673,15 +10674,117 @@ internal static partial class Program
                 sixteenBitJpx,
                 expectedWidth: 2,
                 expectedHeight: 1,
-                useEmbeddedColorSpace: false);
+                useEmbeddedColorSpace: false,
+                preserveIntegerSamples: true);
 
         Assert(
             sixteenBit.Components == 1 &&
             sixteenBit.BitDepths.SequenceEqual(
                 new[] { 16 }) &&
             sixteenBit.Samples.SequenceEqual(
-                new byte[] { 255, 128 }),
-            "PDF JPX decoder должен сохранять исходную 16-bit component depth и нормализовать samples в 8-bit render coordinates.");
+                new byte[] { 255, 128 }) &&
+            sixteenBit.IntegerSamples != null &&
+            sixteenBit.IntegerSamples.SequenceEqual(
+                new[] { 65535, 32768 }),
+            "PDF JPX decoder должен сохранять исходные 16-bit integer samples отдельно от 8-bit render coordinates.");
+
+        var colorKeyRgbPath =
+            Path.Combine(
+                directory,
+                "regression-jpx-color-key-rgb.pdf");
+        CreateJpxImagePdf(
+            colorKeyRgbPath,
+            jpx,
+            includeColorSpace: true,
+            includeReverseDecode: true,
+            maskSyntax: "[255 255 0 0 0 0]");
+
+        var colorKeyRgbImage =
+            SupportedFormatRegistry
+                .ReadDocument(colorKeyRgbPath)
+                .Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var colorKeyRgbMask =
+            DecodeGray8Pixels(
+                colorKeyRgbImage.ExplicitMaskData
+                ?? throw new InvalidOperationException(
+                    "PDF JPX RGB color-key fixture не создал intrinsic mask."));
+
+        Assert(
+            colorKeyRgbMask.Width == 2 &&
+            colorKeyRgbMask.Height == 1 &&
+            colorKeyRgbMask.Pixels.SequenceEqual(
+                new byte[] { 0, 255 }),
+            "PDF JPX RGB color-key /Mask должен сравнивать integer samples до PDF /Decode.");
+
+        var implicitColorKeyPath =
+            Path.Combine(
+                directory,
+                "regression-jpx-color-key-implicit-rgb.pdf");
+        CreateJpxImagePdf(
+            implicitColorKeyPath,
+            jpx,
+            includeColorSpace: false,
+            includeReverseDecode: false,
+            maskSyntax: "[0 0 255 255 0 0]");
+
+        var implicitColorKeyImage =
+            SupportedFormatRegistry
+                .ReadDocument(implicitColorKeyPath)
+                .Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var implicitColorKeyMask =
+            DecodeGray8Pixels(
+                implicitColorKeyImage.ExplicitMaskData
+                ?? throw new InvalidOperationException(
+                    "PDF JPX implicit color-key fixture не создал intrinsic mask."));
+
+        Assert(
+            implicitColorKeyMask.Width == 2 &&
+            implicitColorKeyMask.Height == 1 &&
+            implicitColorKeyMask.Pixels.SequenceEqual(
+                new byte[] { 255, 0 }),
+            "PDF JPX color-key /Mask без PDF /ColorSpace должен использовать components embedded JPX color space.");
+
+        var colorKey16Path =
+            Path.Combine(
+                directory,
+                "regression-jpx-color-key-16bit.pdf");
+        CreateJpxImagePdf(
+            colorKey16Path,
+            sixteenBitJpx,
+            includeColorSpace: true,
+            includeReverseDecode: false,
+            colorSpaceSyntax: "/DeviceGray",
+            maskSyntax: "[32768 32768]",
+            bitsPerComponent: 1);
+
+        var colorKey16Image =
+            SupportedFormatRegistry
+                .ReadDocument(colorKey16Path)
+                .Blocks
+                .OfType<DocumentFixedPage>()
+                .Single()
+                .ImageRuns
+                .Single();
+        var colorKey16Mask =
+            DecodeGray8Pixels(
+                colorKey16Image.ExplicitMaskData
+                ?? throw new InvalidOperationException(
+                    "PDF JPX 16-bit color-key fixture не создал intrinsic mask."));
+
+        Assert(
+            colorKey16Mask.Width == 2 &&
+            colorKey16Mask.Height == 1 &&
+            colorKey16Mask.Pixels.SequenceEqual(
+                new byte[] { 255, 0 }),
+            "PDF JPX 16-bit color-key /Mask должен использовать JPEG2000 component depth и raw 32768 sample, игнорируя PDF /BitsPerComponent.");
 
         var explicitPath =
             Path.Combine(
@@ -21200,7 +21303,9 @@ internal static partial class Program
         int? softMaskInData = null,
         string? matteSyntax = null,
         byte[]? iccProfile = null,
-        string? calculatorFunction = null)
+        string? calculatorFunction = null,
+        string? maskSyntax = null,
+        int? bitsPerComponent = null)
     {
         var encoding = Encoding.ASCII;
         var content =
@@ -21281,6 +21386,12 @@ internal static partial class Program
                 : string.Empty) +
             (matteSyntax != null
                 ? $"/Matte {matteSyntax} "
+                : string.Empty) +
+            (maskSyntax != null
+                ? $"/Mask {maskSyntax} "
+                : string.Empty) +
+            (bitsPerComponent != null
+                ? $"/BitsPerComponent {bitsPerComponent.Value} "
                 : string.Empty) +
             "/Filter /JPXDecode " +
             $"/Length {jpx.Length} >>\nstream\n");
