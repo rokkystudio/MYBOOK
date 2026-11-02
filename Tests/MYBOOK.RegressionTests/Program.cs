@@ -12417,6 +12417,250 @@ internal static partial class Program
             depthRejected,
             "PDF nested ExtGState soft mask должен ограничивать recursive materialization depth.");
 
+        var formXObjectMaskPath = Path.Combine(
+            directory,
+            "regression-smask-form-xobject.pdf");
+        var formXObjectContent =
+            "/GSForm gs\n" +
+            "1 0 0 rg\n" +
+            "0 0 4 4 re f\n" +
+            "/Nested Do\n";
+        var formXObject =
+            $"<< /Type /XObject /Subtype /Form /FormType 1 /BBox [0 0 4 4] /Matrix [2 0 0 2 3 4] /Resources << /ExtGState << /GSForm 9 0 R >> /XObject << /Nested 10 0 R >> >> /Length {Encoding.ASCII.GetByteCount(formXObjectContent)} >>\n" +
+            $"stream\n{formXObjectContent}endstream";
+        var nestedFormContent =
+            "/GS2 gs\n" +
+            "0 1 0 rg\n" +
+            "0 0 2 2 re f\n";
+        var nestedFormXObject =
+            $"<< /Type /XObject /Subtype /Form /BBox [0 0 2 2] /Matrix [1 0 0 1 1 1] /Length {Encoding.ASCII.GetByteCount(nestedFormContent)} >>\n" +
+            $"stream\n{nestedFormContent}endstream";
+        var formMaskContent =
+            "0.25 g\n" +
+            "0 0 2 2 re f\n" +
+            "0.5 g\n" +
+            "/Fm Do\n" +
+            "12 0 2 2 re f\n";
+        var formMaskGroup =
+            $"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Group << /S /Transparency /I true /K false >> /Resources << /XObject << /Fm 8 0 R >> >> /Length {Encoding.ASCII.GetByteCount(formMaskContent)} >>\n" +
+            $"stream\n{formMaskContent}endstream";
+
+        CreateExtGStatePdf(
+            formXObjectMaskPath,
+            "<< /S /Alpha /G 7 0 R >>",
+            formMaskGroup,
+            additionalObjects:
+            [
+                formXObject,
+                "<< /Type /ExtGState /ca 0.4 /CA 0.6 >>",
+                nestedFormXObject
+            ]);
+
+        var formXObjectModel =
+            SupportedFormatRegistry.ReadDocument(
+                formXObjectMaskPath);
+        var formXObjectSoftMask = formXObjectModel.Blocks
+            .OfType<DocumentFixedPage>()
+            .Single()
+            .PathRuns[0]
+            .SoftMask;
+
+        Assert(
+            formXObjectSoftMask != null &&
+            formXObjectSoftMask.PathRuns.Count == 4,
+            "PDF Alpha soft mask должен выполнять ordinary Form XObject Do в source paint order.");
+
+        var formMaskPaths = formXObjectSoftMask!.PathRuns;
+        Assert(
+            formMaskPaths[0].PaintOrder == 0 &&
+            formMaskPaths[1].PaintOrder == 1 &&
+            formMaskPaths[2].PaintOrder == 2 &&
+            formMaskPaths[3].PaintOrder == 3 &&
+            string.Equals(
+                formMaskPaths[0].Fill,
+                "#404040",
+                StringComparison.Ordinal) &&
+            string.Equals(
+                formMaskPaths[1].Fill,
+                "#FF0000",
+                StringComparison.Ordinal) &&
+            string.Equals(
+                formMaskPaths[2].Fill,
+                "#00FF00",
+                StringComparison.Ordinal) &&
+            string.Equals(
+                formMaskPaths[3].Fill,
+                "#808080",
+                StringComparison.Ordinal) &&
+            Math.Abs(formMaskPaths[1].FillOpacity - 0.4) < 0.0001 &&
+            Math.Abs(formMaskPaths[2].FillOpacity - 0.4) < 0.0001 &&
+            string.Equals(
+                formMaskPaths[2].BlendMode,
+                "Screen",
+                StringComparison.Ordinal) &&
+            Math.Abs(formMaskPaths[3].FillOpacity - 1) < 0.0001,
+            "PDF Form XObject должен наследовать graphics state, использовать собственные resources, page Resources fallback и не изменять state вызывающей mask group.");
+
+        Assert(
+            string.Equals(
+                formMaskPaths[1].PathData,
+                "M 3 116 L 11 116 L 11 108 L 3 108 Z",
+                StringComparison.Ordinal) &&
+            formMaskPaths[1].ClipPaths.Count == 1 &&
+            string.Equals(
+                formMaskPaths[1].ClipPaths[0].PathData,
+                "M 3 116 L 11 116 L 11 108 L 3 108 Z",
+                StringComparison.Ordinal) &&
+            string.Equals(
+                formMaskPaths[2].PathData,
+                "M 5 114 L 9 114 L 9 110 L 5 110 Z",
+                StringComparison.Ordinal) &&
+            formMaskPaths[2].ClipPaths.Count == 2 &&
+            string.Equals(
+                formMaskPaths[2].ClipPaths[1].PathData,
+                "M 5 114 L 9 114 L 9 110 L 5 110 Z",
+                StringComparison.Ordinal),
+            "PDF Form XObject Do должен применять Matrix и BBox clipping на каждом уровне вложенности.");
+
+        var isolatedFormResourcesPath = Path.Combine(
+            directory,
+            "regression-smask-form-xobject-resource-isolation.pdf");
+        const string isolatedFormContent =
+            "/GS2 gs\n0 0 1 1 re f\n";
+        var isolatedForm =
+            $"<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << >> /Length {Encoding.ASCII.GetByteCount(isolatedFormContent)} >>\n" +
+            $"stream\n{isolatedFormContent}endstream";
+        const string isolatedFormMaskContent =
+            "/Fm Do\n";
+        var isolatedFormMaskGroup =
+            $"<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Group << /S /Transparency /I true /K false >> /Resources << /XObject << /Fm 8 0 R >> >> /Length {Encoding.ASCII.GetByteCount(isolatedFormMaskContent)} >>\n" +
+            $"stream\n{isolatedFormMaskContent}endstream";
+
+        CreateExtGStatePdf(
+            isolatedFormResourcesPath,
+            "<< /S /Alpha /G 7 0 R >>",
+            isolatedFormMaskGroup,
+            additionalObjects: [isolatedForm]);
+
+        var isolatedResourcesRejected = false;
+        try
+        {
+            _ = SupportedFormatRegistry.ReadDocument(
+                isolatedFormResourcesPath);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "отсутствующий ExtGState /GS2",
+                StringComparison.Ordinal))
+        {
+            isolatedResourcesRejected = true;
+        }
+
+        Assert(
+            isolatedResourcesRejected,
+            "PDF Form XObject с собственным /Resources не должен использовать page Resources fallback.");
+
+        foreach (var (suffix, ordinaryForm, diagnostic, structural) in new[]
+        {
+            (
+                "group",
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K false >> /Length 0 >>\nstream\n\nendstream",
+                "ordinary Form profile",
+                false),
+            (
+                "cycle",
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << /XObject << /Self 8 0 R >> >> /Length 9 >>\nstream\n/Self Do\nendstream",
+                "recursive Do cycle",
+                true),
+            (
+                "form-type",
+                "<< /Type /XObject /Subtype /Form /FormType /One /BBox [0 0 10 10] /Length 0 >>\nstream\n\nendstream",
+                "/FormType",
+                true)
+        })
+        {
+            var invalidFormMaskPath = Path.Combine(
+                directory,
+                $"regression-smask-form-xobject-{suffix}.pdf");
+            const string invalidFormMaskContent =
+                "/Fm Do\n";
+            var invalidFormMaskGroup =
+                $"<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Group << /S /Transparency /I true /K false >> /Resources << /XObject << /Fm 8 0 R >> >> /Length {Encoding.ASCII.GetByteCount(invalidFormMaskContent)} >>\n" +
+                $"stream\n{invalidFormMaskContent}endstream";
+
+            CreateExtGStatePdf(
+                invalidFormMaskPath,
+                "<< /S /Alpha /G 7 0 R >>",
+                invalidFormMaskGroup,
+                additionalObjects: [ordinaryForm]);
+
+            var rejected = false;
+            try
+            {
+                _ = SupportedFormatRegistry.ReadDocument(
+                    invalidFormMaskPath);
+            }
+            catch (Exception error)
+                when ((structural && error is InvalidDataException ||
+                       !structural && error is NotSupportedException) &&
+                      error.Message.Contains(
+                          diagnostic,
+                          StringComparison.Ordinal))
+            {
+                rejected = true;
+            }
+
+            Assert(
+                rejected,
+                $"PDF ordinary Form XObject profile должен явно отклонять {suffix}.");
+        }
+
+        var formDepthMaskPath = Path.Combine(
+            directory,
+            "regression-smask-form-xobject-depth.pdf");
+        const string formDepthContent =
+            "/Next Do\n";
+        var formDepthObjects = new List<string>();
+        for (var objectNumber = 8; objectNumber <= 39; objectNumber++)
+        {
+            formDepthObjects.Add(
+                $"<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /XObject << /Next {objectNumber + 1} 0 R >> >> /Length {Encoding.ASCII.GetByteCount(formDepthContent)} >>\n" +
+                $"stream\n{formDepthContent}endstream");
+        }
+
+        formDepthObjects.Add(
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Length 0 >>\nstream\n\nendstream");
+        var formDepthMaskGroup =
+            $"<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Group << /S /Transparency /I true /K false >> /Resources << /XObject << /Next 8 0 R >> >> /Length {Encoding.ASCII.GetByteCount(formDepthContent)} >>\n" +
+            $"stream\n{formDepthContent}endstream";
+
+        CreateExtGStatePdf(
+            formDepthMaskPath,
+            "<< /S /Alpha /G 7 0 R >>",
+            formDepthMaskGroup,
+            additionalObjects: formDepthObjects);
+
+        var formDepthRejected = false;
+        try
+        {
+            _ = SupportedFormatRegistry.ReadDocument(
+                formDepthMaskPath);
+        }
+        catch (InvalidDataException error)
+            when (error.Message.Contains(
+                "nesting",
+                StringComparison.Ordinal) &&
+                error.Message.Contains(
+                    "32",
+                    StringComparison.Ordinal))
+        {
+            formDepthRejected = true;
+        }
+
+        Assert(
+            formDepthRejected,
+            "PDF ordinary Form XObject profile должен ограничивать recursive Do depth 32 уровнями.");
+
         var validMaskGroupPath = Path.Combine(
             directory,
             "regression-smask-form-alpha.pdf");
