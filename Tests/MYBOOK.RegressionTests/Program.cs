@@ -5497,6 +5497,74 @@ internal static partial class Program
                 .SequenceEqual(["一○一", "一○二"]),
             "DOC taiwaneseDigital должен сохранять positional zeros без counting semantics.");
         Assert(
+            BuildSimpleListMarkers(0x21, "\0", 2, 10)
+                .SequenceEqual(["十", "十一"]),
+            "DOC taiwaneseCounting должен использовать 十-reading для двузначных sequence numbers.");
+        Assert(
+            BuildSimpleListMarkers(0x21, "\0", 2, 100)
+                .SequenceEqual(["一○○", "一○一"]),
+            "DOC taiwaneseCounting должен начиная со 100 переходить на positional digits с U+25CB zero.");
+        Assert(
+            BuildSimpleListMarkers(0x25, "\0", 2, 20)
+                .SequenceEqual(["二十", "二十一"]),
+            "DOC chineseCounting должен использовать 十-reading до 99.");
+        Assert(
+            BuildSimpleListMarkers(0x25, "\0", 2, 1234)
+                .SequenceEqual(["一二三四", "一二三五"]),
+            "DOC chineseCounting должен после 99 использовать positional ideograph digits.");
+        Assert(
+            BuildSimpleListMarkers(0x25, "\0", 2, 217483647)
+                .SequenceEqual(["二一七四八三六四七", null]),
+            "DOC chineseCounting должен прекращать вывод после общего Word display ceiling 217483647.");
+        Assert(
+            BuildSimpleListMarkers(0x23, "\0", 2, 101)
+                .SequenceEqual(["一百零一", "一百零二"]),
+            "DOC taiwaneseCountingThousand должен использовать 零 для внутренних zero gaps.");
+        Assert(
+            BuildSimpleListMarkers(0x23, "\0", 2, 10005)
+                .SequenceEqual(["一萬零五", "一萬零六"]),
+            "DOC taiwaneseCountingThousand должен сохранять 零 после 萬 перед коротким remainder.");
+        Assert(
+            BuildSimpleListMarkers(0x23, "\0", 2, 999999)
+                .SequenceEqual(["九十九萬九千九百九十九", null]),
+            "DOC taiwaneseCountingThousand должен прекращать вывод после Word-limit 999999.");
+        Assert(
+            BuildSimpleListMarkers(0x27, "\0", 2, 101)
+                .SequenceEqual(["一百〇一", "一百〇二"]),
+            "DOC chineseCountingThousand должен использовать U+3007 для внутренних zero gaps.");
+        Assert(
+            BuildSimpleListMarkers(0x27, "\0", 2, 10005)
+                .SequenceEqual(["一万五", "一万六"]),
+            "DOC chineseCountingThousand должен применять Word omission zero connector непосредственно после 万.");
+        Assert(
+            BuildSimpleListMarkers(0x27, "\0", 2, 999999)
+                .SequenceEqual(["九十九万九千九百九十九", null]),
+            "DOC chineseCountingThousand должен прекращать вывод после Word-limit 999999.");
+        Assert(
+            BuildSimpleListMarkers(0x26, "\0", 2, 10)
+                .SequenceEqual(["壹拾", "壹拾壹"]),
+            "DOC chineseLegalSimplified не должен опускать 壹 перед 拾.");
+        Assert(
+            BuildSimpleListMarkers(0x26, "\0", 2, 10000)
+                .SequenceEqual(["壹萬", "壹萬零壹"]),
+            "DOC chineseLegalSimplified должен использовать Word-specific U+842C 萬 и 零 connector.");
+        Assert(
+            BuildSimpleListMarkers(0x26, "\0", 2, 999999)
+                .SequenceEqual(["玖拾玖萬玖仟玖佰玖拾玖", null]),
+            "DOC chineseLegalSimplified должен прекращать вывод после Word-limit 999999.");
+        Assert(
+            BuildSimpleListMarkers(0x22, "\0", 2, 2)
+                .SequenceEqual(["貳", "叁"]),
+            "DOC ideographLegalTraditional должен использовать Word-specific U+53C1 叁 для sequence number 3.");
+        Assert(
+            BuildSimpleListMarkers(0x22, "\0", 2, 1234)
+                .SequenceEqual(["壹仟貳佰叁拾肆", "壹仟貳佰叁拾伍"]),
+            "DOC ideographLegalTraditional должен использовать traditional legal digits и place units.");
+        Assert(
+            BuildSimpleListMarkers(0x22, "\0", 2, 999999)
+                .SequenceEqual(["玖拾玖萬玖仟玖佰玖拾玖", null]),
+            "DOC ideographLegalTraditional должен прекращать вывод после Word-limit 999999.");
+        Assert(
             BuildSimpleListMarkers(0x29, "\0", 2, 10)
                 .SequenceEqual(["일영", "일일"]),
             "DOC koreanDigital должен переводить decimal digits в Hangul digit set.");
@@ -5564,6 +5632,22 @@ internal static partial class Program
             BuildSimpleListMarkers(0x09, "\0", 2, 116)
                 .SequenceEqual([new string('§', 29), null]),
             "DOC chicago должен прекращать вывод после Word-limit 116.");
+        Assert(
+            BuildSimpleListMarkers(0x10, "\0", 2, 10)
+                .SequenceEqual(["壱拾", "壱拾壱"]),
+            "DOC japaneseLegal должен сохранять leading 壱 перед 拾.");
+        Assert(
+            BuildSimpleListMarkers(0x10, "\0", 2, 1005)
+                .SequenceEqual(["壱阡伍", "壱阡六"]),
+            "DOC japaneseLegal должен использовать 阡 и не синтезировать zero connector.");
+        Assert(
+            BuildSimpleListMarkers(0x10, "\0", 2, 100000000)
+                .SequenceEqual(["壱億", "壱億壱"]),
+            "DOC japaneseLegal должен использовать Word-specific 億 начиная со 100000000.");
+        Assert(
+            BuildSimpleListMarkers(0x10, "\0", 2, 217483647)
+                .SequenceEqual(["弐億壱阡七百四拾八萬参阡六百四拾七", null]),
+            "DOC japaneseLegal должен прекращать вывод после общего Word display ceiling 217483647.");
         Assert(
             BuildSimpleListMarkers(0x0B, "\0", 2, 10)
                 .SequenceEqual(["十", "十一"]),

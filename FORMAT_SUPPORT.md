@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.14
+Версия профиля: 1.9.15
 
 ## Ready for use
 
@@ -15,7 +15,7 @@ MYBOOK считает готовыми к обычному пользовате�
 | `.txt` | Обычный текст как preformatted document. |
 | `.md` | Markdown через фиксированный Markdig pipeline с advanced extensions. |
 | `.rtf` | Основной RTF reading profile: Unicode/codepages, font-level `cpg`/`fcharset` mappings, formatting, links/fields, tables/nesting, raster/vector pictures, Symbol/Mac/DBCS/PC/OEM charsets. |
-| `.doc` | Word 97–2003 Binary/CFB reading profile и RTF-файлы с расширением .doc; текст, стили, списки, таблицы, sections, notes, headers/footers, fields, images и поддерживаемый OfficeArt. Stateful MSONFC list numbering включает `koreanCounting` (`0x2A`) с sino-Korean `십/백/천/만` semantics и Word-limit 999999, `koreanLegal` (`0x2B`) с native Korean 1..99, переходом на Korean Counting от 100 и Word-limit 9999999, а также full-name `hindiCounting` (`0x34`, 1..9999), `thaiCounting` (`0x37`, 1..999999999) и `vietnameseCounting` (`0x38`, 1..1000). За подтверждёнными границами этих трёх counting-text профилей marker не синтезируется и modulo/restart не применяется. |
+| `.doc` | Word 97–2003 Binary/CFB reading profile и RTF-файлы с расширением .doc; текст, стили, списки, таблицы, sections, notes, headers/footers, fields, images и поддерживаемый OfficeArt. Stateful MSONFC list numbering включает CJK counting/legal profiles: `japaneseLegal` (`0x10`, до общего Word display ceiling 217483647, `壱/弐/参/伍`, `拾/百/阡/萬` и `億`), `taiwaneseCounting` (`0x21`) и `chineseCounting` (`0x25`) с `十` для 10..99 и positional `○一二三四五六七八九` начиная со 100, `ideographLegalTraditional` (`0x22`), `taiwaneseCountingThousand` (`0x23`), `chineseLegalSimplified` (`0x26`) и `chineseCountingThousand` (`0x27`) с Word-limit 999999 и Word-specific `叁`, `萬` и zero-connector semantics. Также поддерживаются `koreanCounting` (`0x2A`) с sino-Korean `십/백/천/만` semantics и Word-limit 999999, `koreanLegal` (`0x2B`) с native Korean 1..99, переходом на Korean Counting от 100 и Word-limit 9999999, full-name `hindiCounting` (`0x34`, 1..9999), `thaiCounting` (`0x37`, 1..999999999) и `vietnameseCounting` (`0x38`, 1..1000). За документированными или подтверждёнными границами marker не синтезируется и modulo/restart не применяется, если Word не определяет такой rollover явно. |
 | `.docx` | Word OpenXML flow document: styles, lists, tables, images, relationships, hyperlinks, bookmarks и section metadata. |
 | `.pdf` | PDF fixed-page reading profile: classic/xref streams, incremental updates, object streams, text/fonts, paths, images, links/outlines, encryption profiles и поддерживаемые stream filters. |
 | `.djvu` | DjVu fixed-page reading profile: single-page `FORM:DJVU`, legacy `FORM:PM44/BM44`, bundled и indirect DJVM containers; JB2/Smmr masks, IW44/JPEG backgrounds/foregrounds, FGbz palettes, compound composition, INFO rotation, NAVM outlines, shared/page ANTa/ANTz mapareas, print-only phead/pfoot, page-local METa/METz source metadata и presentation, selectable TXTa/TXTz text-zone overlay. |
