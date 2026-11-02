@@ -4941,6 +4941,161 @@ internal static partial class Program
                 .SequenceEqual(["One", "Two"]),
             "DOC parsed LVL en-US language должен управлять cardinalText marker formatting.");
 
+        var linkedTextPlfLst = plfLst.ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            linkedTextPlfLst.AsSpan(10, 2),
+            15);
+
+        var styleOnlyLvlTail = new List<byte>();
+        styleOnlyLvlTail.AddRange(BitConverter.GetBytes(1));
+        styleOnlyLvlTail.Add(0x06);
+        styleOnlyLvlTail.Add(0x00);
+        styleOnlyLvlTail.Add(0x01);
+        styleOnlyLvlTail.AddRange(new byte[8]);
+        styleOnlyLvlTail.Add(0x02);
+        styleOnlyLvlTail.AddRange(new byte[4]);
+        styleOnlyLvlTail.AddRange(new byte[4]);
+        styleOnlyLvlTail.Add(0x00);
+        styleOnlyLvlTail.Add(0x00);
+        styleOnlyLvlTail.Add(0x00);
+        styleOnlyLvlTail.Add(0x00);
+        styleOnlyLvlTail.AddRange(BitConverter.GetBytes((ushort)1));
+        styleOnlyLvlTail.AddRange(BitConverter.GetBytes((ushort)0));
+
+        var linkedTextListTables = DocDocumentReader.ReadListTables(
+            linkedTextPlfLst,
+            styleOnlyLvlTail.ToArray(),
+            plfLfo.ToArray());
+        Assert(
+            linkedTextListTables.ListsById[1234].Levels[0] is
+            {
+                NumberFormatCode: 0x06,
+                NumberTextLanguageId: null,
+                LinkedStyleIndex: 15
+            },
+            "DOC LSTF.rgistdPara должен сохранять linked style index соответствующего list level.");
+
+        var enUsListStyle =
+            new DocDocumentReader.DocStyle(
+                StyleIndex: 15,
+                Sti: 0,
+                Kind: 1,
+                BaseStyleIndex: 0x0FFF,
+                Name: "List Number",
+                ParagraphFormatting:
+                    new DocDocumentReader.DocParagraphFormatting
+                    {
+                        StyleIndex = 15
+                    },
+                CharacterFormatting:
+                    new DocDocumentReader.DocCharacterFormatting(),
+                HeadingLevel: 0,
+                CharacterLanguageId: 0x0409);
+        var enUsListStyles =
+            new Dictionary<ushort, DocDocumentReader.DocStyle>
+            {
+                [15] = enUsListStyle
+            };
+        var styleOnlyBlocks = DocDocumentReader.BuildParagraphs(
+            "A\rB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            linkedTextListTables,
+            enUsListStyles);
+        Assert(
+            styleOnlyBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["One", "Two"]),
+            "DOC textual numbering должен наследовать en-US LID из linked LSTF paragraph style.");
+
+        var unsupportedListStyle =
+            enUsListStyle with
+            {
+                CharacterLanguageId = 0x0809
+            };
+        var unsupportedListStyles =
+            new Dictionary<ushort, DocDocumentReader.DocStyle>
+            {
+                [15] = unsupportedListStyle
+            };
+        var linkedDirectTextTables = DocDocumentReader.ReadListTables(
+            linkedTextPlfLst,
+            textLvlTail.ToArray(),
+            plfLfo.ToArray());
+        var directOverrideBlocks = DocDocumentReader.BuildParagraphs(
+            "A\rB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            linkedDirectTextTables,
+            unsupportedListStyles);
+        Assert(
+            directOverrideBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["One", "Two"]),
+            "DOC LVL.grpprlChpx LID должен переопределять language linked list style.");
+
+        var unsupportedDirectLvlTail = textLvlTail.ToArray();
+        unsupportedDirectLvlTail[34] = 0x09;
+        unsupportedDirectLvlTail[35] = 0x08;
+        var unsupportedDirectTables = DocDocumentReader.ReadListTables(
+            linkedTextPlfLst,
+            unsupportedDirectLvlTail,
+            plfLfo.ToArray());
+        var unsupportedDirectBlocks = DocDocumentReader.BuildParagraphs(
+            "A\rB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            unsupportedDirectTables,
+            enUsListStyles);
+        Assert(
+            unsupportedDirectBlocks.Cast<DocumentParagraph>()
+                .All(paragraph => paragraph.ListMarkerText == null),
+            "DOC unsupported direct LVL LID должен переопределять en-US linked style без hidden fallback.");
+
+        var plainResetLvlTail = new List<byte>();
+        plainResetLvlTail.AddRange(BitConverter.GetBytes(1));
+        plainResetLvlTail.Add(0x06);
+        plainResetLvlTail.Add(0x00);
+        plainResetLvlTail.Add(0x01);
+        plainResetLvlTail.AddRange(new byte[8]);
+        plainResetLvlTail.Add(0x02);
+        plainResetLvlTail.AddRange(new byte[4]);
+        plainResetLvlTail.AddRange(new byte[4]);
+        plainResetLvlTail.Add(0x07);
+        plainResetLvlTail.Add(0x00);
+        plainResetLvlTail.Add(0x00);
+        plainResetLvlTail.Add(0x00);
+        plainResetLvlTail.AddRange(new byte[] { 0x73, 0x48, 0x09, 0x08 });
+        plainResetLvlTail.AddRange(new byte[] { 0x33, 0x2A, 0x00 });
+        plainResetLvlTail.AddRange(BitConverter.GetBytes((ushort)1));
+        plainResetLvlTail.AddRange(BitConverter.GetBytes((ushort)0));
+        var plainResetTables = DocDocumentReader.ReadListTables(
+            linkedTextPlfLst,
+            plainResetLvlTail.ToArray(),
+            plfLfo.ToArray());
+        Assert(
+            plainResetTables.ListsById[1234].Levels[0].NumberTextLanguageId == null,
+            "DOC LVL sprmCPlain должен сбрасывать ранее заданный direct number-text LID к linked style.");
+        var plainResetBlocks = DocDocumentReader.BuildParagraphs(
+            "A\rB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            plainResetTables,
+            enUsListStyles);
+        Assert(
+            plainResetBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["One", "Two"]),
+            "DOC LVL sprmCPlain должен возвращать textual numbering к en-US linked style language.");
+
         var plfLfoStartOverride = new List<byte>();
         plfLfoStartOverride.AddRange(BitConverter.GetBytes((uint)1));
         plfLfoStartOverride.AddRange(BitConverter.GetBytes(1234));
@@ -5085,6 +5240,57 @@ internal static partial class Program
                 .Select(paragraph => paragraph.ListMarkerText)
                 .SequenceEqual(["I) ", "II) "]),
             "DOC LFOLVL replacement LVL должен заменять list level formatting.");
+
+        var styledBaseList =
+            new DocDocumentReader.DocListDefinition(
+                4330,
+                true,
+                [
+                    new DocDocumentReader.DocListLevelDefinition(
+                        1,
+                        0x00,
+                        2,
+                        "\0",
+                        PlaceholderOffsets(1),
+                        false,
+                        false,
+                        0,
+                        LinkedStyleIndex: 15)
+                ]);
+        var styledReplacementLevel =
+            styledBaseList.Levels[0] with
+            {
+                NumberFormatCode = 0x06,
+                NumberTextLanguageId = null,
+                LinkedStyleIndex = null
+            };
+        var styledReplacementTables =
+            new DocDocumentReader.DocListTables(
+                new Dictionary<int, DocDocumentReader.DocListDefinition>
+                {
+                    [4330] = styledBaseList
+                },
+                [new DocDocumentReader.DocListOverrideDefinition(
+                    4330,
+                    new Dictionary<int, DocDocumentReader.DocListLevelOverride>
+                    {
+                        [0] = new DocDocumentReader.DocListLevelOverride(
+                            null,
+                            styledReplacementLevel)
+                    })]);
+        var styledReplacementBlocks = DocDocumentReader.BuildParagraphs(
+            "First\rSecond\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 6, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(6, 13, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            styledReplacementTables,
+            enUsListStyles);
+        Assert(
+            styledReplacementBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["One", "Two"]),
+            "DOC LFOLVL replacement LVL должен сохранять LSTF.rgistdPara link исходного level.");
 
         var numberedTables = new DocDocumentReader.DocListTables(
             new Dictionary<int, DocDocumentReader.DocListDefinition>
