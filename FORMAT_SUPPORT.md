@@ -1,6 +1,6 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.4
+Версия профиля: 1.9.5
 
 ## Ready for use
 
@@ -14,7 +14,7 @@ MYBOOK считает готовыми к обычному пользовате�
 | `.html`, `.htm` | Локальный HTML открывается напрямую через изолированное virtual-host mapping WebView2. |
 | `.txt` | Обычный текст как preformatted document. |
 | `.md` | Markdown через фиксированный Markdig pipeline с advanced extensions. |
-| `.rtf` | Основной RTF reading profile: Unicode/codepages, formatting, links/fields, tables/nesting, raster/vector pictures, Symbol charset и явно объявленные OEM codepages. |
+| `.rtf` | Основной RTF reading profile: Unicode/codepages, font-level `cpg`/`fcharset` mappings, formatting, links/fields, tables/nesting, raster/vector pictures, Symbol/Mac/DBCS/PC/OEM charsets. |
 | `.doc` | Word 97–2003 Binary/CFB reading profile и RTF-файлы с расширением .doc; текст, стили, списки, таблицы, sections, notes, headers/footers, fields, images и поддерживаемый OfficeArt. |
 | `.docx` | Word OpenXML flow document: styles, lists, tables, images, relationships, hyperlinks, bookmarks и section metadata. |
 | `.pdf` | PDF fixed-page reading profile: classic/xref streams, incremental updates, object streams, text/fonts, paths, images, links/outlines, encryption profiles и поддерживаемые stream filters. |
@@ -122,7 +122,7 @@ Regression покрывает container/DIRM/NAVM/text/annotation parsing, legac
 
 - Редкие row/cell и paragraph controls; row index/banding, last-row marker, table indent units и документированные Word table-look flags для borders/shading/font/color/best-fit, first/last row/column и banding уже сохраняются как metadata.
 - Scale без goal-size использует только явно сохранённую PNG/JPEG/BMP physical-density metadata; при её отсутствии размер не угадывается. Bitmap `wbmbitspixel`/`wbmplanes`/`wbmwidthbytes` сохраняются как metadata; `wbitmap`, `macpict` и OS/2 Presentation Manager metafile явно помечены unsupported до появления точных decoder'ов. Отрицательное picture crop-extension пока сохраняется без layout/canvas расширения.
-- Редкие charset/codepage combinations за пределами точных известных mappings.
+- Font-level `\cpgN` имеет приоритет над `\fcharsetN`. Реализованы все однозначные mappings RTF 1.9.1: ANSI, Mac Roman/Shift-JIS/Hangul/GB2312/Big5/Hebrew/Arabic/Greek/Turkish/Thai/Central European/Cyrillic, Windows Shift-JIS/Hangul/Johab/GB2312/Big5/Greek/Turkish/Vietnamese/Hebrew/Arabic/Baltic/Russian/Thai/Eastern European, PC437 и OEM850. `cpg42` и `fcharset2` используют Symbol private-use mapping. `fcharset1`, старый Mac Johab (`82`) и obsolete Arabic/Hebrew user charsets (`179..181`) без `cpg` отклоняются явно, потому что спецификация не задаёт для них однозначную codepage. Неизвестные charset не наследуют codepage документа. Multibyte decoder не создаёт replacement characters: поддерживаются raw/raw, escaped/escaped, escaped lead + raw trailing byte и escaped lead + escaped special byte; raw lead + escaped trail, incomplete lead и invalid trail отклоняются.
 - Некоторые декоративные border styles имеют CSS fallback, а не pixel-identical Word rendering.
 
 ### PDF

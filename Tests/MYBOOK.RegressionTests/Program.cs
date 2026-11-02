@@ -43,6 +43,7 @@ internal static partial class Program
             ("TXT reader", () => TestTextReader(temporaryDirectory)),
             ("Markdown reader", () => TestMarkdownReader(temporaryDirectory)),
             ("RTF reader", () => TestRtfReader(temporaryDirectory)),
+            ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
             ("DOC inline picture", TestDocInlinePicture),
