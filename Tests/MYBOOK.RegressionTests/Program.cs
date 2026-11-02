@@ -4898,6 +4898,49 @@ internal static partial class Program
             },
             "DOC PlfLst/LVL/PlfLfo должны сохранять simple bullet list definition.");
 
+        var textLvlTail = new List<byte>();
+        textLvlTail.AddRange(BitConverter.GetBytes(1));
+        textLvlTail.Add(0x06);
+        textLvlTail.Add(0x00);
+        textLvlTail.Add(0x01);
+        textLvlTail.AddRange(new byte[8]);
+        textLvlTail.Add(0x02);
+        textLvlTail.AddRange(new byte[4]);
+        textLvlTail.AddRange(new byte[4]);
+        textLvlTail.Add(0x08);
+        textLvlTail.Add(0x00);
+        textLvlTail.Add(0x00);
+        textLvlTail.Add(0x00);
+        textLvlTail.AddRange(new byte[] { 0x6D, 0x48, 0x09, 0x08 });
+        textLvlTail.AddRange(new byte[] { 0x73, 0x48, 0x09, 0x04 });
+        textLvlTail.AddRange(BitConverter.GetBytes((ushort)1));
+        textLvlTail.AddRange(BitConverter.GetBytes((ushort)0));
+
+        var textListTables = DocDocumentReader.ReadListTables(
+            plfLst.ToArray(),
+            textLvlTail.ToArray(),
+            plfLfo.ToArray());
+        Assert(
+            textListTables.ListsById[1234].Levels[0] is
+            {
+                NumberFormatCode: 0x06,
+                NumberTextLanguageId: 0x0409
+            },
+            "DOC LVL.grpprlChpx должен читать sprmCRgLid0_80/sprmCRgLid0 в порядке применения и сохранять последний LID number text.");
+
+        var textListBlocks = DocDocumentReader.BuildParagraphs(
+            "A\rB\r",
+            [
+                new DocDocumentReader.DocParagraphFormattingSpan(0, 2, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 }),
+                new DocDocumentReader.DocParagraphFormattingSpan(2, 4, new DocDocumentReader.DocParagraphFormatting { ListFormatOverrideRaw = 1, ListLevelRaw = 0 })
+            ],
+            textListTables);
+        Assert(
+            textListBlocks.Cast<DocumentParagraph>()
+                .Select(paragraph => paragraph.ListMarkerText)
+                .SequenceEqual(["One", "Two"]),
+            "DOC parsed LVL en-US language должен управлять cardinalText marker formatting.");
+
         var plfLfoStartOverride = new List<byte>();
         plfLfoStartOverride.AddRange(BitConverter.GetBytes((uint)1));
         plfLfoStartOverride.AddRange(BitConverter.GetBytes(1234));
@@ -5154,7 +5197,8 @@ internal static partial class Program
             byte formatCode,
             string numberText,
             byte followCharacter,
-            int startAt = 1)
+            int startAt = 1,
+            ushort? numberTextLanguageId = null)
         {
             const int listId = 5000;
             var definition = new DocDocumentReader.DocListDefinition(
@@ -5169,7 +5213,8 @@ internal static partial class Program
                         PlaceholderOffsets(1),
                         false,
                         false,
-                        0)
+                        0,
+                        numberTextLanguageId)
                 ]);
             var tables = new DocDocumentReader.DocListTables(
                 new Dictionary<int, DocDocumentReader.DocListDefinition>
@@ -5192,6 +5237,74 @@ internal static partial class Program
                 .ToArray();
         }
 
+        Assert(
+            BuildSimpleListMarkers(0x05, "\0", 2, 1, 0x0409)
+                .SequenceEqual(["1st", "2nd"]),
+            "DOC ordinal en-US должен использовать st/nd suffixes.");
+        Assert(
+            BuildSimpleListMarkers(0x05, "\0", 2, 11, 0x0409)
+                .SequenceEqual(["11th", "12th"]),
+            "DOC ordinal en-US должен использовать th для 11..13.");
+        Assert(
+            BuildSimpleListMarkers(0x05, "\0", 2, 21, 0x0409)
+                .SequenceEqual(["21st", "22nd"]),
+            "DOC ordinal en-US должен выбирать suffix по последним двум decimal digits.");
+        Assert(
+            BuildSimpleListMarkers(0x05, "\0", 2, 217483647, 0x0409)
+                .SequenceEqual(["217483647th", null]),
+            "DOC ordinal en-US должен прекращать вывод после общего Word display ceiling 217483647.");
+        Assert(
+            BuildSimpleListMarkers(0x05, "\0", 2)
+                .All(marker => marker == null),
+            "DOC ordinal без explicit LVL number-text LID не должен применять скрытый language fallback.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 1, 0x0809)
+                .All(marker => marker == null),
+            "DOC textual numbering с неподдерживаемым LID не должен использовать en-US spell-out.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 1, 0x0409)
+                .SequenceEqual(["One", "Two"]),
+            "DOC cardinalText en-US должен начинаться с English cardinal words.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 21, 0x0409)
+                .SequenceEqual(["Twenty-One", "Twenty-Two"]),
+            "DOC cardinalText en-US должен соединять tens и units дефисом.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 101, 0x0409)
+                .SequenceEqual(["One Hundred One", "One Hundred Two"]),
+            "DOC cardinalText en-US не должен вставлять and между hundreds и remainder.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 1234, 0x0409)
+                .SequenceEqual(["One Thousand Two Hundred Thirty-Four", "One Thousand Two Hundred Thirty-Five"]),
+            "DOC cardinalText en-US должен форматировать thousand group без locale fallback.");
+        Assert(
+            BuildSimpleListMarkers(0x06, "\0", 2, 999999, 0x0409)
+                .SequenceEqual(["Nine Hundred Ninety-Nine Thousand Nine Hundred Ninety-Nine", null]),
+            "DOC cardinalText en-US должен прекращать вывод после Word-limit 999999.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 1, 0x0409)
+                .SequenceEqual(["First", "Second"]),
+            "DOC ordinalText en-US должен использовать irregular First/Second forms.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 12, 0x0409)
+                .SequenceEqual(["Twelfth", "Thirteenth"]),
+            "DOC ordinalText en-US должен использовать irregular Twelfth form.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 21, 0x0409)
+                .SequenceEqual(["Twenty-First", "Twenty-Second"]),
+            "DOC ordinalText en-US должен изменять только последнее hyphenated word.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 100, 0x0409)
+                .SequenceEqual(["One Hundredth", "One Hundred First"]),
+            "DOC ordinalText en-US должен различать exact hundred и следующий cardinal remainder.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 1000, 0x0409)
+                .SequenceEqual(["One Thousandth", "One Thousand First"]),
+            "DOC ordinalText en-US должен изменять scale word только для exact thousand.");
+        Assert(
+            BuildSimpleListMarkers(0x07, "\0", 2, 999999, 0x0409)
+                .SequenceEqual(["Nine Hundred Ninety-Nine Thousand Nine Hundred Ninety-Ninth", null]),
+            "DOC ordinalText en-US должен прекращать вывод после Word-limit 999999.");
         Assert(
             BuildSimpleListMarkers(0x0F, "\0.", 1)
                 .SequenceEqual(["1. ", "2. "]),

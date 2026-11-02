@@ -9,10 +9,10 @@
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
         <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-        <Version>1.9.15</Version>
-        <AssemblyVersion>1.9.15.0</AssemblyVersion>
-        <FileVersion>1.9.15.0</FileVersion>
-        <InformationalVersion>1.9.15</InformationalVersion>
+        <Version>1.9.16</Version>
+        <AssemblyVersion>1.9.16.0</AssemblyVersion>
+        <FileVersion>1.9.16.0</FileVersion>
+        <InformationalVersion>1.9.16</InformationalVersion>
         <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     </PropertyGroup>
 
