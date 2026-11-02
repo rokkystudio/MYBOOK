@@ -59,6 +59,7 @@ internal static partial class Program
             ("DOC footnote tables", TestDocFootnoteTables),
             ("DOC endnote tables", TestDocEndnoteTables),
             ("DOC binary reader", () => TestDocBinaryReader(repositoryRoot)),
+            ("DOC fr-FR textual numbering", TestDocFrenchTextualNumbering),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
