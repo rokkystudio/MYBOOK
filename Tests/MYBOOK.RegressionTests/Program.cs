@@ -51,6 +51,7 @@ internal static partial class Program
             ("RTF field semantics", () => TestRtfFieldSemantics(temporaryDirectory)),
             ("RTF soft line height", () => TestRtfSoftLineHeight(temporaryDirectory)),
             ("RTF footnotes and endnotes", () => TestRtfFootnotesAndEndnotes(temporaryDirectory)),
+            ("RTF note settings", () => TestRtfNoteSettings(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
