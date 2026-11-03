@@ -55,6 +55,7 @@ internal static partial class Program
             ("RTF revision tracking", () => TestRtfRevisionTracking(temporaryDirectory)),
             ("RTF property revisions", () => TestRtfPropertyRevisions(temporaryDirectory)),
             ("RTF revision save IDs", () => TestRtfRevisionSaveIds(temporaryDirectory)),
+            ("RTF revision conflicts", () => TestRtfRevisionConflicts(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),

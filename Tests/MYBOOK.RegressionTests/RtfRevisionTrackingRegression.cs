@@ -44,19 +44,6 @@ internal static partial class Program
             }
         }
 
-        bool RejectsUnsupported(string source)
-        {
-            try
-            {
-                Read(source);
-                return false;
-            }
-            catch (NotSupportedException)
-            {
-                return true;
-            }
-        }
-
         static int Dttm(
             int year,
             int month,
@@ -328,8 +315,8 @@ internal static partial class Program
             "RTF malformed revision metadata должен завершаться structural error.");
 
         Assert(
-            RejectsUnsupported(
+            RejectsInvalid(
                 "{\\rtf1\\ansi{\\*\\revtbl{A\\'00B;}} X\\par}"),
-            "RTF revtbl conflict/binary author entry должен оставаться explicit unsupported.");
+            "RTF malformed revtbl conflict entry должен завершаться structural error.");
     }
 }
