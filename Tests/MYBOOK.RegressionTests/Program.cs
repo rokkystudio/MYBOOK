@@ -53,6 +53,7 @@ internal static partial class Program
             ("RTF footnotes and endnotes", () => TestRtfFootnotesAndEndnotes(temporaryDirectory)),
             ("RTF note settings", () => TestRtfNoteSettings(temporaryDirectory)),
             ("RTF revision tracking", () => TestRtfRevisionTracking(temporaryDirectory)),
+            ("RTF property revisions", () => TestRtfPropertyRevisions(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
