@@ -45,6 +45,7 @@ internal static partial class Program
             ("RTF reader", () => TestRtfReader(temporaryDirectory)),
             ("RTF Unicode alternatives", () => TestRtfUnicodeAlternatives(temporaryDirectory)),
             ("RTF binary picture data", () => TestRtfBinaryPictures(temporaryDirectory)),
+            ("RTF flow breaks", () => TestRtfFlowBreaks(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
