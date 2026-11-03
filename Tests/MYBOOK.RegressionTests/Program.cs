@@ -50,6 +50,7 @@ internal static partial class Program
             ("RTF Unicode special characters", () => TestRtfUnicodeSpecialCharacters(temporaryDirectory)),
             ("RTF field semantics", () => TestRtfFieldSemantics(temporaryDirectory)),
             ("RTF soft line height", () => TestRtfSoftLineHeight(temporaryDirectory)),
+            ("RTF footnotes and endnotes", () => TestRtfFootnotesAndEndnotes(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
