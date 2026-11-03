@@ -116,6 +116,7 @@ internal static partial class Program
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
             ("PDF TIFF and PNG predictors", () => TestPdfPredictors(temporaryDirectory)),
+            ("PDF xref stream filters", () => TestPdfXrefStreamFilters(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),
             (".doc corpus dispatch", () => TestDocCorpusDispatch(repositoryRoot)),
             ("Supported corpus smoke", () => TestSupportedCorpusSmoke(repositoryRoot))
