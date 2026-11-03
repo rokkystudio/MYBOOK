@@ -9,10 +9,10 @@ namespace MYBOOK.RegressionTests;
 internal static partial class Program
 {
     /// <summary>
-    /// Проверяет automatic RTF footnotes/endnotes: \chftn anchors,
-    /// \footnote/\ftnalt destinations, независимые start counters,
-    /// note-tail blocks, cached formatting и строгий отказ от профилей,
-    /// которые требуют custom marks, restart или non-Arabic numbering.
+    /// Проверяет automatic и custom RTF footnotes/endnotes: \chftn,
+    /// preceding-character marks, \footnote/\ftnalt destinations,
+    /// независимые counters, note-tail blocks, formatting и строгий отказ
+    /// от restart/non-Arabic/table профилей без точной neutral semantics.
     /// </summary>
     private static void TestRtfFootnotesAndEndnotes(string directory)
     {
@@ -182,15 +182,98 @@ internal static partial class Program
             fieldInline.FieldInstruction == "PAGE",
             "RTF field semantics внутри footnote destination должны сохраняться.");
 
+        var custom =
+            Read(
+                """
+                {\rtf1\ansi
+                Custom \b*{\footnote \pard\plain * Custom footnote\par}\b0
+                 End \u8224?{\footnote\ftnalt \pard\plain \u8224? Custom endnote\par}
+                 Auto \chftn{\footnote \pard\plain \chftn Automatic one\par}
+                 Next \chftn{\footnote \pard\plain \chftn Automatic two\par}\par}
+                """);
+
+        var customMain =
+            custom.Blocks
+                .OfType<DocumentParagraph>()
+                .First(paragraph => !paragraph.IsNote);
+        var customReferences =
+            customMain.Inlines
+                .Where(inline =>
+                    inline.LinkHref?.StartsWith(
+                        "#rtf-",
+                        StringComparison.Ordinal) == true)
+                .ToArray();
+
+        Assert(
+            customReferences.Length == 4 &&
+            customReferences[0].Text == "*" &&
+            customReferences[0].LinkHref == "#rtf-footnote-1" &&
+            customReferences[0].Bold &&
+            !customReferences[0].Superscript &&
+            customReferences[1].Text == "\u2020" &&
+            customReferences[1].LinkHref == "#rtf-endnote-2" &&
+            !customReferences[1].Superscript &&
+            customReferences[2].Text == "1" &&
+            customReferences[2].LinkHref == "#rtf-footnote-3" &&
+            customReferences[2].Superscript &&
+            customReferences[3].Text == "2" &&
+            customReferences[3].LinkHref == "#rtf-footnote-4" &&
+            customReferences[3].Superscript,
+            "RTF custom note marks должны сохранять исходный символ/style и не менять automatic counters.");
+
+        var customNotes =
+            custom.Blocks
+                .OfType<DocumentParagraph>()
+                .Where(paragraph =>
+                    paragraph.IsNote &&
+                    paragraph.AnchorId == null &&
+                    paragraph.Inlines.Count > 0)
+                .ToArray();
+
+        Assert(
+            customNotes.Length == 4 &&
+            string.Concat(customNotes[0].Inlines.Select(inline => inline.Text))
+                .Contains(
+                    "* Custom footnote",
+                    StringComparison.Ordinal) &&
+            string.Concat(customNotes[1].Inlines.Select(inline => inline.Text))
+                .Contains(
+                    "\u2020 Custom endnote",
+                    StringComparison.Ordinal) &&
+            string.Concat(customNotes[2].Inlines.Select(inline => inline.Text))
+                .Contains(
+                    "1Automatic one",
+                    StringComparison.Ordinal) &&
+            string.Concat(customNotes[3].Inlines.Select(inline => inline.Text))
+                .Contains(
+                    "2Automatic two",
+                    StringComparison.Ordinal),
+            "RTF custom note body не должен получать синтезированный marker, automatic body должен использовать counter.");
+
+        var customHtml =
+            DocumentHtmlRenderer.Render(
+                custom,
+                CreateRenderTheme());
+
+        AssertContains(
+            customHtml,
+            "href=\"#anchor-rtf-footnote-1\"",
+            "RTF custom footnote reference HTML");
+        AssertContains(
+            customHtml,
+            "href=\"#anchor-rtf-endnote-2\"",
+            "RTF custom endnote reference HTML");
+
         Assert(
             RejectsInvalid(@"{\rtf1\ansi A\chftn B\par}") &&
             RejectsInvalid(@"{\rtf1\ansi A\chftn\chftn{\footnote X\par}}") &&
             RejectsInvalid(@"{\rtf1\ansi A\ftnalt\par}") &&
-            RejectsInvalid(@"{\rtf1\ansi A\chftn{\footnote X\ftnalt Y\par}}"),
-            "RTF malformed automatic note structure должен завершаться structural error.");
+            RejectsInvalid(@"{\rtf1\ansi A\chftn{\footnote X\ftnalt Y\par}}") &&
+            RejectsInvalid(@"{\rtf1\ansi{\footnote X\par}}") &&
+            RejectsInvalid(@"{\rtf1\ansi A*{\footnote\chftn X\par}}"),
+            "RTF malformed automatic/custom note structure должен завершаться structural error.");
 
         Assert(
-            RejectsUnsupported(@"{\rtf1\ansi A{\footnote Custom\par}}") &&
             RejectsUnsupported(
                 @"{\rtf1\ansi\ftnrestart A\chftn{\footnote \chftn X\par}}") &&
             RejectsUnsupported(
@@ -202,7 +285,9 @@ internal static partial class Program
             RejectsUnsupported(
                 @"{\rtf1\ansi\aftnnruc A\chftn{\footnote\ftnalt \chftn X\par}}") &&
             RejectsUnsupported(
-                @"{\rtf1\ansi A\chftn{\footnote\trowd\cellx1000\intbl Cell\cell\row}}"),
-            "RTF custom/restart/non-Arabic/table note profiles должны оставаться explicit unsupported.");
+                @"{\rtf1\ansi A\chftn{\footnote\trowd\cellx1000\intbl Cell\cell\row}}") &&
+            RejectsUnsupported(
+                @"{\rtf1\ansi{\field{\*\fldinst HYPERLINK ""https://example.com""}{\fldrslt Link*}}{\footnote Custom\par}}"),
+            "RTF field/hyperlink custom marks и restart/non-Arabic/table note profiles должны оставаться explicit unsupported.");
     }
 }
