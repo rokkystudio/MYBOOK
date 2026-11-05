@@ -58,6 +58,7 @@ internal static partial class Program
             ("RTF revision conflicts", () => TestRtfRevisionConflicts(temporaryDirectory)),
             ("RTF old properties", () => TestRtfOldProperties(temporaryDirectory)),
             ("RTF invisible row widths", () => TestRtfInvisibleRowWidths(temporaryDirectory)),
+            ("RTF compared table cells", () => TestRtfComparedTableCells(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
