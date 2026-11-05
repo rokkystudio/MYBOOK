@@ -70,6 +70,7 @@ internal static partial class Program
             ("RTF basic row measurements", () => TestRtfBasicRowMeasurements(temporaryDirectory)),
             ("RTF table direction", () => TestRtfTableDirection(temporaryDirectory)),
             ("RTF table projection", () => TestRtfTableProjection(temporaryDirectory)),
+            ("RTF table indent", () => TestRtfTableIndent(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
@@ -742,8 +743,15 @@ internal static partial class Program
             table.Rows[0].RowIndex == 0 &&
             table.Rows[0].BandIndex == 0 &&
             table.Rows[0].IsLastRow == null &&
-            table.Rows[0].TableIndentValue == 720 &&
-            table.Rows[0].TableIndentUnit == 3 &&
+            table.Rows[0].TableIndent is
+            {
+                SourceValue: 720,
+                SourceUnit: 3,
+                Value: 720,
+                Unit: 3,
+                Points: null,
+                Percent: 14.4
+            } &&
             table.Rows[0].LookBorder == true &&
             table.Rows[0].LookShading == true &&
             table.Rows[0].LookFont == true &&
