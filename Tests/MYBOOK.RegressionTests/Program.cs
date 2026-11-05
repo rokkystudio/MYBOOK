@@ -69,6 +69,7 @@ internal static partial class Program
             ("RTF row cell spacing", () => TestRtfRowCellSpacing(temporaryDirectory)),
             ("RTF basic row measurements", () => TestRtfBasicRowMeasurements(temporaryDirectory)),
             ("RTF table direction", () => TestRtfTableDirection(temporaryDirectory)),
+            ("RTF table projection", () => TestRtfTableProjection(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
