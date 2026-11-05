@@ -64,6 +64,7 @@ internal static partial class Program
             ("RTF positioned wrapped tables", () => TestRtfPositionedWrappedTables(temporaryDirectory)),
             ("RTF outer row spacing and padding", () => TestRtfOuterRowSpacingPadding(temporaryDirectory)),
             ("RTF cell spacing overrides", () => TestRtfCellSpacingOverrides(temporaryDirectory)),
+            ("RTF cell padding overrides", () => TestRtfCellPaddingOverrides(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
