@@ -20,6 +20,8 @@ namespace MYBOOK.RegressionTests;
 
 /// <summary>
 /// Запускает автономные regression-тесты readers без WPF-окон и WebView2.
+/// Второй аргумент командной строки необязательно выбирает один тест по точному
+/// имени; без него выполняется полный regression suite.
 /// </summary>
 internal static partial class Program
 {
@@ -61,6 +63,7 @@ internal static partial class Program
             ("RTF compared table cells", () => TestRtfComparedTableCells(temporaryDirectory)),
             ("RTF positioned wrapped tables", () => TestRtfPositionedWrappedTables(temporaryDirectory)),
             ("RTF outer row spacing and padding", () => TestRtfOuterRowSpacingPadding(temporaryDirectory)),
+            ("RTF cell spacing overrides", () => TestRtfCellSpacingOverrides(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
@@ -133,11 +136,28 @@ internal static partial class Program
             ("Supported corpus smoke", () => TestSupportedCorpusSmoke(repositoryRoot))
         };
 
+        var selectedTests =
+            args.Length > 1
+                ? tests
+                    .Where(test =>
+                        string.Equals(
+                            test.Name,
+                            args[1],
+                            StringComparison.OrdinalIgnoreCase))
+                    .ToArray()
+                : tests;
+
+        if (selectedTests.Length == 0)
+        {
+            throw new ArgumentException(
+                $"Неизвестный regression test: {args[1]}");
+        }
+
         var failures = 0;
 
         try
         {
-            foreach (var test in tests)
+            foreach (var test in selectedTests)
             {
                 try
                 {
@@ -167,7 +187,7 @@ internal static partial class Program
         }
 
         Console.WriteLine(
-            $"RESULT passed={tests.Length - failures} failed={failures}");
+            $"RESULT passed={selectedTests.Length - failures} failed={failures}");
 
         return failures == 0
             ? 0
