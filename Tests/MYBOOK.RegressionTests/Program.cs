@@ -71,6 +71,7 @@ internal static partial class Program
             ("RTF table direction", () => TestRtfTableDirection(temporaryDirectory)),
             ("RTF table projection", () => TestRtfTableProjection(temporaryDirectory)),
             ("RTF table indent", () => TestRtfTableIndent(temporaryDirectory)),
+            ("RTF table look", () => TestRtfTableLook(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
