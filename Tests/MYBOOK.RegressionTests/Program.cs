@@ -76,6 +76,7 @@ internal static partial class Program
             ("RTF row pagination", () => TestRtfRowPagination(temporaryDirectory)),
             ("RTF row AutoFit", () => TestRtfRowAutoFit(temporaryDirectory)),
             ("RTF table style handle", () => TestRtfTableStyleHandle(temporaryDirectory)),
+            ("RTF applied table style", () => TestRtfAppliedTableStyle(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
