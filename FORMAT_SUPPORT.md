@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.61
+Версия профиля: 1.9.62
 
 ## Ready for use
+
+RTF table-style direction: `taprtl` сохраняет nullable `TableRightToLeft` (`true` только при явном flag) отдельно от nullable row-cell `RightToLeft`, задаваемого `rtlrow` (`true`) и `ltrrow` (`false`). Без controls оба свойства остаются `null`; последнее `rtlrow/ltrrow` определяет source row direction. Все flags требуют отсутствия numeric parameter. Base и conditional table-style entries имеют независимые direction values; nested destinations и catalog formatting не влияют на body table direction.
 
 RTF `stylesheet` сохраняет table-style row layout в `DocumentTableStyleRowFormatting`: nullable `Alignment` (`trql/trqc/trqr`), nullable `AutoFit` (`trautofit0/1`), `RepeatAsHeader` (`trhdr`), `PreventPageSplit` (`trkeep`) и `KeepWithNext` (`trkeepfollow`). Контрольные слова валидируются по source grammar, повторный alignment использует последнее значение. Каталог не применяет formatting к body.
 
