@@ -1,10 +1,12 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.60
+Версия профиля: 1.9.61
 
 ## Ready for use
 
 RTF `stylesheet` сохраняет table-style row layout в `DocumentTableStyleRowFormatting`: nullable `Alignment` (`trql/trqc/trqr`), nullable `AutoFit` (`trautofit0/1`), `RepeatAsHeader` (`trhdr`), `PreventPageSplit` (`trkeep`) и `KeepWithNext` (`trkeepfollow`). Контрольные слова валидируются по source grammar, повторный alignment использует последнее значение. Каталог не применяет formatting к body.
+
+RTF table-style row geometry: `trleftN`, `trgaphN` и `trrhN` сохраняются независимо в `DocumentTableStyleRowFormatting` как source twips и nullable points. `trgaph` обозначает половину межъячеечного интервала, `trrh0` — auto height, положительный `trrh` — minimum height, отрицательный — exact height. `HeightExact` остаётся null без `trrh`; отрицательная высота переводится в положительные points с сохранением signed twips. Numeric parameters требуют signed Int32; переполнение и minus без цифр приводят к `InvalidDataException`. Style geometry не влияет на body rows.
 
 MYBOOK считает готовыми к обычному пользовательскому чтению все форматы,
 которые присутствуют в `SupportedFormatRegistry`:

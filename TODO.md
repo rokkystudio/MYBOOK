@@ -2,7 +2,9 @@
 
 RTF table-style catalog: `DocumentTableStyleRowFormatting` сохраняет nullable `Alignment` (`trql/trqc/trqr`, последнее значение), nullable `AutoFit` (`trautofit0/1`) и независимые pagination flags `trhdr/trkeep/trkeepfollow`. Parameterless flags отклоняют numeric parameters, AutoFit принимает только 0/1. Source row layout не применяется к body table; отсутствие controls остаётся null/false.
 
-Текущая версия: 1.9.60
+RTF table-style row geometry: `trleftN` сохраняет nullable `LeftOffsetTwips/LeftOffsetPoints`, `trgaphN` — nullable `CellGapTwips/CellGapPoints` (half-gap), `trrhN` — nullable `HeightTwips/HeightPoints/HeightExact`. Height = 0 означает Auto, положительный — minimum, отрицательный — exact с absolute points. Missing controls остаются null, repeated controls используют последнее source значение. Общий RTF tokenizer читает полный signed Int32 диапазон, включая `-2147483648`, и отклоняет overflow или `-` без digits. Геометрия stylesheet не применяется к body rows.
+
+Текущая версия: 1.9.61
 
 Версионирование релизных шагов: начиная с 1.9.1, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.9.2, 1.9.3 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
 
