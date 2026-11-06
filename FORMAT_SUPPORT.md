@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.62
+Версия профиля: 1.9.63
 
 ## Ready for use
+
+RTF table-style row cell spacing сохраняет `trspdt/trspdr/trspdb/trspdl` и соответствующие `trspdft/trspdfr/trspdfb/trspdfl` в `DocumentTableStyleRowFormatting.CellSpacing` без вычисления table-style cascade. Для каждой стороны сохраняются nullable `Value`, `Unit`, `Points`: unit 0 = Null (spacing игнорируется), unit 3 = twips (points = value/20). Значение и единица могут присутствовать по отдельности, repeated controls сохраняют последние source значения. Numeric controls обязательны к параметризации signed Int32, unit принимает только 0 или 3. Conditional entries не перезаписывают base entry и не влияют на body table row spacing.
 
 RTF table-style direction: `taprtl` сохраняет nullable `TableRightToLeft` (`true` только при явном flag) отдельно от nullable row-cell `RightToLeft`, задаваемого `rtlrow` (`true`) и `ltrrow` (`false`). Без controls оба свойства остаются `null`; последнее `rtlrow/ltrrow` определяет source row direction. Все flags требуют отсутствия numeric parameter. Base и conditional table-style entries имеют независимые direction values; nested destinations и catalog formatting не влияют на body table direction.
 
