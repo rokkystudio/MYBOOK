@@ -1,6 +1,8 @@
 # MYBOOK TODO
 
-Текущая версия: 1.9.59
+RTF table-style catalog: `DocumentTableStyleRowFormatting` сохраняет nullable `Alignment` (`trql/trqc/trqr`, последнее значение), nullable `AutoFit` (`trautofit0/1`) и независимые pagination flags `trhdr/trkeep/trkeepfollow`. Parameterless flags отклоняют numeric parameters, AutoFit принимает только 0/1. Source row layout не применяется к body table; отсутствие controls остаётся null/false.
+
+Текущая версия: 1.9.60
 
 Версионирование релизных шагов: начиная с 1.9.1, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.9.2, 1.9.3 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
 

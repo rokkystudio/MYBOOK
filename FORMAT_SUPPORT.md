@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.59
+Версия профиля: 1.9.60
 
 ## Ready for use
+
+RTF `stylesheet` сохраняет table-style row layout в `DocumentTableStyleRowFormatting`: nullable `Alignment` (`trql/trqc/trqr`), nullable `AutoFit` (`trautofit0/1`), `RepeatAsHeader` (`trhdr`), `PreventPageSplit` (`trkeep`) и `KeepWithNext` (`trkeepfollow`). Контрольные слова валидируются по source grammar, повторный alignment использует последнее значение. Каталог не применяет formatting к body.
 
 MYBOOK считает готовыми к обычному пользовательскому чтению все форматы,
 которые присутствуют в `SupportedFormatRegistry`:
