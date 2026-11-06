@@ -78,6 +78,7 @@ internal static partial class Program
             ("RTF table style handle", () => TestRtfTableStyleHandle(temporaryDirectory)),
             ("RTF applied table style", () => TestRtfAppliedTableStyle(temporaryDirectory)),
             ("RTF table style catalog", () => TestRtfTableStyleCatalog(temporaryDirectory)),
+            ("RTF table style formatting", () => TestRtfTableStyleFormatting(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
