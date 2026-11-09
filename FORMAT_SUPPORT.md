@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.65
+Версия профиля: 1.9.66
 
 ## Ready for use
+
+RTF table-style positioning/wrapping сохраняется в `DocumentTableStyleRowFormatting.Positioning` как source metadata: horizontal frames `tphcol/tphmrg/tphpg`, placements `tposx/tposnegx/tposxc/tposxi/tposxo/tposxl/tposxr`, vertical frames `tpvmrg/tpvpg/tpvpara`, placements `tposy/tposnegy/tposyt/tposyil/tposyb/tposyc/tposyin/tposyout`, text distances `tdfrmtxtLeft/Right/Top/Bottom` и parameterless `tabsnoovrlp`. Nullable frames, source position kinds, signed Int32 twips и computed points сохраняют отличие отсутствующего control от явного значения 0; в отличие от body `DocumentTablePositioning` не выставляются effective defaults. Повторные positions используют последнее значение, flags очищают предшествующий numeric offset на своей оси. Неверные параметры отклоняются. Conditional styles сохраняют независимые позиции; catalog не применяется к body и не выполняет visual wrapping.
 
 RTF outer row padding table styles: `trpadot/trpador/trpadob/trpadol` и `trpadoft/trpadofr/trpadofb/trpadofl` представлены в `DocumentTableStyleRowFormatting.OuterPadding` как source measurements по четырём сторонам крайних ячеек таблицы. `Value` и `Unit` nullable и сохраняются независимо; unit 0 означает Null/fallback к `trgaph`, unit 3 — twips и points (`value / 20`). Неизвестные units и отсутствующие numeric parameters отклоняются, repeated controls используют последние values, conditional style entries не перезаписывают base entry. Catalog formatting не применяется к body таблицам.
 
