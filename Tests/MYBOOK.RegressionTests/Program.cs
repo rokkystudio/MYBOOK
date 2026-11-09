@@ -120,6 +120,7 @@ internal static partial class Program
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
             ("DOCX hierarchical outlines", () => TestDocxOutlines(temporaryDirectory)),
             ("DOCX numbering sequences", () => TestDocxNumbering(temporaryDirectory)),
+            ("DOCX core properties", () => TestDocxCoreProperties(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu indirect DJVM", () => TestDjvuIndirectDocument(temporaryDirectory)),
