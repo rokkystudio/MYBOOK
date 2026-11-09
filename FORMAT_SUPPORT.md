@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.16.7
+Версия профиля: 1.16.8
 
 ## Ready for use
+
+DOCX hierarchical outlines: `DocxDocumentReader` формирует `DocumentModel.Outlines` из заголовков основного `word/document.xml` в порядке документа. Встроенные paragraph styles `Heading1`…`Heading9`, их потомки через `basedOn`, явный `w:pPr/w:outlineLvl` и `w:style/w:pPr/w:outlineLvl` определяют уровни 1–9; `outlineLvl` 0–8 означает Heading1–9, 9 — явное отсутствие заголовка и блокирует наследование. Прямой уровень абзаца имеет приоритет над стилем. Оглавление вложено по ближайшему предыдущему меньшему уровню; пропуски уровней не порождают вымышленных записей. Source `bookmarkStart@name` задаёт `TargetAnchorId`, а заголовкам без bookmark выделяются стабильные `docx-heading-N` без конфликтов с любыми bookmark names в документе. Заголовки в таблицах, колонтитулах, сносках и пустые заголовки не входят в outline. Неподдерживаемые `outlineLvl` отклоняются `InvalidDataException`. Синтетические DOCX regression fixtures проверяют структуру, Word styles, наследование, source/synthetic anchors, HTML-переходы и invalid levels. Общий набор регрессий запускается с `--no-books`, без обращения к каталогу Books.
 
 FB2 section outlines: `Fb2DocumentReader` формирует `DocumentModel.Outlines` из `title` основного `body` и вложенных `section`, сохраняя порядок исходных глав и их родительско-дочернюю иерархию. Названия из нескольких `title/p` объединяются с нормализацией whitespace и сохраняют текст inline formatting; исходные `title@id`, `section@id`, `body@id` служат `TargetAnchorId`. Для заголовков без доступного ID создаются воспроизводимые `fb2-heading-N`; все source XML IDs зарезервированы, чтобы synthetic anchors не конфликтовали с ними, включая ID, встречающиеся позднее в документе. Вложенные sections без собственного `title` не создают пустых пунктов, а их озаглавленные дочерние sections доступны в ближайшем существующем уровне. `body name="notes"` и декоративные `poem`/`epigraph` titles не создают outline entries; сами блоки продолжают читаться. Автономная FB2 regression проверяет дерево, отдельные body, collisions, deterministic anchors и наличие целевых HTML-якорей. Регрессионный suite запускается с `--no-books`, без обращения к `Books`.
 

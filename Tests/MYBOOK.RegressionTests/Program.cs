@@ -118,6 +118,7 @@ internal static partial class Program
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
+            ("DOCX hierarchical outlines", () => TestDocxOutlines(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu indirect DJVM", () => TestDjvuIndirectDocument(temporaryDirectory)),
