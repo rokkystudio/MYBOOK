@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.67
+Версия профиля: 1.16.0
 
 ## Ready for use
+
+RTF table-style look flags: все 11 parameterless `tbllkborder`, `tbllkshading`, `tbllkfont`, `tbllkcolor`, `tbllkbestfit`, `tbllkhdrrows`, `tbllklastrow`, `tbllkhdrcols`, `tbllklastcol`, `tbllknorowband` и `tbllknocolband` сохраняются как nullable `DocumentTableStyleRowFormatting.Look` с типом `DocumentTableLook`. Присутствующий flag даёт `true`, отсутствующий — `null`, а полностью отсутствующий набор — `null Look`. Numeric parameters отклоняются. Повторные flags не меняют source presence; base/conditional entries с одинаковым `tsN` и nested destinations независимы. Body `DocumentTable.Look` и HTML metadata вычисляются исключительно из body row controls; table-style look не применяется к body table и не эмулирует автоформатирование.
 
 RTF table-style indentation: `tblindN` и `tblindtypeN` сохраняются в `DocumentTableStyleRowFormatting.Indent` как nullable source `Value` и `Unit` без body defaults. Unit 0 (Auto) и 2 (Nil) не задают derived величину; unit 1 (dxa/twips) даёт `Points = Value / 20`, unit 3 (pct) — `Percent = Value / 50` только при наличии обоих source параметров. Неизвестный unit сохраняется без интерпретации, incomplete declarations остаются nullable, повторные controls используют последнее значение. Numeric parameters обязательны и допускают signed Int32. Base/conditional entries, nested groups и body tables независимы; stylesheet indentation не применяется к body layout.
 

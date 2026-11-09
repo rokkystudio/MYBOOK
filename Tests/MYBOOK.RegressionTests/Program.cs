@@ -88,6 +88,7 @@ internal static partial class Program
             ("RTF table style row outer padding", () => TestRtfTableStyleRowOuterPadding(temporaryDirectory)),
             ("RTF table style positioning", () => TestRtfTableStylePositioning(temporaryDirectory)),
             ("RTF table style indentation", () => TestRtfTableStyleIndent(temporaryDirectory)),
+            ("RTF table style look flags", () => TestRtfTableStyleLook(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),

@@ -1,5 +1,7 @@
 # MYBOOK TODO
 
+RTF table-style look flags: `DocumentTableStyleRowFormatting.Look` хранит 11 независимых nullable `tbllk*` source flags: Border, Shading, Font, Color, BestFit, HeaderRows, LastRow, HeaderColumns, LastColumn, NoRowBand и NoColumnBand. Каждый parameterless control устанавливает `true`, отсутствие остаётся `null`. Полностью отсутствующие flags дают `null Look`; повторные объявления, conditional `tsN` и nested destinations не смешивают значения. Numeric parameters отклоняются, каталог не влияет на body `DocumentTable.Look` и HTML.
+
 RTF table-style indentation: `DocumentTableStyleRowFormatting.Indent` сохраняет независимые nullable source `tblindN` (`Value`) и `tblindtypeN` (`Unit`). Для dxa/unit 1 вычисляется `Points = Value / 20`, для pct/unit 3 — `Percent = Value / 50`, только если оба controls заданы. Auto/unit 0 и Nil/unit 2 сохраняют исходное значение без derived величины; неизвестный unit не получает default dxa. Incomplete и repeated controls сохраняют source state, включая signed Int32 boundaries. Требуется numeric parameter; conditional entries и nested destinations изолированы; catalog не влияет на body table indentation.
 
 RTF table-style row positioning/wrapping: `DocumentTableStyleRowFormatting.Positioning` сохраняет source-only `tphcol/tphmrg/tphpg`, `tposx/tposnegx/tposxc/tposxi/tposxo/tposxl/tposxr`, `tpvmrg/tpvpg/tpvpara`, `tposy/tposnegy/tposyt/tposyil/tposyb/tposyc/tposyin/tposyout`, четыре `tdfrmtxtLeft/Right/Top/Bottom` и `tabsnoovrlp`. Nullable reference frames, position kinds и signed Int32 offsets/distances в twips не получают body defaults; points вычисляются только из присутствующих значений (twips / 20). `tposnegx/tposnegy` сохраняют отдельный negative-offset kind. Числовые `tpos*`/`tdfrmtxt*` требуют signed Int32, placement/reference/overlap flags отклоняют numeric parameters. Последний position control в каждой оси имеет приоритет; placement flag очищает предыдущий offset. Base/conditional entries с одинаковым `tsN` и nested destinations независимы; stylesheet positioning не применяется к body tables и не имитирует page layout или text wrapping.
@@ -16,9 +18,9 @@ RTF table-style row geometry: `trleftN` сохраняет nullable `LeftOffsetT
 
 RTF table-style direction: `taprtl` сохраняется как nullable `DocumentTableStyleRowFormatting.TableRightToLeft` (`true` при явном flag, `null` без него). `rtlrow`/`ltrrow` независимо задают nullable `RightToLeft` для порядка ячеек строки (`true`/`false`/`null`); повторные row controls используют последнее значение. Все три flags отклоняют numeric parameters. Base/conditional `tsN` entries сохраняют собственные значения, nested destinations не влияют на source state; форматирование каталога не применяется к body tables.
 
-Текущая версия: 1.9.67
+Текущая версия: 1.16.0
 
-Версионирование релизных шагов: начиная с 1.9.1, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.9.2, 1.9.3 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
+Версионирование релизных шагов: текущая ветка начинается с 1.16.0, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.16.1, 1.16.2 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 
