@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.64
+Версия профиля: 1.9.65
 
 ## Ready for use
+
+RTF outer row padding table styles: `trpadot/trpador/trpadob/trpadol` и `trpadoft/trpadofr/trpadofb/trpadofl` представлены в `DocumentTableStyleRowFormatting.OuterPadding` как source measurements по четырём сторонам крайних ячеек таблицы. `Value` и `Unit` nullable и сохраняются независимо; unit 0 означает Null/fallback к `trgaph`, unit 3 — twips и points (`value / 20`). Неизвестные units и отсутствующие numeric parameters отклоняются, repeated controls используют последние values, conditional style entries не перезаписывают base entry. Catalog formatting не применяется к body таблицам.
 
 RTF table-style outer row cell spacing сохраняет `trspot/trspor/trspob/trspol` и units `trspoft/trspofr/trspofb/trspofl` в `DocumentTableStyleRowFormatting.OuterCellSpacing`. В отличие от внутреннего `CellSpacing`, эти source values относятся к внешним краям первой/последней строки и крайних столбцов таблицы. Каждая из четырёх сторон содержит nullable `Value`, `Unit`, `Points`: unit 0 означает Null, unit 3 — twips с conversion в points, а отсутствующий value или unit остаётся null. Требуются numeric параметры signed Int32; units кроме 0/3 отклоняются. Повторные controls используют последнее значение, conditional style entries независимы, stylesheet не влияет на body spacing.
 
