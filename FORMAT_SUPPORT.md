@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.16.6
+Версия профиля: 1.16.7
 
 ## Ready for use
+
+FB2 section outlines: `Fb2DocumentReader` формирует `DocumentModel.Outlines` из `title` основного `body` и вложенных `section`, сохраняя порядок исходных глав и их родительско-дочернюю иерархию. Названия из нескольких `title/p` объединяются с нормализацией whitespace и сохраняют текст inline formatting; исходные `title@id`, `section@id`, `body@id` служат `TargetAnchorId`. Для заголовков без доступного ID создаются воспроизводимые `fb2-heading-N`; все source XML IDs зарезервированы, чтобы synthetic anchors не конфликтовали с ними, включая ID, встречающиеся позднее в документе. Вложенные sections без собственного `title` не создают пустых пунктов, а их озаглавленные дочерние sections доступны в ближайшем существующем уровне. `body name="notes"` и декоративные `poem`/`epigraph` titles не создают outline entries; сами блоки продолжают читаться. Автономная FB2 regression проверяет дерево, отдельные body, collisions, deterministic anchors и наличие целевых HTML-якорей. Регрессионный suite запускается с `--no-books`, без обращения к `Books`.
 
 EPUB OPF manifest URI paths: `EpubDocumentReader.ResolveManifestPath` разрешает относительные URL/URI в `manifest/item@href` относительно каталога OPF, проверяет percent-encoded пары шестнадцатеричных символов и декодирует UTF-8 percent escapes перед поиском ZIP entry. Одни и те же правила используются для XHTML spine, foreign spine fallback paths, EPUB3 navigation, EPUB2 NCX и `cover-image`. Символ `+` не интерпретируется как пробел, `%25` преобразуется в один литеральный `%`; ссылки из навигации и из XHTML приводятся к тем же внутренним путям. Некорректные percent escapes, внешние URL и manifest href с query/fragment дают `InvalidDataException`. Regression создаёт EPUB только во временном каталоге: проверяет имена с пробелами, UTF-8, escaped percent, XHTML/CSS/image, cover и nav/NCX. Общие тесты запускаются в режиме `--no-books` без обхода каталога Books.
 

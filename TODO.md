@@ -1,5 +1,7 @@
 # MYBOOK TODO
 
+FB2 section outlines: `Fb2DocumentReader` создаёт иерархическое `DocumentModel.Outlines` из `body/section/title` и привязывает пункты к реальным paragraph anchors. Несколько `title/p` образуют единый текст пункта, вложенные секции сохраняют уровень, а пропущенные `title` не создают пустой heading. Исходные `id` имеют приоритет; для заголовков без anchor reader выделяет детерминированные `fb2-heading-N` вне множества всех XML IDs. Notes и `poem`/`epigraph` titles исключены из outline, оставаясь в блоках. Синтетическая regression покрывает дерево, multiple body, source/synthetic collision, целевые HTML anchors и стабильность повторного чтения. Сборка и регрессии выполняются с `--no-books`; пользовательский каталог книг не читается.
+
 EPUB manifest URI paths: `EpubDocumentReader` декодирует percent-encoded UTF-8 в относительных `manifest/item@href` для XHTML spine, foreign fallback aliases, EPUB3 navigation, EPUB2 NCX и обложек до обращения к ZIP entry. `ResolveManifestPath` валидирует percent escapes, отклоняет абсолютные и query/fragment references и разрешает пути относительно OPF. Regression покрывает пробелы, Unicode, буквальный percent через `%25`, CSS, изображения, cover, оглавление, relative links, некорректные percent escapes и неразрешённые manifest URLs. Форматные тесты выполняются с `--no-books` и не обращаются к книжному каталогу.
 
 EPUB spine fallback: для manifest item другого media type `EpubDocumentReader` читает `fallback` по IDREF до первого `application/xhtml+xml`, сохраняет исходный порядок spine и alias пути foreign item для navigation/relative links. Циклы, отсутствующие IDREF и цепочки без XHTML отклоняются явно. XHTML items не требуют проверки необязательной fallback-цепочки. Синтетическая regression проверяет обычные и многошаговые цепочки, ссылки, порядок глав и malformed OPF. Проверка `--no-books` выполняет regression suite без `Book library fixture layout` и `Supported corpus smoke`, не обращаясь к Books.
@@ -30,9 +32,9 @@ RTF table-style row geometry: `trleftN` сохраняет nullable `LeftOffsetT
 
 RTF table-style direction: `taprtl` сохраняется как nullable `DocumentTableStyleRowFormatting.TableRightToLeft` (`true` при явном flag, `null` без него). `rtlrow`/`ltrrow` независимо задают nullable `RightToLeft` для порядка ячеек строки (`true`/`false`/`null`); повторные row controls используют последнее значение. Все три flags отклоняют numeric parameters. Base/conditional `tsN` entries сохраняют собственные значения, nested destinations не влияют на source state; форматирование каталога не применяется к body tables.
 
-Текущая версия: 1.16.6
+Текущая версия: 1.16.7
 
-Версионирование релизных шагов: текущая ветка начинается с 1.16.0, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.16.7, 1.16.8 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
+Версионирование релизных шагов: текущая ветка начинается с 1.16.0, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.16.8, 1.16.9 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 

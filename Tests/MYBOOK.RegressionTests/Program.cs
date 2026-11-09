@@ -111,6 +111,7 @@ internal static partial class Program
             ("DOC fr-FR textual numbering", TestDocFrenchTextualNumbering),
             ("DOC/RTF advanced tab stops", () => TestDocRtfAdvancedTabStops(temporaryDirectory)),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
+            ("FB2 section outlines", () => TestFb2Outlines(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
             ("EPUB spine fallback", () => TestEpubSpineFallback(temporaryDirectory)),
             ("EPUB manifest URI paths", () => TestEpubManifestUris(temporaryDirectory)),
