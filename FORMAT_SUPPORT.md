@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.16.0
+Версия профиля: 1.16.1
 
 ## Ready for use
+
+RTF table-style row identity/banding: `irowN`, `irowbandN` и parameterless `lastrow` сохраняются отдельно в `DocumentTableStyleRowFormatting.RowIndex`, `BandIndex` и `IsLastRow` как nullable source metadata. Числовые controls требуют signed Int32, включая `irowband-1` для header band и граничные значения Int32; `lastrow` задаёт `true` без numeric parameter. Отсутствие каждого control сохраняет `null`, explicit zero остаётся 0, повторные `irow`/`irowband` используют последние значения. Base и conditional `tsN` entries, nested destinations, style geometry и body rows независимы; row identity каталога не применяется к body и не экспортируется как HTML body row metadata.
 
 RTF table-style look flags: все 11 parameterless `tbllkborder`, `tbllkshading`, `tbllkfont`, `tbllkcolor`, `tbllkbestfit`, `tbllkhdrrows`, `tbllklastrow`, `tbllkhdrcols`, `tbllklastcol`, `tbllknorowband` и `tbllknocolband` сохраняются как nullable `DocumentTableStyleRowFormatting.Look` с типом `DocumentTableLook`. Присутствующий flag даёт `true`, отсутствующий — `null`, а полностью отсутствующий набор — `null Look`. Numeric parameters отклоняются. Повторные flags не меняют source presence; base/conditional entries с одинаковым `tsN` и nested destinations независимы. Body `DocumentTable.Look` и HTML metadata вычисляются исключительно из body row controls; table-style look не применяется к body table и не эмулирует автоформатирование.
 
