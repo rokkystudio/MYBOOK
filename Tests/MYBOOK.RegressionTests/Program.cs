@@ -156,6 +156,7 @@ internal static partial class Program
             ("PDF CCITT decoder", () => TestPdfCcittDecoder(temporaryDirectory)),
             ("PDF reader", () => TestPdfReader(temporaryDirectory)),
             ("PDF CMap dictionaries", () => TestPdfCMapDictionaries(temporaryDirectory)),
+            ("PDF CMap code spaces", () => TestPdfCMapCodeSpaces(temporaryDirectory)),
             ("PDF TIFF and PNG predictors", () => TestPdfPredictors(temporaryDirectory)),
             ("PDF xref stream filters", () => TestPdfXrefStreamFilters(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),

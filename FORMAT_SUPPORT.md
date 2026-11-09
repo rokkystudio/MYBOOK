@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.16.3
+Версия профиля: 1.16.4
 
 ## Ready for use
+
+PDF ToUnicode и Type0 Encoding CMap codespacerange: `PdfCMapCodeSpace` определяет длину source code по первому подходящему диапазону от 1 до 4 байт; каждый байт проверяется по соответствующей паре нижней/верхней границ. `PdfFontDecoder` и `PdfCidMap` выбирают длину независимо от наличия `bfchar`/`bfrange` либо `cidchar`/`cidrange` mapping. Отсутствующий Unicode mapping внутри codespace даёт один U+FFFD на весь character code, код вне объявленных ranges вызывает `InvalidDataException`; CID lookup без mapping возвращает false без сдвига позиции. Недопустимые размеры и обратные границы codespacerange отклоняются. Для CMap без codespacerange сохраняется декодирование по mapping lengths. Regression покрывает mixed 1/2-byte codes, 3/4-byte ranges, bytewise boundaries, missing codes, malformed declarations и полный PDF reader. Примеры реального корпуса `Books/Work` используют одно- и двухбайтовые CMap, оставаясь вне Git.
 
 PDF ToUnicode и Type0 Encoding CMap: лексеры поддерживают PostScript metadata dictionaries `<< ... >>` (включая вложенные словари) и literal strings `(...)` с вложенными/escaped скобками. Содержимое `CIDSystemInfo` не воспринимается как hex mapping: `codespacerange`, `bfchar`, `bfrange`, `cidchar` и `cidrange` разбираются по своим операторам. Несогласованные `<<`/`>>`, незакрытые literal strings и некорректные hex-цифры вызывают `InvalidDataException`. Regression включает CMap parsing и полный PDF reader с `/ToUnicode`. Личные PDF из `Books/Work` не становятся versioned corpus fixtures.
 
