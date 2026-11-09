@@ -1,5 +1,7 @@
 # MYBOOK TODO
 
+RTF table-style row outer cell spacing: `trspot/trspor/trspob/trspol` и `trspoft/trspofr/trspofb/trspofl` сохраняются в независимом `DocumentTableStyleRowFormatting.OuterCellSpacing`. Эти значения относятся к внешним краям верхней/нижней строки и крайних столбцов, не смешиваются с `CellSpacing` (`trspd*`). Каждая сторона использует nullable `DocumentTableStyleMeasurement` с source `Value/Unit/Points`: unit 0 = Null, unit 3 = Twips (points = value / 20), value-only и unit-only declarations сохраняются без вычисления отсутствующего параметра. Повторные controls оставляют последнее source значение, принимается полный signed Int32. Value/unit controls требуют numeric parameter, для units допустимы только 0 и 3. Conditional entries и nested destinations изолированы, к body форматирование каталога не применяется.
+
 RTF table-style row cell spacing: `trspdt/trspdr/trspdb/trspdl` и `trspdft/trspdfr/trspdfb/trspdfl` сохраняются в `DocumentTableStyleRowFormatting.CellSpacing` как четыре независимые `DocumentTableStyleMeasurement` (nullable `Value/Unit/Points`). Unit 0 означает Null и не задаёт effective spacing; unit 3 — Twips с преобразованием value/20 в points. Value-only и unit-only declarations сохраняются без подстановки, repeat controls используют последние source значения, signed Int32 поддерживается целиком. Value и unit controls требуют numeric parameter; units 1/2 и прочие неподдерживаемые отклоняются. Conditional style entries имеют собственное spacing, nested destinations не меняют table-style state; catalog не применяется к body rows.
 
 RTF table-style catalog: `DocumentTableStyleRowFormatting` сохраняет nullable `Alignment` (`trql/trqc/trqr`, последнее значение), nullable `AutoFit` (`trautofit0/1`) и независимые pagination flags `trhdr/trkeep/trkeepfollow`. Parameterless flags отклоняют numeric parameters, AutoFit принимает только 0/1. Source row layout не применяется к body table; отсутствие controls остаётся null/false.
@@ -8,7 +10,7 @@ RTF table-style row geometry: `trleftN` сохраняет nullable `LeftOffsetT
 
 RTF table-style direction: `taprtl` сохраняется как nullable `DocumentTableStyleRowFormatting.TableRightToLeft` (`true` при явном flag, `null` без него). `rtlrow`/`ltrrow` независимо задают nullable `RightToLeft` для порядка ячеек строки (`true`/`false`/`null`); повторные row controls используют последнее значение. Все три flags отклоняют numeric parameters. Base/conditional `tsN` entries сохраняют собственные значения, nested destinations не влияют на source state; форматирование каталога не применяется к body tables.
 
-Текущая версия: 1.9.63
+Текущая версия: 1.9.64
 
 Версионирование релизных шагов: начиная с 1.9.1, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.9.2, 1.9.3 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
 

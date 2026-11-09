@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.63
+Версия профиля: 1.9.64
 
 ## Ready for use
+
+RTF table-style outer row cell spacing сохраняет `trspot/trspor/trspob/trspol` и units `trspoft/trspofr/trspofb/trspofl` в `DocumentTableStyleRowFormatting.OuterCellSpacing`. В отличие от внутреннего `CellSpacing`, эти source values относятся к внешним краям первой/последней строки и крайних столбцов таблицы. Каждая из четырёх сторон содержит nullable `Value`, `Unit`, `Points`: unit 0 означает Null, unit 3 — twips с conversion в points, а отсутствующий value или unit остаётся null. Требуются numeric параметры signed Int32; units кроме 0/3 отклоняются. Повторные controls используют последнее значение, conditional style entries независимы, stylesheet не влияет на body spacing.
 
 RTF table-style row cell spacing сохраняет `trspdt/trspdr/trspdb/trspdl` и соответствующие `trspdft/trspdfr/trspdfb/trspdfl` в `DocumentTableStyleRowFormatting.CellSpacing` без вычисления table-style cascade. Для каждой стороны сохраняются nullable `Value`, `Unit`, `Points`: unit 0 = Null (spacing игнорируется), unit 3 = twips (points = value/20). Значение и единица могут присутствовать по отдельности, repeated controls сохраняют последние source значения. Numeric controls обязательны к параметризации signed Int32, unit принимает только 0 или 3. Conditional entries не перезаписывают base entry и не влияют на body table row spacing.
 
