@@ -1,5 +1,7 @@
 # MYBOOK TODO
 
+Организация локального книжного корпуса: отдельные книги Ветхого Завета находятся в `Books/Ветхий Завет`, полная `bibliya.fb2` остаётся в корне `Books`. Бинарные regression fixtures `Regression_EPUB2.epub`, `Regression_EPUB3.epub` и `Regression_Word97_Binary.doc` находятся в `Tests/Fixtures`; regression suite проверяет их непосредственно по этим путям и не включает их в книжный corpus smoke. Каталог `Books/Work` не входит в версионируемый корпус, исключён из corpus smoke и Git; его содержимое не участвует в изменениях.
+
 RTF table-style row identity/banding: `DocumentTableStyleRowFormatting.RowIndex` и `BandIndex` сохраняют nullable signed Int32 source values из `irowN`/`irowbandN`, а `IsLastRow` — nullable true/null из parameterless `lastrow`. Числовые controls требуют numeric parameter; `lastrowN` отклоняется. `irowband-1` сохраняет header band, explicit zero отличается от null, повторные numeric controls используют последние значения. Conditional styles с общим handle, nested groups и body row metadata изолированы, HTML отражает только body identity.
 
 RTF table-style look flags: `DocumentTableStyleRowFormatting.Look` хранит 11 независимых nullable `tbllk*` source flags: Border, Shading, Font, Color, BestFit, HeaderRows, LastRow, HeaderColumns, LastColumn, NoRowBand и NoColumnBand. Каждый parameterless control устанавливает `true`, отсутствие остаётся `null`. Полностью отсутствующие flags дают `null Look`; повторные объявления, conditional `tsN` и nested destinations не смешивают значения. Numeric parameters отклоняются, каталог не влияет на body `DocumentTable.Look` и HTML.
@@ -20,9 +22,9 @@ RTF table-style row geometry: `trleftN` сохраняет nullable `LeftOffsetT
 
 RTF table-style direction: `taprtl` сохраняется как nullable `DocumentTableStyleRowFormatting.TableRightToLeft` (`true` при явном flag, `null` без него). `rtlrow`/`ltrrow` независимо задают nullable `RightToLeft` для порядка ячеек строки (`true`/`false`/`null`); повторные row controls используют последнее значение. Все три flags отклоняют numeric parameters. Base/conditional `tsN` entries сохраняют собственные значения, nested destinations не влияют на source state; форматирование каталога не применяется к body tables.
 
-Текущая версия: 1.16.1
+Текущая версия: 1.16.2
 
-Версионирование релизных шагов: текущая ветка начинается с 1.16.0, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.16.2, 1.16.3 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
+Версионирование релизных шагов: текущая ветка начинается с 1.16.0, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.16.3, 1.16.4 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 

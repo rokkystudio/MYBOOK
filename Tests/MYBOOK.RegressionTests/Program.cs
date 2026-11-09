@@ -159,6 +159,7 @@ internal static partial class Program
             ("PDF xref stream filters", () => TestPdfXrefStreamFilters(temporaryDirectory)),
             ("Parser trace", () => TestParserTrace(temporaryDirectory)),
             (".doc corpus dispatch", () => TestDocCorpusDispatch(repositoryRoot)),
+            ("Book library fixture layout", () => TestBookLibraryLayout(repositoryRoot)),
             ("Supported corpus smoke", () => TestSupportedCorpusSmoke(repositoryRoot))
         };
 
@@ -8395,16 +8396,21 @@ internal static partial class Program
             "DOC rendered endnote anchor");
     }
 
+    /// <summary>
+    /// Проверяет binary Word 97 fixture из Tests/Fixtures: inherited heading,
+    /// direct paragraph formatting и DOC reader metadata.
+    /// </summary>
     private static void TestDocBinaryReader(string repositoryRoot)
     {
         var path = Path.Combine(
             repositoryRoot,
-            "Books",
+            "Tests",
+            "Fixtures",
             "Regression_Word97_Binary.doc");
 
         Assert(
             File.Exists(path),
-            "Books должен содержать Regression_Word97_Binary.doc.");
+            "Tests/Fixtures должен содержать Regression_Word97_Binary.doc.");
 
         var model = DocDocumentReader.Read(path);
 
@@ -9435,26 +9441,32 @@ internal static partial class Program
             "EPUB2 guide landmark target");
     }
 
+    /// <summary>
+    /// Проверяет EPUB2 и EPUB3 compatibility fixtures из Tests/Fixtures:
+    /// navigation outlines, NCX/OPF links, HTML blocks и embedded resources.
+    /// </summary>
     private static void TestEpubCorpusCompatibility(
         string repositoryRoot)
     {
         var epub2Path = Path.Combine(
             repositoryRoot,
-            "Books",
+            "Tests",
+            "Fixtures",
             "Regression_EPUB2.epub");
 
         var epub3Path = Path.Combine(
             repositoryRoot,
-            "Books",
+            "Tests",
+            "Fixtures",
             "Regression_EPUB3.epub");
 
         Assert(
             File.Exists(epub2Path),
-            "EPUB2 compatibility fixture отсутствует в Books.");
+            "EPUB2 compatibility fixture отсутствует в Tests/Fixtures.");
 
         Assert(
             File.Exists(epub3Path),
-            "EPUB3 compatibility fixture отсутствует в Books.");
+            "EPUB3 compatibility fixture отсутствует в Tests/Fixtures.");
 
         var epub2 = SupportedFormatRegistry.ReadDocument(
             epub2Path);
@@ -20291,36 +20303,38 @@ internal static partial class Program
         }
     }
 
+    /// <summary>
+    /// Открывает binary DOC regression fixture из Tests/Fixtures через
+    /// SupportedFormatRegistry и проверяет наличие блоков и текста.
+    /// </summary>
     private static void TestDocCorpusDispatch(string repositoryRoot)
     {
-        var booksDirectory = Path.Combine(
+        var path = Path.Combine(
             repositoryRoot,
-            "Books");
+            "Tests",
+            "Fixtures",
+            "Regression_Word97_Binary.doc");
 
-        var path = Directory
-            .EnumerateFiles(
-                booksDirectory,
-                "*.doc",
-                SearchOption.TopDirectoryOnly)
-            .FirstOrDefault()
-            ?? throw new InvalidOperationException(
-                "Books не содержит regression .doc fixture.");
+        Assert(
+            File.Exists(path),
+            "Tests/Fixtures должен содержать Regression_Word97_Binary.doc.");
 
         var model = SupportedFormatRegistry.ReadDocument(path);
 
         Assert(
             model.Blocks.Count > 0,
-            ".doc corpus dispatch должен вернуть хотя бы один блок.");
+            ".doc fixture dispatch должен вернуть хотя бы один блок.");
 
         Assert(
             !string.IsNullOrWhiteSpace(FlattenText(model)),
-            ".doc corpus dispatch должен вернуть текст.");
+            ".doc fixture dispatch должен вернуть текст.");
     }
 
     /// <summary>
-    /// Открывает весь локальный Books corpus через тот же registry, что использует UI,
-    /// и проверяет полный reader → neutral model → HTML renderer pipeline.
-    /// Direct HTML проверяется отдельно как существующий непустой пользовательский файл.
+    /// Открывает книжный Books corpus, включая тематические подпапки, через
+    /// тот же registry, что использует UI, и проверяет reader → neutral model →
+    /// HTML renderer. Пользовательский каталог Books/Work не является частью
+    /// versioned corpus. Direct HTML проверяется отдельно на непустой файл.
     /// </summary>
     private static void TestSupportedCorpusSmoke(string repositoryRoot)
     {
@@ -20332,6 +20346,13 @@ internal static partial class Program
                 booksDirectory,
                 "*",
                 SearchOption.AllDirectories)
+            .Where(path =>
+                !Path.GetRelativePath(
+                    booksDirectory,
+                    path)
+                    .StartsWith(
+                        "Work" + Path.DirectorySeparatorChar,
+                        StringComparison.OrdinalIgnoreCase))
             .OrderBy(
                 path => path,
                 StringComparer.OrdinalIgnoreCase)

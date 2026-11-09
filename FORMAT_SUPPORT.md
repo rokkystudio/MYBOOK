@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.16.1
+Версия профиля: 1.16.2
 
 ## Ready for use
+
+Проверочные EPUB2, EPUB3 и Word 97 binary документы `Regression_*` находятся в `Tests/Fixtures` и читаются regression suite по явным путям. Книжный корпус `Books` содержит `Books/Ветхий Завет` для отдельных книг Ветхого Завета; `Books/bibliya.fb2` остаётся отдельным полным изданием. Corpus smoke рекурсивно обходит книжный каталог, исключая пользовательскую папку `Books/Work`, и не включает тестовые fixtures.
 
 RTF table-style row identity/banding: `irowN`, `irowbandN` и parameterless `lastrow` сохраняются отдельно в `DocumentTableStyleRowFormatting.RowIndex`, `BandIndex` и `IsLastRow` как nullable source metadata. Числовые controls требуют signed Int32, включая `irowband-1` для header band и граничные значения Int32; `lastrow` задаёт `true` без numeric parameter. Отсутствие каждого control сохраняет `null`, explicit zero остаётся 0, повторные `irow`/`irowband` используют последние значения. Base и conditional `tsN` entries, nested destinations, style geometry и body rows независимы; row identity каталога не применяется к body и не экспортируется как HTML body row metadata.
 
