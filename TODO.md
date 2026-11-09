@@ -1,5 +1,7 @@
 # MYBOOK TODO
 
+EPUB spine fallback: для manifest item другого media type `EpubDocumentReader` читает `fallback` по IDREF до первого `application/xhtml+xml`, сохраняет исходный порядок spine и alias пути foreign item для navigation/relative links. Циклы, отсутствующие IDREF и цепочки без XHTML отклоняются явно. XHTML items не требуют проверки необязательной fallback-цепочки. Синтетическая regression проверяет обычные и многошаговые цепочки, ссылки, порядок глав и malformed OPF. Проверка `--no-books` выполняет regression suite без `Book library fixture layout` и `Supported corpus smoke`, не обращаясь к Books.
+
 PDF CMap codespacerange: `PdfCMapCodeSpace` хранит диапазоны допустимых source codes длиной 1..4 байта с проверкой каждого байта границ. `PdfFontDecoder` выбирает длину по codespace до Unicode mapping; неизвестный код внутри диапазона даёт один U+FFFD, код вне диапазона — явную ошибку. `PdfCidMap.TryReadCid` определяет длину по codespace, а при отсутствии CID mapping оставляет позицию неизменной. Для отсутствующих codespacerange используется проверенное по mappings поведение. Regression включает mixed-width кодирование, частичные и выходящие за границы коды, неполные mappings, malformed ranges и synthetic PDF reader. Пользовательские `Books/Work` не включаются в тестовые fixtures.
 
 PDF CMap dictionary metadata: `PdfFontDecoder` и `PdfCidMap` разбирают `<< ... >>` и literal strings в PostScript CMap, включая вложенность и escaping. Hex strings вне metadata строго проверяются, незакрытые/лишние delimiters вызывают структурную ошибку. Regression проверяет `CIDSystemInfo` в `ToUnicode` и Type0 Encoding CMap, а также полный reader pipeline. PDF из `Books/Work` остаются пользовательскими файлами вне git и corpus smoke.
@@ -26,9 +28,9 @@ RTF table-style row geometry: `trleftN` сохраняет nullable `LeftOffsetT
 
 RTF table-style direction: `taprtl` сохраняется как nullable `DocumentTableStyleRowFormatting.TableRightToLeft` (`true` при явном flag, `null` без него). `rtlrow`/`ltrrow` независимо задают nullable `RightToLeft` для порядка ячеек строки (`true`/`false`/`null`); повторные row controls используют последнее значение. Все три flags отклоняют numeric parameters. Base/conditional `tsN` entries сохраняют собственные значения, nested destinations не влияют на source state; форматирование каталога не применяется к body tables.
 
-Текущая версия: 1.16.4
+Текущая версия: 1.16.5
 
-Версионирование релизных шагов: текущая ветка начинается с 1.16.0, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.16.5, 1.16.6 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
+Версионирование релизных шагов: текущая ветка начинается с 1.16.0, каждый следующий завершённый шаг по команде «продолжай» увеличивает PATCH на 1 (1.16.6, 1.16.7 и далее), если пользователь не указал другую версию. `Version`, `AssemblyVersion`, `FileVersion`, `InformationalVersion` в `MYBOOK.csproj` синхронизируются с `FORMAT_SUPPORT.md` и этим файлом. Новый релиз публикуется после успешной Release-сборки, regression suite, diff review и push обоих репозиториев.
 
 Все форматы из `SupportedFormatRegistry` имеют статус Ready for use в пределах профиля, описанного в `FORMAT_SUPPORT.md`. Текущая цель — расширять совместимость, visual fidelity и покрытие редких возможностей без ослабления readiness gates.
 

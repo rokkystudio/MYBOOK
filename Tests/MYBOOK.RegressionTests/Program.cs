@@ -20,8 +20,10 @@ namespace MYBOOK.RegressionTests;
 
 /// <summary>
 /// Запускает автономные regression-тесты readers без WPF-окон и WebView2.
-/// Второй аргумент командной строки необязательно выбирает один тест по точному
-/// имени; без него выполняется полный regression suite.
+/// Второй аргумент командной строки выбирает тест по точному имени.
+/// Аргумент --no-books выполняет все тесты, кроме проверок книжного каталога
+/// и книжного corpus smoke, без доступа к каталогу Books.
+/// Без второго аргумента выполняется полный regression suite.
 /// </summary>
 internal static partial class Program
 {
@@ -110,6 +112,7 @@ internal static partial class Program
             ("DOC/RTF advanced tab stops", () => TestDocRtfAdvancedTabStops(temporaryDirectory)),
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
+            ("EPUB spine fallback", () => TestEpubSpineFallback(temporaryDirectory)),
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),
@@ -166,15 +169,26 @@ internal static partial class Program
         };
 
         var selectedTests =
-            args.Length > 1
+            args.Length > 1 &&
+            string.Equals(
+                args[1],
+                "--no-books",
+                StringComparison.Ordinal)
                 ? tests
                     .Where(test =>
-                        string.Equals(
-                            test.Name,
-                            args[1],
-                            StringComparison.OrdinalIgnoreCase))
+                        test.Name is not
+                            "Book library fixture layout" and not
+                            "Supported corpus smoke")
                     .ToArray()
-                : tests;
+                : args.Length > 1
+                    ? tests
+                        .Where(test =>
+                            string.Equals(
+                                test.Name,
+                                args[1],
+                                StringComparison.OrdinalIgnoreCase))
+                        .ToArray()
+                    : tests;
 
         if (selectedTests.Length == 0)
         {

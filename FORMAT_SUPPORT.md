@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.16.4
+Версия профиля: 1.16.5
 
 ## Ready for use
+
+EPUB 3 OPF spine manifest fallback: для foreign `itemref` reader разрешает цепочку атрибутов `manifest/item@fallback` по IDREF до первого XHTML (`application/xhtml+xml`) и использует этот документ как главу в исходном порядке spine. XHTML-главы открываются напрямую без обхода их fallback-цепочек. Ссылки оглавления и внутри глав на исходный foreign resource направляются к якорю соответствующей XHTML-главы. Недостающие `itemref@idref` или manifest IDs, отсутствующий XHTML fallback и циклы возвращают `InvalidDataException` с конкретной диагностикой. Проверки форматов запускаются с `--no-books`: этот режим исключает `Book library fixture layout` и `Supported corpus smoke`, не обращаясь к каталогу Books. Синтетические EPUB fixtures создаются только во временной директории тестов.
 
 PDF ToUnicode и Type0 Encoding CMap codespacerange: `PdfCMapCodeSpace` определяет длину source code по первому подходящему диапазону от 1 до 4 байт; каждый байт проверяется по соответствующей паре нижней/верхней границ. `PdfFontDecoder` и `PdfCidMap` выбирают длину независимо от наличия `bfchar`/`bfrange` либо `cidchar`/`cidrange` mapping. Отсутствующий Unicode mapping внутри codespace даёт один U+FFFD на весь character code, код вне объявленных ranges вызывает `InvalidDataException`; CID lookup без mapping возвращает false без сдвига позиции. Недопустимые размеры и обратные границы codespacerange отклоняются. Для CMap без codespacerange сохраняется декодирование по mapping lengths. Regression покрывает mixed 1/2-byte codes, 3/4-byte ranges, bytewise boundaries, missing codes, malformed declarations и полный PDF reader. Примеры реального корпуса `Books/Work` используют одно- и двухбайтовые CMap, оставаясь вне Git.
 
