@@ -113,6 +113,7 @@ internal static partial class Program
             ("FB2 reader", () => TestFb2Reader(temporaryDirectory)),
             ("EPUB reader", () => TestEpubReader(temporaryDirectory)),
             ("EPUB spine fallback", () => TestEpubSpineFallback(temporaryDirectory)),
+            ("EPUB manifest URI paths", () => TestEpubManifestUris(temporaryDirectory)),
             ("EPUB NCX reader", () => TestEpubNcxReader(temporaryDirectory)),
             ("EPUB corpus compatibility", () => TestEpubCorpusCompatibility(repositoryRoot)),
             ("DOCX reader", () => TestDocxReader(temporaryDirectory)),

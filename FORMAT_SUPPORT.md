@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.16.5
+Версия профиля: 1.16.6
 
 ## Ready for use
+
+EPUB OPF manifest URI paths: `EpubDocumentReader.ResolveManifestPath` разрешает относительные URL/URI в `manifest/item@href` относительно каталога OPF, проверяет percent-encoded пары шестнадцатеричных символов и декодирует UTF-8 percent escapes перед поиском ZIP entry. Одни и те же правила используются для XHTML spine, foreign spine fallback paths, EPUB3 navigation, EPUB2 NCX и `cover-image`. Символ `+` не интерпретируется как пробел, `%25` преобразуется в один литеральный `%`; ссылки из навигации и из XHTML приводятся к тем же внутренним путям. Некорректные percent escapes, внешние URL и manifest href с query/fragment дают `InvalidDataException`. Regression создаёт EPUB только во временном каталоге: проверяет имена с пробелами, UTF-8, escaped percent, XHTML/CSS/image, cover и nav/NCX. Общие тесты запускаются в режиме `--no-books` без обхода каталога Books.
 
 EPUB 3 OPF spine manifest fallback: для foreign `itemref` reader разрешает цепочку атрибутов `manifest/item@fallback` по IDREF до первого XHTML (`application/xhtml+xml`) и использует этот документ как главу в исходном порядке spine. XHTML-главы открываются напрямую без обхода их fallback-цепочек. Ссылки оглавления и внутри глав на исходный foreign resource направляются к якорю соответствующей XHTML-главы. Недостающие `itemref@idref` или manifest IDs, отсутствующий XHTML fallback и циклы возвращают `InvalidDataException` с конкретной диагностикой. Проверки форматов запускаются с `--no-books`: этот режим исключает `Book library fixture layout` и `Supported corpus smoke`, не обращаясь к каталогу Books. Синтетические EPUB fixtures создаются только во временной директории тестов.
 
