@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.9.66
+Версия профиля: 1.9.67
 
 ## Ready for use
+
+RTF table-style indentation: `tblindN` и `tblindtypeN` сохраняются в `DocumentTableStyleRowFormatting.Indent` как nullable source `Value` и `Unit` без body defaults. Unit 0 (Auto) и 2 (Nil) не задают derived величину; unit 1 (dxa/twips) даёт `Points = Value / 20`, unit 3 (pct) — `Percent = Value / 50` только при наличии обоих source параметров. Неизвестный unit сохраняется без интерпретации, incomplete declarations остаются nullable, повторные controls используют последнее значение. Numeric parameters обязательны и допускают signed Int32. Base/conditional entries, nested groups и body tables независимы; stylesheet indentation не применяется к body layout.
 
 RTF table-style positioning/wrapping сохраняется в `DocumentTableStyleRowFormatting.Positioning` как source metadata: horizontal frames `tphcol/tphmrg/tphpg`, placements `tposx/tposnegx/tposxc/tposxi/tposxo/tposxl/tposxr`, vertical frames `tpvmrg/tpvpg/tpvpara`, placements `tposy/tposnegy/tposyt/tposyil/tposyb/tposyc/tposyin/tposyout`, text distances `tdfrmtxtLeft/Right/Top/Bottom` и parameterless `tabsnoovrlp`. Nullable frames, source position kinds, signed Int32 twips и computed points сохраняют отличие отсутствующего control от явного значения 0; в отличие от body `DocumentTablePositioning` не выставляются effective defaults. Повторные positions используют последнее значение, flags очищают предшествующий numeric offset на своей оси. Неверные параметры отклоняются. Conditional styles сохраняют независимые позиции; catalog не применяется к body и не выполняет visual wrapping.
 

@@ -87,6 +87,7 @@ internal static partial class Program
             ("RTF table style row outer cell spacing", () => TestRtfTableStyleRowOuterCellSpacing(temporaryDirectory)),
             ("RTF table style row outer padding", () => TestRtfTableStyleRowOuterPadding(temporaryDirectory)),
             ("RTF table style positioning", () => TestRtfTableStylePositioning(temporaryDirectory)),
+            ("RTF table style indentation", () => TestRtfTableStyleIndent(temporaryDirectory)),
             ("RTF font charset/codepage", () => TestRtfFontCharsets(temporaryDirectory)),
             (".doc RTF dispatch", () => TestDocRtfDispatch(temporaryDirectory)),
             ("DOC field model", TestDocFieldModel),
@@ -1255,7 +1256,7 @@ internal static partial class Program
 
         AssertContains(
             html,
-            "data-row-index=\"0\" data-row-band-index=\"0\" data-table-indent-value=\"720\" data-table-indent-unit=\"3\" data-table-look-border=\"true\" data-table-look-shading=\"true\" data-table-look-font=\"true\" data-table-look-color=\"true\" data-table-look-best-fit=\"true\" data-table-look-header-rows=\"true\" data-table-look-last-row=\"true\" data-table-look-header-columns=\"true\" data-table-look-last-column=\"true\" data-table-look-no-row-band=\"true\" data-table-look-no-column-band=\"true\"",
+            "data-row-index=\"0\" data-row-band-index=\"0\" data-row-table-indent-source-value=\"720\" data-row-table-indent-source-unit=\"3\" data-row-table-indent-value=\"720\" data-row-table-indent-unit=\"3\" data-row-table-indent-kind=\"pct\" data-row-table-indent-percent=\"14.4\" data-table-look-border=\"true\" data-table-look-shading=\"true\" data-table-look-font=\"true\" data-table-look-color=\"true\" data-table-look-best-fit=\"true\" data-table-look-header-rows=\"true\" data-table-look-last-row=\"true\" data-table-look-header-columns=\"true\" data-table-look-last-column=\"true\" data-table-look-no-row-band=\"true\" data-table-look-no-column-band=\"true\"",
             "RTF rendered row index, banding and table-look metadata");
 
         AssertContains(
