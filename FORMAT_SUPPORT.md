@@ -1,8 +1,10 @@
 # MYBOOK format support
 
-Версия профиля: 1.16.2
+Версия профиля: 1.16.3
 
 ## Ready for use
+
+PDF ToUnicode и Type0 Encoding CMap: лексеры поддерживают PostScript metadata dictionaries `<< ... >>` (включая вложенные словари) и literal strings `(...)` с вложенными/escaped скобками. Содержимое `CIDSystemInfo` не воспринимается как hex mapping: `codespacerange`, `bfchar`, `bfrange`, `cidchar` и `cidrange` разбираются по своим операторам. Несогласованные `<<`/`>>`, незакрытые literal strings и некорректные hex-цифры вызывают `InvalidDataException`. Regression включает CMap parsing и полный PDF reader с `/ToUnicode`. Личные PDF из `Books/Work` не становятся versioned corpus fixtures.
 
 Проверочные EPUB2, EPUB3 и Word 97 binary документы `Regression_*` находятся в `Tests/Fixtures` и читаются regression suite по явным путям. Книжный корпус `Books` содержит `Books/Ветхий Завет` для отдельных книг Ветхого Завета; `Books/bibliya.fb2` остаётся отдельным полным изданием. Corpus smoke рекурсивно обходит книжный каталог, исключая пользовательскую папку `Books/Work`, и не включает тестовые fixtures.
 
