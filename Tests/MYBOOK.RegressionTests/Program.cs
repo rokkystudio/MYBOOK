@@ -125,6 +125,7 @@ internal static partial class Program
             ("DOCX document style defaults", () => TestDocxStyleDefaults(temporaryDirectory)),
             ("DOCX style-based numbering", () => TestDocxStyleNumbering(temporaryDirectory)),
             ("DOCX paragraph layout", () => TestDocxParagraphLayout(temporaryDirectory)),
+            ("DOCX table paragraphs and tabs", () => TestDocxTableParagraphTabs(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu indirect DJVM", () => TestDjvuIndirectDocument(temporaryDirectory)),
