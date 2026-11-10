@@ -824,11 +824,11 @@ internal static partial class Program
             typeof(InvalidDataException),
             "RGB");
         AssertInvalid(
-            "docx-border-unsupported-theme.docx",
+            "docx-border-without-theme.docx",
             defaultTop,
             """<w:top w:val="single" w:sz="16" w:space="2" w:color="223344" w:themeColor="accent1"/>""",
-            typeof(NotSupportedException),
-            "theme color");
+            typeof(InvalidDataException),
+            "отсутствующий Theme color slot");
         AssertInvalid(
             "docx-border-invalid-toggle.docx",
             defaultTop,
@@ -860,10 +860,10 @@ internal static partial class Program
             typeof(InvalidDataException),
             "w:shd/w:fill");
         AssertInvalid(
-            "docx-shading-unsupported-theme.docx",
+            "docx-shading-without-theme.docx",
             baseShading,
             """<w:shd w:val="pct50" w:color="FF0000" w:fill="FFFFFF" w:themeFill="accent3"/>""",
-            typeof(NotSupportedException),
-            "themeColor/themeFill");
+            typeof(InvalidDataException),
+            "отсутствующий Theme color slot");
     }
 }

@@ -129,6 +129,7 @@ internal static partial class Program
             ("DOCX table paragraphs and tabs", () => TestDocxTableParagraphTabs(temporaryDirectory)),
             ("DOCX paragraph pagination controls", () => TestDocxParagraphPagination(temporaryDirectory)),
             ("DOCX paragraph borders and shading", () => TestDocxParagraphBordersShading(temporaryDirectory)),
+            ("DOCX theme colors", () => TestDocxThemeColors(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu indirect DJVM", () => TestDjvuIndirectDocument(temporaryDirectory)),
