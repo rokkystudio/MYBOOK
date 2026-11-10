@@ -24,6 +24,7 @@ namespace MYBOOK.RegressionTests;
 /// Аргумент --no-books выполняет все тесты, кроме проверок книжного каталога
 /// и книжного corpus smoke, без доступа к каталогу Books.
 /// Без второго аргумента выполняется полный regression suite.
+/// Ошибки тестов выводятся с полным exception и stack trace.
 /// </summary>
 internal static partial class Program
 {
@@ -127,6 +128,7 @@ internal static partial class Program
             ("DOCX paragraph layout", () => TestDocxParagraphLayout(temporaryDirectory)),
             ("DOCX table paragraphs and tabs", () => TestDocxTableParagraphTabs(temporaryDirectory)),
             ("DOCX paragraph pagination controls", () => TestDocxParagraphPagination(temporaryDirectory)),
+            ("DOCX paragraph borders and shading", () => TestDocxParagraphBordersShading(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu indirect DJVM", () => TestDjvuIndirectDocument(temporaryDirectory)),
@@ -222,7 +224,7 @@ internal static partial class Program
                 {
                     failures++;
                     Console.Error.WriteLine(
-                        $"FAIL {test.Name}: {error.GetType().Name}: {error.Message}");
+                        $"FAIL {test.Name}: {error}");
                 }
             }
         }
