@@ -122,6 +122,7 @@ internal static partial class Program
             ("DOCX numbering sequences", () => TestDocxNumbering(temporaryDirectory)),
             ("DOCX core properties", () => TestDocxCoreProperties(temporaryDirectory)),
             ("DOCX character styles", () => TestDocxCharacterStyles(temporaryDirectory)),
+            ("DOCX document style defaults", () => TestDocxStyleDefaults(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu indirect DJVM", () => TestDjvuIndirectDocument(temporaryDirectory)),
