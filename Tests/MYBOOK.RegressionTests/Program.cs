@@ -126,6 +126,7 @@ internal static partial class Program
             ("DOCX style-based numbering", () => TestDocxStyleNumbering(temporaryDirectory)),
             ("DOCX paragraph layout", () => TestDocxParagraphLayout(temporaryDirectory)),
             ("DOCX table paragraphs and tabs", () => TestDocxTableParagraphTabs(temporaryDirectory)),
+            ("DOCX paragraph pagination controls", () => TestDocxParagraphPagination(temporaryDirectory)),
             ("DjVu container INFO", () => TestDjvuContainerInfo(temporaryDirectory)),
             ("DjVu DIRM directory", () => TestDjvuDirectory(temporaryDirectory)),
             ("DjVu indirect DJVM", () => TestDjvuIndirectDocument(temporaryDirectory)),
@@ -9578,6 +9579,11 @@ internal static partial class Program
             "EPUB3 corpus pagebreak semantics");
     }
 
+    /// <summary>
+    /// Проверяет чтение DOCX OpenXML parts, relationships, встроенных
+    /// объектов, сносок и секций. pageBreakBefore сохраняется в абзаце,
+    /// а явный w:br type=page добавляет отдельный DocumentFlowBreak.
+    /// </summary>
     private static void TestDocxReader(string directory)
     {
         var path = Path.Combine(
@@ -10068,8 +10074,17 @@ internal static partial class Program
             model.Blocks
                 .OfType<DocumentFlowBreak>()
                 .Count(flowBreak =>
-                    flowBreak.Kind == DocumentFlowBreakKind.Page) >= 2,
-            "DOCX pageBreakBefore и explicit page break должны сохраняться в модели.");
+                    flowBreak.Kind == DocumentFlowBreakKind.Page) >= 1,
+            "DOCX explicit w:br type=page должен сохраняться отдельным блоком.");
+
+        Assert(
+            model.Blocks
+                .OfType<DocumentParagraph>()
+                .Any(paragraph =>
+                    paragraph.PageBreakBefore &&
+                    paragraph.Inlines.Any(inline =>
+                        inline.Text == "Page break before marker")),
+            "DOCX w:pageBreakBefore должен задавать свойство DocumentParagraph.");
 
         Assert(
             model.Blocks
